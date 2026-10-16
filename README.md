@@ -1,10 +1,64 @@
-# 5e Character Sheet for Obsidian
+<h1 align="center">5e Character Sheet</h1>
 
-An interactive character sheet for **fifth edition (2014 rules)** characters, living inside an ordinary Obsidian note. Create a character in a few clicks, keep your friends' characters next to your campaign notes, and roll straight from the sheet.
+<p align="center">
+  Interactive <b>fifth edition (2014 rules)</b> character sheets that live inside your Obsidian notes.<br>
+  Create a character in a few clicks, keep your friends' characters next to your campaign notes, and roll straight from the sheet.
+</p>
 
-> Unofficial. Not affiliated with, endorsed, sponsored or approved by Wizards of the Coast. See [Legal](#legal).
+<p align="center">
+  <a href="https://github.com/admiravelhomemdasneves/5eCharacterSheet/releases/latest"><img src="https://img.shields.io/github/v/release/admiravelhomemdasneves/5eCharacterSheet?label=release&color=922610" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Obsidian-1.4%2B-7c3aed" alt="Obsidian 1.4+">
+  <img src="https://img.shields.io/badge/rules-5e%202014-922610" alt="5e 2014 rules">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
 
-## Features
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet01.png" alt="Character sheet: portrait, race, class and ability scores" width="720"></p>
+
+> Unofficial fan project. Not affiliated with, endorsed, sponsored or approved by Wizards of the Coast. See [Legal](#legal).
+
+## Highlights
+
+- **Everything in one note.** Race, class (multiclass included), background, ability scores, combat, skills, features, spells, inventory, personality and a diary, saved in the note itself.
+- **Rules done for you.** Racial bonuses, proficiency, saves and skills, AC, hit points, spell save DC, spell slots (single and multiclass), class features by level and a creation checklist that tells you what is still missing.
+- **Works with or without game data.** Manual mode for homebrew and quick notes, the SRD 5.1 built in, or import the books you own.
+- **Roll from the sheet.** Click any bonus to roll; Shift-click for advantage, Ctrl/Cmd-click for disadvantage. Uses [Dice Roller](https://github.com/javalent/dice-roller) when installed.
+- **Linked to your notes.** Optional links and page previews to a compendium, `[[links]]` in every text field, and Initiative Tracker integration.
+
+## A quick tour
+
+### Choose race, class and background
+Searchable menus grouped by book. Hover an option to preview its compendium note before choosing.
+
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/MenuDropDown.png" alt="Race menu with the compendium note preview" width="780"></p>
+
+### Combat and skills
+AC, initiative and speed are calculated from your equipment, class and race, and can be adjusted with + and −. Track HP, temporary HP, exhaustion, death saves, hit dice and conditions. Skills show where each proficiency comes from; click the dot to cycle none → proficient → expertise.
+
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet02.png" alt="Combat and skills" width="720"></p>
+
+### Attacks and features
+Attacks come from your equipped weapons. Race, background and class features are filled in as you level up; expand any of them to read the full text.
+
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet03.png" alt="Attacks and race and background features" width="720"></p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet04.png" alt="Class features, feats and ability score improvements" width="720"></p>
+
+### Spellcasting
+Spell save DC, spell attack, prepared and known counts, and slots per level that you can tick off or adjust. Prepared spells stay at the top of the list.
+
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet05.png" alt="Spellcasting: slots and spell list" width="720"></p>
+
+### Inventory and proficiencies
+Items with quantity, weight, equipped and attuned (max 3), coins, carrying capacity, and the proficiencies and languages your choices give you.
+
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet06.png" alt="Inventory, coins, proficiencies and languages" width="720"></p>
+
+### Personality, biography and diary
+Plain text when you read, a text box when you click. Type `[[` to link any note in your vault.
+
+<p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet07.png" alt="Personality, appearance, biography, diary and events" width="720"></p>
+
+## All features
 
 - **Header** with portrait, name, player, alignment, race, subrace, background and classes (multiclass supported, with prerequisites checked).
 - **Ability scores** with Point Buy (validated), Standard Array, 4d6 rolls or manual entry; racial bonuses applied automatically; an edit mode keeps the view clean.
@@ -14,9 +68,11 @@ An interactive character sheet for **fifth edition (2014 rules)** characters, li
 - **Feats and Ability Score Improvements** counted against the ASIs your class levels grant.
 - **Spellcasting**: spell save DC, spell attack, prepared/known counts, spell slots for single and multiclass casters (Pact Magic separate), slots you can add or remove, and a spell list with prepared spells first. Domain/oath/circle spells are added automatically.
 - **Inventory and coins**, attunement (max 3), carrying capacity, attacks from equipped weapons.
-- **Personality, appearance, biography, diary and events** — rendered Markdown with `[[links]]`; click to edit, type `[[` to pick a note.
+- **Personality, appearance, biography, diary and events**: rendered Markdown with `[[links]]`; click to edit, type `[[` to pick a note.
 - **Rolls**: click any bonus to roll; Shift-click = advantage, Ctrl/Cmd-click = disadvantage. Uses the [Dice Roller](https://github.com/javalent/dice-roller) plugin when it is installed, a built-in roller otherwise.
 - **Initiative Tracker**: the sheet keeps `name`, `level`, `hp`, `ac` and `modifier` in the note's properties, which [Initiative Tracker](https://github.com/javalent/initiative-tracker) reads for players linked to a note.
+
+> The screenshots show content imported from the books the author owns. The plugin itself ships only the SRD 5.1; see [Rules data](#rules-data).
 
 ## Requirements
 

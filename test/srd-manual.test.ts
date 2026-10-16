@@ -83,3 +83,25 @@ test("switching modes keeps both sets of fields", () => {
   assert.equal(E.totalLevel(E.manualView(round)), 2);
   assert.equal(E.totalLevel(round), 4);
 });
+
+test("current HP never shows above the maximum", () => {
+  const s = E.newCharacter("Hp");
+  assert.equal(E.currentHp(s, 12), 12); // no value yet = full health
+  s.hp.current = 32;
+  assert.equal(E.currentHp(s, 7), 7);
+  s.hp.current = -3;
+  assert.equal(E.currentHp(s, 7), 0);
+  s.hp.current = 5;
+  assert.equal(E.currentHp(s, 7), 5);
+});
+
+test("extra Ability Score Improvements are flagged", () => {
+  const s = E.newCharacter("Asi");
+  const wizard = srd.classes.find((c: any) => c.name === "Wizard");
+  s.classes = [{ id: wizard.id, subclass: null, level: 1, hpRolls: [], skills: [] }];
+  s.feats = [{ id: E.ASI_ID, picks: ["int", "dex"] }];
+  assert.equal(E.asiSlots(r, s), 0);
+  assert.ok(E.pendingChoices(r, s).some((p) => /more than your class levels grant/.test(p)));
+  s.classes[0].level = 4;
+  assert.ok(!E.pendingChoices(r, s).some((p) => /more than your class levels grant|available/.test(p)));
+});

@@ -51,6 +51,12 @@ export class CharacterSheet extends MarkdownRenderChild {
   // ---------------------------------------------------------------- persistence
   private change(mutate: (s: CharState) => void, rerender = true) {
     mutate(this.s);
+    // a lower maximum (level down, CON down, manual edit) must not leave current HP above it
+    if (this.s.hp.current != null) {
+      const view = this.manual ? E.manualView(this.s) : this.s;
+      const max = this.manual ? this.s.manual.maxHp : E.hpBreakdown(this.r, view).max;
+      this.s.hp.current = E.currentHp(this.s, max);
+    }
     this.plugin.states.set(this.sourcePath, this.s);
     if (this.saveTimer) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => this.flush(), 500);
@@ -75,7 +81,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       fm.ac = man ? s0.manual.ac : E.armorClass(r, s, sc).value;
       fm.modifier = E.initiative(r, s, sc);
       fm.stats = ABILITIES.map((a) => sc[a].total);
-      if (s.image) fm.image = s.image;
+      if (s0.image) fm.image = s0.image; else delete fm.image;
       for (const k of Object.keys(fm)) if (fm[k] === undefined) delete fm[k];
     });
   }
@@ -157,11 +163,20 @@ export class CharacterSheet extends MarkdownRenderChild {
   private header(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
     const s = this.v, r = this.r;
     const head = root.createDiv({ cls: "dnd-header" });
-    const img = head.createDiv({ cls: "dnd-portrait", attr: { "aria-label": "Click to choose an image" } });
+    // the remove button sits outside the round portrait so the circle does not clip it
+    const pwrap = head.createDiv({ cls: "dnd-portrait-wrap" });
+    const img = pwrap.createDiv({ cls: "dnd-portrait", attr: { "aria-label": "Click to choose an image" } });
     const file = s.image ? this.app.vault.getAbstractFileByPath(s.image) : null;
     if (file instanceof TFile) img.createEl("img", { attr: { src: this.app.vault.getResourcePath(file) } });
     else img.createDiv({ cls: "dnd-portrait-empty", text: "＋ Image" });
-    img.onclick = () => new Picker(this.app, imageFiles(this.app), (f) => f.path, (f) => this.change((x) => { x.image = f.path; }), "Choose a portrait image…").open();
+    const removeImage = () => this.change((x) => { x.image = ""; });
+    img.onclick = () => {
+      // "No image" comes first in the list when there is an image to remove
+      const NONE = { path: "— No image —" } as unknown as TFile;
+      const items: TFile[] = s.image ? [NONE, ...imageFiles(this.app)] : imageFiles(this.app);
+      new Picker(this.app, items, (f) => f.path, (f) => (f === NONE ? removeImage() : this.change((x) => { x.image = f.path; })), "Choose a portrait image…").open();
+    };
+    if (s.image) iconButton(pwrap, "x", "Remove image", removeImage, "dnd-portrait-remove");
 
     const info = head.createDiv({ cls: "dnd-header-info" });
     textInput(info, s.name, (v) => this.change((x) => { x.name = v; }), "Character name", "dnd-name");
@@ -346,7 +361,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       // manual mode: AC, max HP and speed are typed in instead of computed
       const hp = man ? { max: m.maxHp } : E.hpBreakdown(r, s, sc);
       const ac = man ? { value: m.ac, how: "", stealthDisadvantage: false } : E.armorClass(r, s, sc);
-      const cur = s.hp.current ?? hp.max;
+      const cur = E.currentHp(s, hp.max);
       const stats = el.createDiv({ cls: "dnd-combat-stats" });
       const acBox = stats.createDiv({ cls: "dnd-stat" });
       acBox.createDiv({ cls: "dnd-stat-label", text: "Armor Class" });
@@ -540,8 +555,9 @@ export class CharacterSheet extends MarkdownRenderChild {
     }
     const s = this.v, r = this.r;
     const slots = E.asiSlots(r, s), taken = E.asiTaken(s);
-    this.section(root, "feats", `Feats & Ability Score Improvements${slots ? ` (${taken}/${slots})` : ""}`, (el) => {
-      if (slots) el.createDiv({ cls: taken > slots ? "dnd-warn" : "dnd-hint", text: `Your class levels grant ${slots} Ability Score Improvement(s). Each can be +2 to one ability, +1 to two, or a feat.` });
+    this.section(root, "feats", `Feats & Ability Score Improvements${slots || taken ? ` (${taken}/${slots})` : ""}`, (el) => {
+      if (taken > slots) el.createDiv({ cls: "dnd-warn", text: `${taken} Ability Score Improvement(s)/feat(s) used, but your class levels grant ${slots || "none yet"}. Remove the extra ones.` });
+      else if (slots) el.createDiv({ cls: "dnd-hint", text: `Your class levels grant ${slots} Ability Score Improvement(s). Each can be +2 to one ability, +1 to two, or a feat.` });
       s.feats.forEach((fe, i) => {
         const row = el.createDiv({ cls: "dnd-row" });
         if (fe.id === E.ASI_ID) {

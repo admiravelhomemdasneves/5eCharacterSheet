@@ -104,11 +104,21 @@
   border-bottom: 3px solid var(--dnd-accent);
 }
 .dnd-portrait {
-  flex: 0 0 132px; height: 132px; border-radius: 50%; overflow: hidden; cursor: pointer;
+  width: 132px; height: 132px; border-radius: 50%; overflow: hidden; cursor: pointer;
   border: 3px solid var(--dnd-rule); background: var(--background-secondary);
   display: flex; align-items: center; justify-content: center;
 }
 .dnd-portrait img { width: 100%; height: 100%; object-fit: cover; }
+.dnd-portrait-wrap { position: relative; flex: 0 0 132px; }
+.dnd-sheet .dnd-portrait-remove {
+  position: absolute; top: 2px; right: 2px; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--background-primary); border: 1px solid var(--dnd-rule); box-shadow: var(--shadow-s);
+  opacity: 0; transition: opacity 120ms ease-in-out;
+}
+.dnd-portrait-wrap:hover .dnd-portrait-remove, .dnd-sheet .dnd-portrait-remove:focus-visible { opacity: 1; }
+.dnd-sheet .dnd-portrait-remove:hover { color: var(--text-error); border-color: var(--text-error); }
+/* touch screens have no hover: keep the button visible */
+@media (hover: none) { .dnd-sheet .dnd-portrait-remove { opacity: 1; } }
 .dnd-portrait-empty { color: var(--text-muted); font-size: 0.85rem; }
 .dnd-header-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--dnd-s3); }
 .dnd-sheet .dnd-name {

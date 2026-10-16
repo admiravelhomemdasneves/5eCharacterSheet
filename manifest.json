@@ -1,7 +1,7 @@
 {
   "id": "fifth-edition-character-sheet",
   "name": "5e Character Sheet",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.4.0",
   "description": "Interactive fifth edition (2014 rules) character sheets: SRD 5.1 included, manual mode, optional import of your own data and compendium links.",
   "author": "Andre Santos",

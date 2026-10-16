@@ -280,6 +280,10 @@ export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s)
   const computed = Math.max(level, dice + con * level + racial + tough + draconic) + (s.hp.adjust || 0);
   return { dice, con: con * level, racial, tough, draconic, adjust: s.hp.adjust || 0, max: s.hp.override ?? computed };
 }
+/** Current HP, never above the maximum or below 0 (no current value yet = full health). */
+export function currentHp(s: CharState, max: number) {
+  return Math.max(0, Math.min(s.hp.current ?? max, max));
+}
 export function hitDice(r: Rules, s: CharState) {
   const by: Record<string, number> = {};
   s.classes.forEach((e) => { const hd = `d${r.cls(e.id)?.hd || 8}`; by[hd] = (by[hd] || 0) + e.level; });
@@ -497,6 +501,7 @@ export function pendingChoices(r: Rules, s: CharState): string[] {
   if (s.abilities.method === "pointbuy") { const pbs = pointBuySpent(s.abilities.base); if (!pbs.valid) out.push("Point buy is over 27 points or out of range (8–15)"); else if (pbs.remaining > 0) out.push(`${pbs.remaining} point-buy point(s) unspent`); }
   const free = asiSlots(r, s) - asiTaken(s);
   if (free > 0) out.push(`${free} Ability Score Improvement(s) available — add an ASI or a feat in Feats`);
+  if (free < 0) out.push(`${-free} Ability Score Improvement(s) or feat(s) more than your class levels grant — remove them in Feats`);
   s.feats.filter((f) => f.id === ASI_ID && f.picks.filter(Boolean).length < 2).forEach(() => out.push("Choose the abilities for your Ability Score Improvement"));
   const scores = abilityScores(r, s);
   for (const ci of casters(r, s, scores)) {
