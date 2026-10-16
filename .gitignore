@@ -1,0 +1,7 @@
+node_modules/
+dist/
+vendor/
+data/imported.json
+data/compendium-2014.json
+*.log
+local.config.json
