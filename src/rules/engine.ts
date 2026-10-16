@@ -26,18 +26,20 @@ export const FULL_CASTER_SLOTS: number[][] = [
 // ------------------------------------------------------------------ data types (from compendium-2014.json)
 export interface AbilityOption { label: string; fixed: Partial<Record<Ability, number>>; choose: { from: Ability[]; count: number; amount: number; distinct?: boolean }[] }
 export interface ProfList { fixed: string[]; choose: { from: string[] | "any"; count: number }[] }
-export interface Feature { name: string; level: number; source: string; text: string; link: string; optional?: boolean; subclassFeature?: boolean }
+export interface Feature { name: string; level: number; source: string; text: string; link: string | null; optional?: boolean; subclassFeature?: boolean }
 export interface Spellcasting { ability: Ability; progression: string; prepared?: string | null; cantrips?: number[] | null; known?: number[] | null; knownFixed?: number[] | null; list: string | null }
-export interface SubraceData { id: string; name: string; source: string; link: string; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Record<string, number> | null; darkvision: number | null; skills: ProfList; languages: string[]; resist: unknown[]; traits: { name: string; text: string }[]; spells: unknown; hpPerLevel: number }
-export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Record<string, number>; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; resist: unknown[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean }
-export interface SubclassData { id: string; name: string; shortName: string; source: string; link: string; features: Feature[]; spellcasting: Spellcasting | null; additionalSpells: AdditionalSpells[] | null }
-export interface ClassData { id: string; name: string; source: string; link: string; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[] }
-export interface BackgroundData { id: string; name: string; source: string; link: string; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; text: string; link?: string } | null }
-export interface FeatData { id: string; name: string; source: string; link: string; prereq: string; ability: AbilityOption[]; text: string }
-export interface SpellData { id: string; name: string; source: string; link: string; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; attack: boolean; save: string | null; damage: string[]; text: string }
-export interface ItemData { id: string; name: string; source: string; link: string; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number }
+/** speeds in feet; "walk" means "equal to your walking speed" */
+export type Speeds = Record<string, number | string>;
+export interface SubraceData { id: string; name: string; source: string; link: string | null; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Speeds | null; darkvision: number | null; skills: ProfList; languages: string[]; resist: unknown[]; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; hpPerLevel: number }
+export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Speeds; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; resist: unknown[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean }
+export interface SubclassData { id: string; name: string; shortName: string; source: string; link: string | null; features: Feature[]; spellcasting: Spellcasting | null; additionalSpells: AdditionalSpells[] | null }
+export interface ClassData { id: string; name: string; source: string; link: string | null; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number | null)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[] }
+export interface BackgroundData { id: string; name: string; source: string; link: string | null; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; heading?: string; text: string; link: string | null } | null; feats: unknown }
+export interface FeatData { id: string; name: string; source: string; link: string | null; prereq: string; ability: AbilityOption[]; text: string }
+export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; attack: boolean; save: string | null; damage: string[]; text: string }
+export interface ItemData { id: string; name: string; source: string; link: string | null; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number; baseItem: string | null }
 export type AdditionalSpells = { ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
-export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[] }
+export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[] }
 
 // ------------------------------------------------------------------ character state (stored in frontmatter `dnd`)
 export type ProfLevel = 0 | 1 | 2; // none / proficient / expertise
@@ -100,12 +102,20 @@ export function newCharacter(name = ""): CharState {
 // Fill in any fields missing from older/partial saved states.
 export function normalize(s: Partial<CharState> | null | undefined): CharState {
   const d = newCharacter();
-  const out = { ...d, ...(s || {}) } as CharState;
-  for (const k of ["raceAbility", "hp", "ac", "deathSaves", "slots", "coins", "proficiencies", "personality", "appearance", "ui"] as const) {
-    (out as any)[k] = { ...(d as any)[k], ...((s as any)?.[k] || {}) };
-  }
-  out.abilities = { ...d.abilities, ...(s?.abilities || {}) };
-  for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = { ...d.abilities[k], ...((s?.abilities as any)?.[k] || {}) };
+  const out: CharState = { ...d, ...(s || {}) };
+  const merge = <T extends object>(base: T, saved: Partial<T> | undefined): T => ({ ...base, ...(saved ?? {}) });
+  out.raceAbility = merge(d.raceAbility, s?.raceAbility);
+  out.hp = merge(d.hp, s?.hp);
+  out.ac = merge(d.ac, s?.ac);
+  out.deathSaves = merge(d.deathSaves, s?.deathSaves);
+  out.slots = merge(d.slots, s?.slots);
+  out.coins = merge(d.coins, s?.coins);
+  out.proficiencies = merge(d.proficiencies, s?.proficiencies);
+  out.personality = merge(d.personality, s?.personality);
+  out.appearance = merge(d.appearance, s?.appearance);
+  out.ui = merge(d.ui, s?.ui);
+  out.abilities = merge(d.abilities, s?.abilities);
+  for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);
   out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
   out.ui.editing = out.ui.editing || {};
   out.events = Array.isArray(out.events) ? out.events.map((e) => String(e ?? "")) : [];
@@ -116,8 +126,8 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   for (const a of ABILITIES) for (let n = 0; n < (out.abilities.asi[a] || 0); n++) legacy.push(a);
   for (let i = 0; i < legacy.length; i += 2) out.feats.push({ id: ASI_ID, picks: legacy.slice(i, i + 2) });
   out.abilities.asi = zeroAbilities();
-  out.slots.adjust = [...out.slots.adjust, ...Array(9).fill(0)].slice(0, 9);
-  out.slots.used = [...out.slots.used, ...Array(9).fill(0)].slice(0, 9);
+  out.slots.adjust = [...out.slots.adjust, ...Array<number>(9).fill(0)].slice(0, 9);
+  out.slots.used = [...out.slots.used, ...Array<number>(9).fill(0)].slice(0, 9);
   return out;
 }
 
@@ -232,7 +242,7 @@ export function asiTaken(s: CharState) {
 export function saveProficiencies(r: Rules, s: CharState): Record<Ability, ProfLevel> {
   const out = {} as Record<Ability, ProfLevel>;
   const first = s.classes[0] ? r.cls(s.classes[0].id) : null; // only the first class grants saves
-  for (const a of ABILITIES) out[a] = (s.saves[a] ?? (first?.saves.includes(a) ? 1 : 0)) as ProfLevel;
+  for (const a of ABILITIES) out[a] = s.saves[a] ?? (first?.saves.includes(a) ? 1 : 0);
   return out;
 }
 export function autoSkillSources(r: Rules, s: CharState): Record<string, string[]> {
@@ -250,7 +260,7 @@ export function autoSkillSources(r: Rules, s: CharState): Record<string, string[
 export function skillProficiencies(r: Rules, s: CharState): Record<string, ProfLevel> {
   const auto = autoSkillSources(r, s);
   const out: Record<string, ProfLevel> = {};
-  for (const k of Object.keys(SKILLS)) out[k] = (s.skills[k] ?? (auto[k] ? 1 : 0)) as ProfLevel;
+  for (const k of Object.keys(SKILLS)) out[k] = s.skills[k] ?? (auto[k] ? 1 : 0);
   return out;
 }
 export function skillBonus(r: Rules, s: CharState, skill: string, scores = abilityScores(r, s)) {
@@ -319,9 +329,12 @@ export function armorClass(r: Rules, s: CharState, scores = abilityScores(r, s))
 
 // ------------------------------------------------------------------ speed, initiative, senses, carrying
 export function speeds(r: Rules, s: CharState) {
-  const out: Record<string, number> = { ...(r.race(s)?.speed || { walk: 30 }), ...(r.subrace(s)?.speed || {}) };
-  for (const k of Object.keys(out)) if (typeof out[k] === "string") out[k] = out.walk; // "equal to walking speed"
-  out.walk = (out.walk || 30) + (s.speedAdjust || 0);
+  const raw: Speeds = { ...(r.race(s)?.speed || { walk: 30 }), ...(r.subrace(s)?.speed || {}) };
+  const walk = typeof raw.walk === "number" && raw.walk ? raw.walk : 30;
+  const out: Record<string, number> = {};
+  // a string value means "equal to your walking speed"
+  for (const [k, v] of Object.entries(raw)) out[k] = typeof v === "number" ? v : walk;
+  out.walk = walk + (s.speedAdjust || 0);
   const monk = s.classes.find((e) => r.cls(e.id)?.name === "Monk");
   if (monk) { const col = r.cls(monk.id)!.tableCols.find((c) => c.label === "Unarmored Movement"); const v = parseInt(String(col?.rows[monk.level - 1] ?? 0)); if (v) out.walk += v; }
   if (s.classes.some((e) => r.cls(e.id)?.name === "Barbarian" && e.level >= 5)) out.walk += 10;
@@ -360,16 +373,57 @@ export function classResources(r: Rules, s: CharState) {
   return out;
 }
 export function multiclassRequirementsMet(r: Rules, c: ClassData, scores: Record<Ability, AbilityBreakdown>) {
-  const req = c.multiclass?.requirements as any;
+  const req = c.multiclass?.requirements;
   if (!req || !Object.keys(req).length) return { ok: true, text: "" };
+  // { str: 13 } or { or: [{ str: 13 }, { dex: 13 }] }
+  const scoresOf = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k, v]) => ABILITIES.includes(k as Ability) && typeof v === "number")) as Record<string, number>;
   const check = (o: Record<string, number>) => Object.entries(o).every(([a, n]) => (scores[a as Ability]?.total || 0) >= n);
   const text = (o: Record<string, number>) => Object.entries(o).map(([a, n]) => `${a.toUpperCase()} ${n}`).join(" and ");
-  if (req.or) return { ok: req.or.some(check), text: req.or.map(text).join(" or ") };
-  const plain = Object.fromEntries(Object.entries(req).filter(([k]) => ABILITIES.includes(k as Ability))) as Record<string, number>;
+  if (Array.isArray(req.or)) {
+    const alternatives = (req.or as Record<string, unknown>[]).map(scoresOf);
+    return { ok: alternatives.some(check), text: alternatives.map(text).join(" or ") };
+  }
+  const plain = scoresOf(req);
   return { ok: check(plain), text: text(plain) };
 }
 
 // ------------------------------------------------------------------ spellcasting
+/**
+ * Evaluates the small arithmetic formulas 5etools uses for prepared spells, once the level and
+ * modifiers are filled in (e.g. "5 / 2 + 3"): integers, + - * / and parentheses; division rounds
+ * down, as in the rules. Returns null for anything else. No eval.
+ */
+export function evalFormula(expr: string): number | null {
+  const tokens = expr.match(/\d+|[-+*/()]|\S/g) || [];
+  let i = 0;
+  const peek = () => tokens[i];
+  const factor = (): number | null => {
+    const t = tokens[i++];
+    if (t === "-") { const v = factor(); return v == null ? null : -v; }
+    if (t === "(") { const v = sum(); return tokens[i++] === ")" ? v : null; }
+    return t != null && /^\d+$/.test(t) ? parseInt(t) : null;
+  };
+  const product = (): number | null => {
+    let v = factor();
+    while (v != null && (peek() === "*" || peek() === "/")) {
+      const op = tokens[i++], r = factor();
+      if (r == null || (op === "/" && r === 0)) return null;
+      v = op === "*" ? v * r : Math.floor(v / r);
+    }
+    return v;
+  };
+  const sum = (): number | null => {
+    let v = product();
+    while (v != null && (peek() === "+" || peek() === "-")) {
+      const op = tokens[i++], r = product();
+      if (r == null) return null;
+      v = op === "+" ? v + r : v - r;
+    }
+    return v;
+  };
+  const v = sum();
+  return v != null && i === tokens.length ? Math.floor(v) : null;
+}
 export interface CasterInfo { key: string; name: string; ability: Ability; dc: number; attack: number; prepared: number | null; cantrips: number | null; known: number | null; list: string | null; classId: string }
 export function casters(r: Rules, s: CharState, scores = abilityScores(r, s)): CasterInfo[] {
   const pb = proficiencyBonus(totalLevel(s));
@@ -384,8 +438,8 @@ export function casters(r: Rules, s: CharState, scores = abilityScores(r, s)): C
     const m = mod(scores[sc.ability].total);
     let prepared: number | null = null;
     if (sc.prepared) {
-      const expr = sc.prepared.replace(/<\$level\$>/g, String(e.level)).replace(/<\$(\w+)_mod\$>/g, (_, a) => String(mod(scores[a as Ability]?.total ?? 10)));
-      const v = /^[\d\s+\-*/().]+$/.test(expr) ? Math.floor(Function(`return (${expr.replace(/(\d+)\s*\/\s*(\d+)/g, "Math.floor($1/$2)")})`)()) : null;
+      const expr = sc.prepared.replace(/<\$level\$>/g, String(e.level)).replace(/<\$(\w+)_mod\$>/g, (_m: string, a: string) => String(mod(scores[a as Ability]?.total ?? 10)));
+      const v = evalFormula(expr);
       prepared = v == null ? null : Math.max(1, v);
     }
     const cantrips = sc.cantrips?.[e.level - 1] ?? null;
@@ -408,7 +462,7 @@ export function spellSlots(r: Rules, s: CharState) {
     else if (prog === "1/2") casterLevel += single ? (e.level >= 2 ? Math.ceil(e.level / 2) : 0) : Math.floor(e.level / 2);
     else if (prog === "1/3") casterLevel += single ? (e.level >= 3 ? Math.ceil(e.level / 3) : 0) : Math.floor(e.level / 3);
   }
-  const base = [...(FULL_CASTER_SLOTS[Math.min(20, casterLevel)] || []), ...Array(9).fill(0)].slice(0, 9);
+  const base = [...(FULL_CASTER_SLOTS[Math.min(20, casterLevel)] || []), ...Array<number>(9).fill(0)].slice(0, 9);
   const max = base.map((n, i) => Math.max(0, n + (s.slots.adjust[i] || 0)));
   // Warlock pact magic
   let pact: { slots: number; level: number } | null = null;
@@ -433,11 +487,12 @@ export function grantedSpells(r: Rules, s: CharState): { id: string; why: string
   };
   for (const e of s.classes) {
     const sub = r.subclass(e);
-    for (const a of sub?.additionalSpells || []) take(a.prepared as any, e.level, sub!.shortName);
+    if (sub) for (const a of sub.additionalSpells || []) take(a.prepared, e.level, sub.shortName);
   }
   const lvl = totalLevel(s);
   const race = r.race(s), sub = r.subrace(s);
-  for (const a of ((sub?.spells as AdditionalSpells[]) || race?.spells || [])) take({ ...(a.known as any), ...(a.innate as any) }, lvl, (sub || race)!.name);
+  const owner = sub?.name ?? race?.name ?? "";
+  for (const a of sub?.spells || race?.spells || []) take({ ...a.known, ...a.innate }, lvl, owner);
   const seen = new Set<string>();
   return out.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
 }

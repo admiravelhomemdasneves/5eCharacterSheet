@@ -2,7 +2,7 @@ import { MarkdownRenderChild, MarkdownRenderer, Notice, TFile } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import * as E from "../rules/engine";
 import { ABILITIES, ABILITY_NAMES, Ability, CharState, fmtMod, mod } from "../rules/engine";
-import { button, checkbox, iconButton, imageFiles, labeled, Picker, RichOpt, richSelect, select, stepper, textArea, textInput } from "./widgets";
+import { button, checkbox, iconButton, imageFiles, labeled, Picker, RichOpt, richSelect, select, stepper, textInput } from "./widgets";
 import { d20, roll } from "./dice";
 import { isD20, withAdvantage } from "../rules/roll";
 
@@ -28,10 +28,10 @@ export class CharacterSheet extends MarkdownRenderChild {
     const file = this.file();
     const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : null;
     // in-memory copy wins over the metadata cache, which lags behind our own writes
-    this.s = E.normalize(this.plugin.states.get(this.sourcePath) ?? fm?.dnd ?? { name: file?.basename ?? "" });
+    this.s = E.normalize(this.plugin.states.get(this.sourcePath) ?? (fm?.dnd as Partial<CharState> | undefined) ?? { name: file?.basename ?? "" });
     if (!this.s.name && file) this.s.name = file.basename;
     this.render();
-    if (file) this.migrateBody(file);
+    if (file) void this.migrateBody(file);
   }
   // Move the old "## Biography" / "## Notes" note sections into the Biography & Diary box (once)
   private async migrateBody(file: TFile) {
@@ -43,7 +43,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     });
     await this.app.vault.process(file, (text) => E.extractLegacySections(text)?.text ?? text);
   }
-  onunload() { this.plugin.sheets.delete(this); if (this.saveTimer) { window.clearTimeout(this.saveTimer); this.flush(); } }
+  onunload() { this.plugin.sheets.delete(this); if (this.saveTimer) { window.clearTimeout(this.saveTimer); void this.flush(); } }
 
   private get app() { return this.plugin.app; }
   private file() { const f = this.app.vault.getAbstractFileByPath(this.sourcePath); return f instanceof TFile ? f : null; }
@@ -59,7 +59,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     }
     this.plugin.states.set(this.sourcePath, this.s);
     if (this.saveTimer) window.clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => this.flush(), 500);
+    this.saveTimer = window.setTimeout(() => { void this.flush(); }, 500);
     if (rerender) this.render();
   }
   private async flush() {
@@ -69,8 +69,8 @@ export class CharacterSheet extends MarkdownRenderChild {
     const s0 = this.s, r = this.r, man = this.manual;
     const s = man ? E.manualView(s0) : s0;
     const sc = E.abilityScores(r, s);
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
-      fm.dnd = JSON.parse(JSON.stringify(s0));
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+      fm.dnd = JSON.parse(JSON.stringify(s0)) as CharState;
       // flat keys for Dataview, Initiative Tracker (players) and Fantasy Statblocks
       fm.name = s.name || file.basename;
       fm.player = s.player || undefined;
@@ -131,13 +131,13 @@ export class CharacterSheet extends MarkdownRenderChild {
   private link(parent: HTMLElement, text: string, target: string | null | undefined, cls = "") {
     if (!target) return parent.createSpan({ text, cls });
     const a = parent.createEl("a", { text, cls: `internal-link ${cls}`, href: target, attr: { "data-href": target } });
-    a.addEventListener("click", (e) => { e.preventDefault(); this.app.workspace.openLinkText(target, this.sourcePath, e.ctrlKey || e.metaKey); });
+    a.addEventListener("click", (e) => { e.preventDefault(); void this.app.workspace.openLinkText(target, this.sourcePath, e.ctrlKey || e.metaKey); });
     a.addEventListener("mouseover", (e) => this.app.workspace.trigger("hover-link", { event: e, source: "preview", hoverParent: this, targetEl: a, linktext: target, sourcePath: this.sourcePath }));
     return a;
   }
   private md(parent: HTMLElement, text: string) {
     const el = parent.createDiv({ cls: "dnd-md" });
-    MarkdownRenderer.render(this.app, this.plugin.linker.text(text), el, this.sourcePath, this);
+    void MarkdownRenderer.render(this.app, this.plugin.linker.text(text), el, this.sourcePath, this);
     return el;
   }
   private rollable(parent: HTMLElement, text: string, formula: string, label: string, cls = "") {
@@ -147,7 +147,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       e.stopPropagation();
       // Shift = advantage, Ctrl/Cmd = disadvantage (d20 rolls only)
       const mode = !isD20(formula) ? "normal" : e.shiftKey ? "adv" : e.ctrlKey || e.metaKey ? "dis" : "normal";
-      roll(this.app, withAdvantage(formula, mode), label + (mode === "adv" ? " (advantage)" : mode === "dis" ? " (disadvantage)" : ""));
+      void roll(this.app, withAdvantage(formula, mode), label + (mode === "adv" ? " (advantage)" : mode === "dis" ? " (disadvantage)" : ""));
     };
     return b;
   }
@@ -172,9 +172,8 @@ export class CharacterSheet extends MarkdownRenderChild {
     const removeImage = () => this.change((x) => { x.image = ""; });
     img.onclick = () => {
       // "No image" comes first in the list when there is an image to remove
-      const NONE = { path: "— No image —" } as unknown as TFile;
-      const items: TFile[] = s.image ? [NONE, ...imageFiles(this.app)] : imageFiles(this.app);
-      new Picker(this.app, items, (f) => f.path, (f) => (f === NONE ? removeImage() : this.change((x) => { x.image = f.path; })), "Choose a portrait image…").open();
+      const items: (TFile | null)[] = s.image ? [null, ...imageFiles(this.app)] : imageFiles(this.app);
+      new Picker<TFile | null>(this.app, items, (f) => (f ? f.path : "— No image —"), (f) => (f ? this.change((x) => { x.image = f.path; }) : removeImage()), "Choose a portrait image…").open();
     };
     if (s.image) iconButton(pwrap, "x", "Remove image", removeImage, "dnd-portrait-remove");
 
@@ -267,7 +266,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       placeholder, disabled, cls,
       hover: (ev, target, link) => this.app.workspace.trigger("hover-link", { event: ev, source: "preview", hoverParent: this, targetEl: target, linktext: link, sourcePath: this.sourcePath }),
       // close any preview still open when the menu closes (e.g. after picking an option)
-      onClose: () => (this as any).hoverPopover?.hide?.(),
+      onClose: () => (this as { hoverPopover?: { hide?: () => void } | null }).hoverPopover?.hide?.(),
     });
   }
   private sourceName(src: string) { return this.r.data.meta.sources[src] || src; }
@@ -323,7 +322,7 @@ export class CharacterSheet extends MarkdownRenderChild {
         { value: "pointbuy", label: "Point Buy (27)" }, { value: "standard", label: "Standard Array" },
         { value: "roll", label: "Roll 4d6 (drop lowest)" }, { value: "manual", label: "Manual" },
       ], s.abilities.method, (v) => this.change((x) => {
-        x.abilities.method = (v || "manual") as any;
+        x.abilities.method = (v || "manual") as CharState["abilities"]["method"];
         if (v === "pointbuy") x.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
       }));
       if (s.abilities.method === "pointbuy") {
@@ -404,7 +403,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       const hdEl = labeled(hpGrid, "Hit Dice used");
       stepper(hdEl, s.hitDiceUsed, (v) => this.change((x) => { x.hitDiceUsed = v; }), { min: 0, max: hdTotal, total: hdTotal, title: Object.entries(hd).map(([d, n]) => `${n}${d}`).join(" + ") });
       button(labeled(hpGrid, "Rest"), "Long Rest", () => this.change((x) => {
-        x.hp.current = hp.max; x.hp.temp = 0; x.slots.used = Array(9).fill(0); x.slots.pactUsed = 0;
+        x.hp.current = hp.max; x.hp.temp = 0; x.slots.used = Array<number>(9).fill(0); x.slots.pactUsed = 0;
         x.hitDiceUsed = Math.max(0, x.hitDiceUsed - Math.max(1, Math.floor(hdTotal / 2))); x.resources = {}; x.deathSaves = { success: 0, fail: 0 };
         if (x.exhaustion > 0) x.exhaustion -= 1;
       }), "dnd-rest-btn");
@@ -454,7 +453,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       });
       const race = r.race(s);
       const rc = race?.skills.choose[0];
-      if (rc) this.choiceChips(el, `${race!.name}: choose ${rc.count}`, rc.from === "any" ? Object.keys(E.SKILLS) : rc.from, s.raceSkills, rc.count, (v) => this.change((x) => { x.raceSkills = v; }));
+      if (rc) this.choiceChips(el, `${race.name}: choose ${rc.count}`, rc.from === "any" ? Object.keys(E.SKILLS) : rc.from, s.raceSkills, rc.count, (v) => this.change((x) => { x.raceSkills = v; }));
     });
   }
   private choiceChips(parent: HTMLElement, label: string, from: string[], chosen: string[], count: number, set: (v: string[]) => void) {
@@ -658,7 +657,9 @@ export class CharacterSheet extends MarkdownRenderChild {
         tr.createEl("td", { text: sp.school });
         tr.createEl("td", { text: sp.time });
         tr.createEl("td", { text: sp.range });
-        tr.createEl("td", { text: [sp.concentration ? "C" : "", sp.ritual ? "R" : ""].filter(Boolean).join(" "), attr: { "aria-label": "C = concentration, R = ritual" } });
+        const cr = tr.createEl("td");
+        if (sp.concentration) cr.createSpan({ text: "C ", attr: { "aria-label": "Concentration" } });
+        if (sp.ritual) cr.createSpan({ text: "R", attr: { "aria-label": "Ritual" } });
         const from = tr.createEl("td");
         if (row.granted) from.setText(row.granted);
         else if (casters.length > 1) select(from, casters.map((c) => ({ value: c.classId, label: c.name })), row.entry.source || "", (v) => this.change((x) => { const e = x.spells.find((y) => y.id === sp.id); if (e) e.source = v; }), "—");
@@ -845,12 +846,12 @@ export class CharacterSheet extends MarkdownRenderChild {
       if (value.trim()) this.md(v, value); else v.createSpan({ cls: "dnd-placeholder", text: o.placeholder });
       v.addEventListener("click", (e) => {
         const a = (e.target as HTMLElement).closest("a");
-        if (a?.hasClass("internal-link")) { e.preventDefault(); this.app.workspace.openLinkText(a.getAttr("data-href") || a.getText(), this.sourcePath, e.ctrlKey || e.metaKey); return; }
+        if (a?.hasClass("internal-link")) { e.preventDefault(); void this.app.workspace.openLinkText(a.getAttr("data-href") || a.getText(), this.sourcePath, e.ctrlKey || e.metaKey); return; }
         if (a) return; // external links open normally
         edit();
       });
       v.addEventListener("mouseover", (e) => {
-        const a = (e.target as HTMLElement).closest("a.internal-link") as HTMLElement | null;
+        const a = (e.target as HTMLElement).closest<HTMLElement>("a.internal-link");
         if (a) this.app.workspace.trigger("hover-link", { event: e, source: "preview", hoverParent: this, targetEl: a, linktext: a.getAttr("data-href") || a.getText(), sourcePath: this.sourcePath });
       });
     };

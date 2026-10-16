@@ -1,4 +1,4 @@
-import { Modal, Notice, Plugin, Setting, normalizePath } from "obsidian";
+import { Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } from "obsidian";
 import { CharState, Compendium, Rules, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo } from "./data/links";
@@ -35,7 +35,7 @@ export default class CharacterSheetPlugin extends Plugin {
   get manual() { return this.rules.data.races.length === 0 && this.rules.data.classes.length === 0; }
 
   async onload() {
-    this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) || {}) };
+    this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<SheetSettings> | null) };
     this.addSettingTab(new SheetSettingTab(this.app, this));
 
     for (const lang of BLOCKS) {
@@ -61,12 +61,12 @@ export default class CharacterSheetPlugin extends Plugin {
       if (this.settings.dataSource === "srd") data = structuredClone(srdData as unknown as Compendium);
       else if (this.settings.dataSource === "imported") {
         const file = normalizePath(`${this.manifest.dir}/data/imported.json`);
-        if (await this.app.vault.adapter.exists(file)) data = JSON.parse(await this.app.vault.adapter.read(file));
-        else new Notice("5e Character Sheet: no imported data yet — import it in the plugin settings.");
+        if (await this.app.vault.adapter.exists(file)) data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;
+        else new Notice("No imported rules data yet. Import it in the plugin settings.");
       }
     } catch (e) {
       console.error("5e Character Sheet: could not load rules data", e);
-      new Notice("5e Character Sheet: could not load the rules data; sheets are in manual mode.");
+      new Notice("Could not load the rules data, so the sheets are in manual mode.");
       data = EMPTY;
     }
     this.linker = this.buildLinker();
@@ -79,15 +79,18 @@ export default class CharacterSheetPlugin extends Plugin {
     const root = normalizePath(this.settings.compendiumFolder.trim() || "/");
     if (root === "/") return new Linker(null, []);
     const notes: NoteInfo[] = [];
-    for (const f of this.app.vault.getMarkdownFiles()) {
-      if (!f.path.startsWith(`${root}/compendium/`)) continue;
-      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
-      if (!fm) continue;
-      const alias = Array.isArray(fm.aliases) ? fm.aliases[0] : fm.aliases;
-      const tags: string[] = Array.isArray(fm.tags) ? fm.tags : fm.tags ? [fm.tags] : [];
+    // only the compendium folder is read, not the rest of the vault
+    const folder = this.app.vault.getAbstractFileByPath(`${root}/compendium`);
+    if (!(folder instanceof TFolder)) return new Linker(root, notes);
+    Vault.recurseChildren(folder, (f) => {
+      if (!(f instanceof TFile) || f.extension !== "md") return;
+      const fm: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      if (!fm) return;
+      const alias: unknown = Array.isArray(fm.aliases) ? (fm.aliases as unknown[])[0] : fm.aliases;
+      const tags: unknown[] = Array.isArray(fm.tags) ? (fm.tags as unknown[]) : fm.tags ? [fm.tags] : [];
       const source = tags.map((t) => String(t).match(/compendium\/src\/5e\/([a-z0-9-]+)/)?.[1]).find(Boolean);
-      if (alias && source) notes.push({ path: f.path.replace(/\.md$/, ""), alias: String(alias), source });
-    }
+      if ((typeof alias === "string" || typeof alias === "number") && source) notes.push({ path: f.path.replace(/\.md$/, ""), alias: String(alias), source });
+    });
     return new Linker(root, notes);
   }
 
@@ -108,7 +111,7 @@ export default class CharacterSheetPlugin extends Plugin {
       const linker = this.settings.importOnlyWithNotes ? this.buildLinker() : null;
       if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
       const data = await buildCompendium({
-        read: async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))),
+        read: async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown,
         rules2014Only: this.settings.importRules2014 && !this.settings.importOnlyWithNotes,
         keep: linker ? (kind, name, source) => linker.has(kind, name, source) : undefined,
       });

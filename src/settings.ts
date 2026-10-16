@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, SettingDefinitionItem } from "obsidian";
 import type CharacterSheetPlugin from "./main";
 import srdData from "../data/srd-5.1.json";
 
@@ -20,52 +20,94 @@ export const DEFAULT_SETTINGS: SheetSettings = {
   fivetoolsPath: "", importRules2014: true, importOnlyWithNotes: false, lastImport: "",
 };
 
+// Texts shared by both settings UIs below
+const T = {
+  charactersFolder: ["Characters folder", "Optional. Folder suggested for new characters. Leave empty to use the last folder you created a character in (the vault root the first time)."],
+  dataSource: ["Rules data", "Without rules data the sheet works in manual mode: you type races, classes, features, spells and values yourself, and only simple maths (modifiers, proficiency, saves, skills and spellcasting) is automatic."],
+  fivetoolsPath: ["Folder with 5etools data", "Used by the import. A folder inside this vault with the data files of a 5etools copy you are entitled to use (it contains races.json). A hidden folder such as .5etools/data keeps them out of your file list and search."],
+  rules2014: ["Only 2014 rules", "Leave out the 2024 core rulebooks and other 2024-edition entries when importing."],
+  onlyNotes: ["Only entries with a note", "Import only what has a note in your compendium folder, so the menus match it exactly. Overrides the option above."],
+  importNow: ["Import", "Convert the data now. The result is stored in this plugin's folder."],
+  compendium: ["Compendium folder", "Optional, only for links. The folder that contains the \"compendium\" and \"rules\" folders of your compendium notes. Races, classes, spells, items and features then link to their notes."],
+  license: ["SRD license", ""],
+} as const;
+const SOURCE_OPTIONS: Record<SheetSettings["dataSource"], string> = { none: "None (manual mode)", srd: "SRD 5.1 (included)", imported: "Imported from 5etools" };
+const attribution = (srdData as { meta: { attribution?: string } }).meta.attribution || "";
+
 export class SheetSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: CharacterSheetPlugin) { super(app, plugin); }
 
+  private importStatus() { return this.plugin.settings.lastImport ? `Last import: ${this.plugin.settings.lastImport}` : "Not imported yet."; }
+
+  // Obsidian 1.13+: declarative settings, also searchable from the settings search
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      { type: "group", heading: "Characters", items: [
+        { name: T.charactersFolder[0], desc: T.charactersFolder[1], control: { type: "folder", key: "charactersFolder", placeholder: "Last used folder", includeRoot: true } },
+      ] },
+      { type: "group", heading: "Rules", items: [
+        { name: T.dataSource[0], desc: T.dataSource[1], control: { type: "dropdown", key: "dataSource", options: SOURCE_OPTIONS } },
+        { name: T.license[0], desc: attribution },
+      ] },
+      { type: "group", heading: "Import from 5etools", items: [
+        { name: T.fivetoolsPath[0], desc: T.fivetoolsPath[1], control: { type: "text", key: "fivetoolsPath", placeholder: ".5etools/data" } },
+        { name: T.rules2014[0], desc: T.rules2014[1], control: { type: "toggle", key: "importRules2014" } },
+        { name: T.onlyNotes[0], desc: T.onlyNotes[1], control: { type: "toggle", key: "importOnlyWithNotes" } },
+        {
+          name: T.importNow[0], desc: T.importNow[1],
+          render: (setting) => {
+            setting.setDesc(this.importStatus());
+            setting.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => {
+              await this.plugin.importFiveTools();
+              setting.setDesc(this.importStatus());
+            }));
+          },
+        },
+      ] },
+      { type: "group", heading: "Compendium", items: [
+        { name: T.compendium[0], desc: T.compendium[1], control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
+      ] },
+    ];
+  }
+  getControlValue(key: string): unknown {
+    return (this.plugin.settings as unknown as Record<string, unknown>)[key];
+  }
+  async setControlValue(key: string, value: unknown) {
+    (this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
+    // these two change what the sheets show, so reload the rules data and links
+    if (key === "dataSource" || key === "compendiumFolder") await this.plugin.saveSettings();
+    else await this.plugin.saveData(this.plugin.settings);
+  }
+
+  // Obsidian before 1.13: the same settings built by hand
   display() {
     const { containerEl } = this;
     const st = this.plugin.settings;
-    const save = async (redraw = false) => { await this.plugin.saveSettings(); if (redraw) this.display(); };
     containerEl.empty();
 
     new Setting(containerEl).setName("Characters").setHeading();
-    new Setting(containerEl).setName("Characters folder")
-      .setDesc("Optional. Folder suggested for new characters. Leave empty to use the last folder you created a character in (the vault root the first time).")
+    new Setting(containerEl).setName(T.charactersFolder[0]).setDesc(T.charactersFolder[1])
       .addText((t) => t.setPlaceholder("Last used folder").setValue(st.charactersFolder).onChange(async (v) => { st.charactersFolder = v; await this.plugin.saveData(st); }));
 
-    new Setting(containerEl).setName("Rules data").setHeading();
-    new Setting(containerEl).setName("Rules data source")
-      .setDesc("Without rules data the sheet works in manual mode: you type races, classes, features, spells and values yourself; only simple maths (modifiers, proficiency, saves, skills, spell DC) is automatic.")
-      .addDropdown((d) => d
-        .addOption("none", "None (manual mode)")
-        .addOption("srd", "SRD 5.1 (included)")
-        .addOption("imported", "Imported from 5etools")
-        .setValue(st.dataSource)
-        .onChange(async (v) => { st.dataSource = v as SheetSettings["dataSource"]; await save(true); }));
+    new Setting(containerEl).setName("Rules").setHeading();
+    new Setting(containerEl).setName(T.dataSource[0]).setDesc(T.dataSource[1])
+      .addDropdown((d) => d.addOptions(SOURCE_OPTIONS).setValue(st.dataSource)
+        .onChange(async (v) => { st.dataSource = v as SheetSettings["dataSource"]; await this.plugin.saveSettings(); }));
+    new Setting(containerEl).setName(T.license[0]).setDesc(attribution);
 
-    if (st.dataSource === "srd") {
-      containerEl.createEl("p", { cls: "setting-item-description", text: (srdData as { meta: { attribution?: string } }).meta.attribution || "" });
-    }
-    if (st.dataSource === "imported") {
-      new Setting(containerEl).setName("5etools data folder")
-        .setDesc("Folder inside this vault with the \"data\" files of a 5etools copy you are entitled to use (it contains races.json). A hidden folder such as .5etools/data keeps them out of your file list and search.")
-        .addText((t) => t.setPlaceholder(".5etools/data").setValue(st.fivetoolsPath).onChange(async (v) => { st.fivetoolsPath = v; await this.plugin.saveData(st); }));
-      new Setting(containerEl).setName("2014 rules only")
-        .setDesc("Leave out the 2024 core books (Player's Handbook 2024, Dungeon Master's Guide 2024, Monster Manual 2025) and other 2024-edition entries.")
-        .addToggle((t) => t.setValue(st.importRules2014).onChange(async (v) => { st.importRules2014 = v; await this.plugin.saveData(st); }));
-      new Setting(containerEl).setName("Only entries with a compendium note")
-        .setDesc("Import only what has a note in your compendium folder, so the menus match it exactly. Overrides \"2014 rules only\".")
-        .addToggle((t) => t.setValue(st.importOnlyWithNotes).onChange(async (v) => { st.importOnlyWithNotes = v; await this.plugin.saveData(st); }));
-      new Setting(containerEl).setName("Import")
-        .setDesc(st.lastImport ? `Last import: ${st.lastImport}` : "Not imported yet.")
-        .addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => { await this.plugin.importFiveTools(); this.display(); }));
-    }
+    new Setting(containerEl).setName("Import from 5etools").setHeading();
+    new Setting(containerEl).setName(T.fivetoolsPath[0]).setDesc(T.fivetoolsPath[1])
+      .addText((t) => t.setPlaceholder(".5etools/data").setValue(st.fivetoolsPath).onChange(async (v) => { st.fivetoolsPath = v; await this.plugin.saveData(st); }));
+    new Setting(containerEl).setName(T.rules2014[0]).setDesc(T.rules2014[1])
+      .addToggle((t) => t.setValue(st.importRules2014).onChange(async (v) => { st.importRules2014 = v; await this.plugin.saveData(st); }));
+    new Setting(containerEl).setName(T.onlyNotes[0]).setDesc(T.onlyNotes[1])
+      .addToggle((t) => t.setValue(st.importOnlyWithNotes).onChange(async (v) => { st.importOnlyWithNotes = v; await this.plugin.saveData(st); }));
+    const imp = new Setting(containerEl).setName(T.importNow[0]).setDesc(this.importStatus());
+    imp.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => { await this.plugin.importFiveTools(); imp.setDesc(this.importStatus()); }));
 
     new Setting(containerEl).setName("Compendium").setHeading();
-    new Setting(containerEl).setName("Compendium folder")
-      .setDesc("Optional, only for links. A folder generated by ttrpg-convert-cli (it contains \"compendium\" and \"rules\"). Races, classes, spells, items and features then link to their notes.")
-      .addText((t) => t.setPlaceholder("e.g. Resources/Compendium").setValue(st.compendiumFolder).onChange(async (v) => { st.compendiumFolder = v; await this.plugin.saveData(st); }))
-      .addButton((b) => b.setButtonText("Apply").onClick(async () => { await save(); }));
+    new Setting(containerEl).setName(T.compendium[0]).setDesc(T.compendium[1])
+      .addText((t) => t.setPlaceholder("Compendium").setValue(st.compendiumFolder).onChange(async (v) => { st.compendiumFolder = v; await this.plugin.saveData(st); }))
+      .addButton((b) => b.setButtonText("Apply").onClick(async () => { await this.plugin.saveSettings(); }));
   }
 }

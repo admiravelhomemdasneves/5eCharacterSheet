@@ -105,3 +105,13 @@ test("extra Ability Score Improvements are flagged", () => {
   s.classes[0].level = 4;
   assert.ok(!E.pendingChoices(r, s).some((p) => /more than your class levels grant|available/.test(p)));
 });
+
+test("prepared-spell formulas are evaluated without eval", () => {
+  assert.equal(E.evalFormula("5 + 3"), 8);
+  assert.equal(E.evalFormula("5 / 2 + 3"), 5); // half level rounded down + modifier
+  assert.equal(E.evalFormula("1 + -1"), 0);
+  assert.equal(E.evalFormula("(4 + 2) * 2"), 12);
+  assert.equal(E.evalFormula("3 / 0"), null);
+  assert.equal(E.evalFormula("alert(1)"), null);
+  assert.equal(E.evalFormula("2 +"), null);
+});

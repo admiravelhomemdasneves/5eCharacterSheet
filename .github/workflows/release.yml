@@ -1,11 +1,16 @@
 # Builds the plugin when a version tag (e.g. 1.0.0) is pushed and attaches the files
 # Obsidian installs (main.js, manifest.json, styles.css) to a draft GitHub release.
+# The files get a signed build provenance attestation, so anyone can verify they were
+# built from this repository: gh attestation verify main.js --repo <owner>/<repo>
 name: Release
 on:
   push:
     tags: ["*"]
 permissions:
-  contents: write
+  contents: write     # create the release
+  id-token: write     # sign the attestation
+  attestations: write # store the attestation
+  artifact-metadata: write # link the attestation to the release files
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,8 +20,16 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/main.js
+            dist/manifest.json
+            dist/styles.css
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -64,7 +64,7 @@ export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string |
     const styleObserver = new MutationObserver((muts) => muts.forEach((m) => placePreview(m.target as HTMLElement)));
     const bodyObserver = new MutationObserver((muts) => {
       for (const m of muts) m.addedNodes.forEach((n) => {
-        if (!(n instanceof HTMLElement) || !n.matches(".popover.hover-popover") || watched.has(n)) return;
+        if (!n.instanceOf(HTMLElement) || !n.matches(".popover.hover-popover") || watched.has(n)) return;
         watched.add(n);
         placePreview(n);
         styleObserver.observe(n, { attributes: true, attributeFilter: ["style"] }); // Obsidian re-positions after loading content
