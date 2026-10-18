@@ -179,11 +179,18 @@ export const totalLevel = (s: CharState) => s.classes.reduce((a, c) => a + (c.le
 export const proficiencyBonus = (level: number) => Math.ceil(Math.max(1, level) / 4) + 1;
 export const levelForXp = (xp: number) => { let l = 1; XP_THRESHOLDS.forEach((t, i) => { if (xp >= t) l = i + 1; }); return l; };
 
-// Racial ability option in use (subrace may overwrite the race's)
+// Racial ability options: the subrace's replace the race's when it overwrites them, otherwise each race
+// option is combined with each subrace option (fixed bonuses added, choices appended after the race's,
+// so picks saved before subrace choices were supported keep their positions)
 export function raceAbilityOptions(r: Rules, s: CharState): AbilityOption[] {
-  const sub = r.subrace(s);
-  if (sub?.ability && sub.overwriteAbility) return sub.ability;
-  return r.race(s)?.ability || [];
+  const sub = r.subrace(s), raceOpts = r.race(s)?.ability || [];
+  if (!sub?.ability?.length) return raceOpts;
+  if (sub.overwriteAbility || !raceOpts.length) return sub.ability;
+  return raceOpts.flatMap((ro) => sub.ability!.map((so) => {
+    const fixed = { ...ro.fixed };
+    for (const [k, v] of Object.entries(so.fixed)) fixed[k as Ability] = (fixed[k as Ability] || 0) + (v || 0);
+    return { label: [ro.label, so.label].filter(Boolean).join(", "), fixed, choose: [...ro.choose, ...so.choose] };
+  }));
 }
 /** `feature` = increases from class features. Scores are not capped: `max` is the ability's maximum
  *  (20, or more from features like Primal Champion) and `over` flags a total above it. */
@@ -215,8 +222,6 @@ export function abilityScores(r: Rules, s: CharState): Record<Ability, AbilityBr
     let i = 0;
     for (const ch of opt.choose) for (let n = 0; n < ch.count; n++, i++) { const a = s.raceAbility.picks[i]; if (a) raceBonus[a] += ch.amount; }
   }
-  const sub = r.subrace(s);
-  if (sub?.ability && !sub.overwriteAbility) for (const [k, v] of Object.entries(sub.ability[0]?.fixed || {})) raceBonus[k as Ability] += v || 0;
   const featBonus = zeroAbilities();
   const asiBonus = zeroAbilities();
   for (const fe of s.feats) {
