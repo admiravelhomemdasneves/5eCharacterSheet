@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting, SettingDefinitionItem } from "obsidian";
 import type CharacterSheetPlugin from "./main";
 import srdData from "../data/srd-5.1.json";
+import { SECTIONS } from "./sections";
 
 export interface SheetSettings {
   /** optional fixed folder for new characters; empty = last used folder (vault root the first time) */
@@ -17,13 +18,17 @@ export interface SheetSettings {
   /** plugin = the sheet's own accent colour, obsidian = the active theme's accent, custom = customAccent */
   theme: "plugin" | "obsidian" | "custom";
   customAccent: string;
+  /** sections left out of new sheets (Sheet template); empty = all sections */
+  hiddenSections: string[];
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
   charactersFolder: "", lastFolder: "", dataSource: "none", compendiumFolder: "",
   fivetoolsPath: "", importRules2014: true, importOnlyWithNotes: false, lastImport: "",
-  theme: "plugin", customAccent: "#922610",
+  theme: "plugin", customAccent: "#922610", hiddenSections: [],
 };
 const THEME_KEYS = ["theme", "customAccent"];
+// Sheet template toggles use "section:<key>" control keys, stored as the list of hidden sections
+const SECTION_PREFIX = "section:";
 
 // Texts shared by both settings UIs below
 const T = {
@@ -37,6 +42,7 @@ const T = {
   license: ["SRD license", ""],
   theme: ["Theme", "Accent colour of the sheets: the plugin's own, the one of your Obsidian theme, or your own choice."],
   accent: ["Accent colour", "Used for the name, section titles, lines and rollable values, in both light and dark mode."],
+  template: "Sections shown in new character sheets, even while empty. Existing sheets keep their own choice: hide a section with the button next to its title, and show it again from the \"Hidden sections\" menu at the top of the sheet.",
 } as const;
 
 const SOURCE_OPTIONS: Record<SheetSettings["dataSource"], string> = { none: "None (manual mode)", srd: "SRD 5.1 (included)", imported: "Imported from 5etools" };
@@ -58,6 +64,10 @@ export class SheetSettingTab extends PluginSettingTab {
       { type: "group", heading: "Theme", items: [
         { name: T.theme[0], desc: T.theme[1], control: { type: "dropdown", key: "theme", options: THEME_OPTIONS } },
         { name: T.accent[0], desc: T.accent[1], visible: custom, control: { type: "color", key: "customAccent" } },
+      ] },
+      { type: "group", heading: "Sheet template", items: [
+        { name: "Sections", desc: T.template },
+        ...SECTIONS.map((sec) => ({ name: sec.label, control: { type: "toggle" as const, key: SECTION_PREFIX + sec.key } })),
       ] },
       { type: "group", heading: "Rules", items: [
         { name: T.dataSource[0], desc: T.dataSource[1], control: { type: "dropdown", key: "dataSource", options: SOURCE_OPTIONS } },
@@ -84,9 +94,11 @@ export class SheetSettingTab extends PluginSettingTab {
     ];
   }
   getControlValue(key: string): unknown {
+    if (key.startsWith(SECTION_PREFIX)) return !this.plugin.settings.hiddenSections.includes(key.slice(SECTION_PREFIX.length));
     return (this.plugin.settings as unknown as Record<string, unknown>)[key];
   }
   async setControlValue(key: string, value: unknown) {
+    if (key.startsWith(SECTION_PREFIX)) { await this.setSectionShown(key.slice(SECTION_PREFIX.length), !!value); return; }
     (this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
     // these two change what the sheets show, so reload the rules data and links
     if (key === "dataSource" || key === "compendiumFolder") await this.plugin.saveSettings();
@@ -95,6 +107,13 @@ export class SheetSettingTab extends PluginSettingTab {
     if (THEME_KEYS.includes(key)) this.plugin.refreshSheets();
     // refreshDomState (Obsidian 1.13+) re-evaluates the `visible` predicates; checked at runtime for older versions
     if (key === "theme") (this as { refreshDomState?: () => void }).refreshDomState?.();
+  }
+
+  /** Sheet template: only affects sheets created from now on */
+  private async setSectionShown(key: string, shown: boolean) {
+    const st = this.plugin.settings;
+    st.hiddenSections = shown ? st.hiddenSections.filter((k) => k !== key) : [...new Set([...st.hiddenSections, key])];
+    await this.plugin.saveData(st);
   }
 
   // Obsidian before 1.13: the same settings built by hand
@@ -121,6 +140,13 @@ export class SheetSettingTab extends PluginSettingTab {
         .addColorPicker((c) => c.setValue(st.customAccent).onChange(async (v) => { st.customAccent = v; await saveTheme(); }));
     };
     customFields();
+
+    new Setting(containerEl).setName("Sheet template").setHeading();
+    new Setting(containerEl).setName("Sections").setDesc(T.template);
+    for (const sec of SECTIONS) {
+      new Setting(containerEl).setName(sec.label)
+        .addToggle((t) => t.setValue(!st.hiddenSections.includes(sec.key)).onChange((v) => this.setSectionShown(sec.key, v)));
+    }
 
     new Setting(containerEl).setName("Rules").setHeading();
     new Setting(containerEl).setName(T.dataSource[0]).setDesc(T.dataSource[1])
