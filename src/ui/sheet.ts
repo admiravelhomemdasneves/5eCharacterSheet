@@ -87,11 +87,19 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
 
   // ---------------------------------------------------------------- rendering
+  // Theme from the settings. The custom colour is an inline style, which empty() keeps, so it is
+  // set or cleared ("" removes the property) on every render.
+  private applyTheme(root: HTMLElement) {
+    const st = this.plugin.settings;
+    root.toggleClass("dnd-theme-obsidian", st.theme === "obsidian");
+    root.setCssProps({ "--dnd-accent": st.theme === "custom" ? st.customAccent : "" });
+  }
   render() {
     const root = this.containerEl;
     root.empty();
     root.addClass("dnd-sheet");
-    this.v = this.manual ? E.manualView(this.s) : this.s;
+    this.applyTheme(root);
+    this.v =this.manual ? E.manualView(this.s) : this.s;
     const s = this.v, r = this.r;
     const sc = E.abilityScores(r, s);
     this.header(root, sc);
@@ -392,9 +400,10 @@ export class CharacterSheet extends MarkdownRenderChild {
       stepper(labeled(hpGrid, "Exhaustion"), s.exhaustion, (v) => this.change((x) => { x.exhaustion = v; }), { min: 0, max: 6 });
       checkbox(labeled(hpGrid, "Inspiration"), s.inspiration, (v) => this.change((x) => { x.inspiration = v; }));
       const dsRow = labeled(hpGrid, "Death Saves").createDiv({ cls: "dnd-death" });
-      dsRow.createSpan({ text: "✔" });
+      // ︎ asks for the text glyph, not the emoji, so the icons take the accent colour
+      dsRow.createSpan({ text: "✔︎", cls: "dnd-death-icon" });
       for (let i = 0; i < 3; i++) checkbox(dsRow, s.deathSaves.success > i, (v) => this.change((x) => { x.deathSaves.success = v ? i + 1 : i; }));
-      dsRow.createSpan({ text: "✖", cls: "dnd-death-fail" });
+      dsRow.createSpan({ text: "✖︎", cls: "dnd-death-icon dnd-death-fail" });
       for (let i = 0; i < 3; i++) checkbox(dsRow, s.deathSaves.fail > i, (v) => this.change((x) => { x.deathSaves.fail = v ? i + 1 : i; }));
       this.rollable(dsRow, "🎲", "1d20", "Death save");
       // last grid row: Hit Dice | Long Rest
