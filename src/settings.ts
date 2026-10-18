@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, SettingDefinitionItem } from "obsidian"
 import type CharacterSheetPlugin from "./main";
 import srdData from "../data/srd-5.1.json";
 import { SECTIONS } from "./sections";
+import { IMPORT_CHANGES } from "./data/build";
 
 export interface SheetSettings {
   /** optional fixed folder for new characters; empty = last used folder (vault root the first time) */
@@ -52,7 +53,11 @@ const attribution = (srdData as { meta: { attribution?: string } }).meta.attribu
 export class SheetSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: CharacterSheetPlugin) { super(app, plugin); }
 
-  private importStatus() { return this.plugin.settings.lastImport ? `Last import: ${this.plugin.settings.lastImport}` : "Not imported yet."; }
+  private importStatus() {
+    const st = this.plugin.settings;
+    if (!st.lastImport) return "Not imported yet.";
+    return `Last import: ${st.lastImport}` + (this.plugin.importIsOutdated ? ` — out of date: press "Import now" to update it (${IMPORT_CHANGES}).` : "");
+  }
 
   // Obsidian 1.13+: declarative settings, also searchable from the settings search
   getSettingDefinitions(): SettingDefinitionItem[] {

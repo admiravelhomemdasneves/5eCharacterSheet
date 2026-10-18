@@ -2,7 +2,7 @@ import { Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } 
 import { CharState, Compendium, Rules, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo } from "./data/links";
-import { buildCompendium, summarize } from "./data/build";
+import { IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import srdData from "../data/srd-5.1.json";
 
@@ -30,6 +30,9 @@ export default class CharacterSheetPlugin extends Plugin {
   rules: Rules = new Rules(EMPTY);
   linker: Linker = new Linker(null, []);
   states = new Map<string, CharState>();
+  /** the imported rules data was made by an older importer and should be imported again */
+  importIsOutdated = false;
+  private importNoticeShown = false;
   sheets = new Set<CharacterSheet>();
   /** manual mode: no rules data configured (or the configured data could not be loaded) */
   get manual() { return this.rules.data.races.length === 0 && this.rules.data.classes.length === 0; }
@@ -68,6 +71,12 @@ export default class CharacterSheetPlugin extends Plugin {
       console.error("5e Character Sheet: could not load rules data", e);
       new Notice("Could not load the rules data, so the sheets are in manual mode.");
       data = EMPTY;
+    }
+    // data imported by an older version of the plugin: remind the user (once per session) to import again
+    this.importIsOutdated = this.settings.dataSource === "imported" && data !== EMPTY && importOutdated(data.meta);
+    if (this.importIsOutdated && !this.importNoticeShown) {
+      this.importNoticeShown = true;
+      new Notice(`5e Character Sheet: your imported 5etools data is from an older version of the plugin. Press "Import now" in the plugin settings to update it (${IMPORT_CHANGES}).`, 15000);
     }
     this.linker = this.buildLinker();
     this.rules = new Rules(this.linker.attach(data));
