@@ -8,7 +8,7 @@
 import type {
   Abil, AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
   RawClassFeatureRef, RawEntry, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
-  RawSubclassFeature, RawTableValue, SpellSourcesFile,
+  RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
 import type {
   AbilityOption, BackgroundData, ClassData, Compendium, FeatData, Feature, ItemData, ProfList, RaceData,
@@ -31,6 +31,8 @@ const lc = (s: string | number | null | undefined) => String(s ?? "").toLowerCas
 const ABILS: Abil[] = ["str", "dex", "con", "int", "wis", "cha"];
 const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
+/** Name given to a race's unnamed 5etools subrace (the race without a variant). */
+export const STANDARD_SUBRACE = "Standard";
 export const TOKEN = /⟦([^|⟧]*)\|([^|⟧]*)\|([^|⟧]*)\|([^⟧]*)⟧/g;
 const tok = (kind: string, name: string, source: string, display: string) => `⟦${kind}|${name}|${source}|${display}⟧`;
 
@@ -180,6 +182,25 @@ function resolveCopy<T extends RawBase>(list: T[], x: T): T {
   merged.srd = x.srd;
   return merged;
 }
+/** Fold a race's only subrace into the race itself (e.g. the SRD Human, whose +1s are on its unnamed subrace). */
+function mergeSubrace(race: RaceData, sub: SubraceData) {
+  if (sub.ability?.length) {
+    race.ability = sub.overwriteAbility || !race.ability.length ? sub.ability : race.ability.map((ro) => {
+      const so = sub.ability![0], fixed = { ...ro.fixed };
+      for (const [k, v] of Object.entries(so.fixed)) fixed[k as Abil] = (fixed[k as Abil] || 0) + (v || 0);
+      return { label: [ro.label, so.label].filter(Boolean).join(", "), fixed, choose: [...ro.choose, ...so.choose] };
+    });
+  }
+  if (sub.speed) race.speed = { ...race.speed, ...sub.speed };
+  if (sub.darkvision != null) race.darkvision = sub.darkvision;
+  race.skills = { fixed: [...race.skills.fixed, ...sub.skills.fixed], choose: [...race.skills.choose, ...sub.skills.choose] };
+  race.languages = [...race.languages, ...sub.languages];
+  race.resist = [...race.resist, ...sub.resist];
+  race.traits = [...race.traits, ...sub.traits];
+  race.spells = race.spells || sub.spells;
+  race.subraces = [];
+  race.subraceRequired = false;
+}
 const traitsOf = (entries: RawEntry[] | undefined) =>
   (entries || []).flatMap((e) => (typeof e === "object" && e.name ? [{ name: e.name, text: renderEntries(e.entries) }] : []));
 const skillChoices = (skills: RawSkillChoice[] | undefined): ClassData["skills"] =>
@@ -207,7 +228,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   // SRD: 5etools marks SRD entries with srd: true, or srd: "<SRD name>" when the SRD renames them
   const srdName = (e: RawBase): string | null => (e.srd === true ? e.name : typeof e.srd === "string" ? e.srd : null);
   const allowed = (kind: string, e: RawBase, name = e.name) =>
-    (!o.srdOnly || !!srdName(e)) && (!o.rules2014Only || !is2024(e)) && (!o.keep || o.keep(kind, name, e.source));
+    // the SRD flag itself, not the SRD name: unnamed subraces (e.g. the standard Human) have none
+    (!o.srdOnly || e.srd === true || typeof e.srd === "string") && (!o.rules2014Only || !is2024(e)) && (!o.keep || o.keep(kind, name, e.source));
   const nameOf = (e: RawBase) => (o.srdOnly ? srdName(e) || e.name : e.name);
 
   // races
@@ -217,10 +239,17 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     const r = resolveCopy(racesJson.race, r0);
     if (o.rules2014Only && is2024(r)) continue;
     const subOut: SubraceData[] = [];
-    for (const s of racesJson.subrace.filter((x) => x.raceName === r.name && x.raceSource === r.source && x.name)) {
-      if (!allowed("races", s, `${r.name} (${s.name})`)) continue;
+    // An unnamed subrace is the race as written: 5etools keeps e.g. the standard Human's +1 to every
+    // ability there. Next to named subraces (Variant Human, the dragonmarks, which replace those +1s)
+    // it is offered as "Standard"; on its own it is merged into the race below. Most races' unnamed
+    // subrace is an empty placeholder (their bonuses are on the race), which is skipped as before.
+    const hasContent = (s: RawSubrace) => !!(s.ability || s.entries?.length || s.speed || s.darkvision || s.skillProficiencies || s.languageProficiencies || s.resist || s.additionalSpells);
+    const subs = racesJson.subrace.filter((x) => x.raceName === r.name && x.raceSource === r.source && (x.name || hasContent(x)));
+    for (const s of subs) {
+      const name = s.name || STANDARD_SUBRACE;
+      if (!allowed("races", s, s.name ? `${r.name} (${s.name})` : r.name)) continue;
       subOut.push({
-        id: idOf(r.name, s.name, s.source), name: s.name, source: s.source, link: null,
+        id: idOf(r.name, name, s.source), name, source: s.source, link: null,
         ability: s.ability ? abilityOf(s.ability) : null,
         overwriteAbility: !!s.overwrite?.ability,
         speed: s.speed ? speedOf(s.speed) : null,
@@ -236,7 +265,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     const baseOk = allowed("races", r);
     if (!baseOk && !subOut.length) continue;
     const SIZE: Record<string, string> = { T: "Tiny", S: "Small", M: "Medium", L: "Large" };
-    races.push({
+    const standard = subOut.find((x) => x.name === STANDARD_SUBRACE && subs.some((s) => !s.name && idOf(r.name, STANDARD_SUBRACE, s.source) === x.id));
+    const race: RaceData = {
       id: idOf(r.name, r.source), name: nameOf(r), source: r.source, link: null,
       size: (r.size || ["M"]).map((s) => SIZE[s] || s),
       speed: speedOf(r.speed),
@@ -249,8 +279,11 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       traits: traitsOf(r.entries),
       spells: r.additionalSpells || null,
       subraces: subOut,
-      subraceRequired: subOut.length > 0 && !baseOk,
-    });
+      // with a "Standard" subrace the race alone is incomplete (its bonuses live in the subraces)
+      subraceRequired: subOut.length > 0 && (!baseOk || !!standard),
+    };
+    if (standard && subOut.length === 1) mergeSubrace(race, standard);
+    races.push(race);
   }
 
   // classes

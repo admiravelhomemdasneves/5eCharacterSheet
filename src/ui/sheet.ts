@@ -201,7 +201,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     if (race) this.link(raceEl, "📖", race.link, "dnd-book");
     if (race?.subraces.length) {
       const subEl = labeled(row2, "Subrace");
-      this.pick(subEl, race.subraces.map((x) => ({ value: x.id, label: `${x.name} (${x.source})`, link: x.link })), s.subrace, (v) => this.change((x) => { x.subrace = v || null; }), race.subraceRequired ? "Choose subrace…" : "None");
+      this.pick(subEl, race.subraces.map((x) => ({ value: x.id, label: `${x.name} (${x.source})`, link: x.link })), s.subrace, (v) => this.change((x) => { x.subrace = v || null; x.raceAbility = { option: 0, picks: [] }; }), race.subraceRequired ? "Choose subrace…" : "None");
       const sub = r.subrace(s);
       if (sub) this.link(subEl, "📖", sub.link, "dnd-book");
     }
