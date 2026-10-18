@@ -31,6 +31,16 @@ const lc = (s: string | number | null | undefined) => String(s ?? "").toLowerCas
 const ABILS: Abil[] = ["str", "dex", "con", "int", "wis", "cha"];
 const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
+/**
+ * Version of what the importer produces, stamped into imported data as `meta.importVersion`. Raise it
+ * (and say what it brings in IMPORT_CHANGES) whenever an importer change needs a new import: data with
+ * an older stamp makes the plugin ask the user to press "Import now" again.
+ *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces
+ */
+export const IMPORT_VERSION = 2;
+export const IMPORT_CHANGES = "adds the Standard and Variant Human subraces";
+/** Imported data made by an older importer (data from before the stamp counts as version 1). */
+export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
 export const STANDARD_SUBRACE = "Standard";
 export const TOKEN = /⟦([^|⟧]*)\|([^|⟧]*)\|([^|⟧]*)\|([^⟧]*)⟧/g;
@@ -472,7 +482,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const sources = Object.fromEntries([...books, ...adventures].filter((b) => used.has(b.id)).map((b) => [b.id, b.name]));
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
   return {
-    meta: { generated: new Date().toISOString(), srdOnly: !!o.srdOnly, sources },
+    meta: { generated: new Date().toISOString(), srdOnly: !!o.srdOnly, sources, importVersion: IMPORT_VERSION },
     races: races.sort(byName), classes: classes.sort(byName), backgrounds: backgrounds.sort(byName), feats: feats.sort(byName),
     spells: spells.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)), items: items.sort(byName),
   };
