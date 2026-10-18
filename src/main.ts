@@ -148,6 +148,8 @@ export default class CharacterSheetPlugin extends Plugin {
   freshCharacter(name: string): CharState {
     const s = newCharacter(name);
     if (this.settings.dataSource === "none") s.abilities = { ...s.abilities, method: "manual", base: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
+    // Sheet template: sections left out of new sheets
+    for (const key of this.settings.hiddenSections) s.ui.hidden[key] = true;
     return s;
   }
 

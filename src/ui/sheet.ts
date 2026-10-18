@@ -1,10 +1,11 @@
-import { MarkdownRenderChild, MarkdownRenderer, Notice, TFile } from "obsidian";
+import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import * as E from "../rules/engine";
 import { ABILITIES, ABILITY_NAMES, Ability, CharState, fmtMod, mod } from "../rules/engine";
 import { button, checkbox, iconButton, imageFiles, labeled, Picker, RichOpt, richSelect, select, stepper, textInput } from "./widgets";
 import { d20, roll } from "./dice";
 import { isD20, withAdvantage } from "../rules/roll";
+import { SECTIONS } from "../sections";
 
 const ORD = ["Cantrip", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
 const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -99,9 +100,10 @@ export class CharacterSheet extends MarkdownRenderChild {
     root.empty();
     root.addClass("dnd-sheet");
     this.applyTheme(root);
-    this.v =this.manual ? E.manualView(this.s) : this.s;
+    this.v = this.manual ? E.manualView(this.s) : this.s;
     const s = this.v, r = this.r;
     const sc = E.abilityScores(r, s);
+    this.hiddenSectionsMenu(root);
     this.header(root, sc);
     const pending = this.manual ? [] : E.pendingChoices(r, s);
     if (pending.length) this.section(root, "creation", `Character Creation — ${pending.length} pending`, (el) => {
@@ -109,10 +111,12 @@ export class CharacterSheet extends MarkdownRenderChild {
       pending.forEach((p) => ul.createEl("li", { text: p }));
     });
     this.abilities(root, sc);
-    const grid = root.createDiv({ cls: "dnd-grid-2" });
-    this.combat(grid.createDiv(), sc);
-    this.skills(grid.createDiv(), sc);
-    if (!this.manual) this.attacks(root, sc);
+    // Combat and Skills share a row; a hidden one leaves no empty column (see .dnd-combat-row)
+    const grid = root.createDiv({ cls: "dnd-grid-2 dnd-combat-row" });
+    if (!this.isHidden("combat")) this.combat(grid.createDiv(), sc);
+    if (!this.isHidden("skills")) this.skills(grid.createDiv(), sc);
+    if (!grid.childElementCount) grid.remove();
+    this.attacks(root, sc);
     this.raceFeatures(root);
     this.classFeaturesSection(root);
     this.feats(root);
@@ -124,11 +128,14 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
 
   private section(parent: HTMLElement, key: string, label: string, build: (el: HTMLElement) => void, actions?: (el: HTMLElement) => void) {
+    if (this.isHidden(key)) return;
     const sec = parent.createDiv({ cls: "dnd-section" });
     const head = sec.createDiv({ cls: "dnd-section-head" });
     const collapsed = !!this.s.ui.collapsed[key];
     const tog = head.createSpan({ cls: "dnd-collapse", text: collapsed ? "▸" : "▾" });
     head.createEl("h3", { text: label });
+    // hide button, shown while the title row is hovered (see .dnd-section-hide)
+    if (SECTIONS.some((x) => x.key === key)) iconButton(head, "eye-off", "Hide this section", () => this.change((x) => { x.ui.hidden[key] = true; }), "dnd-section-hide");
     if (actions) actions(head.createDiv({ cls: "dnd-section-actions" }));
     const body = sec.createDiv({ cls: "dnd-section-body" });
     const toggle = () => this.change((s) => { s.ui.collapsed[key] = !collapsed; });
@@ -480,10 +487,35 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
 
   // ---------------------------------------------------------------- attacks
+  // ---------------------------------------------------------------- hidden sections
+  private isHidden(key: string) { return !!this.s.ui.hidden[key]; }
+  /** "Hidden sections" button at the top of the sheet, only when some are hidden: a menu to show them again. */
+  private hiddenSectionsMenu(root: HTMLElement) {
+    const hidden = SECTIONS.filter((x) => this.isHidden(x.key));
+    if (!hidden.length) return;
+    const bar = root.createDiv({ cls: "dnd-hidden-bar" });
+    const btn = button(bar, `Hidden sections (${hidden.length}) ▾`, () => {});
+    // the menu opens at the click, so the button takes the mouse event itself
+    btn.onclick = (e) => {
+      e.preventDefault();
+      const menu = new Menu();
+      for (const x of hidden) menu.addItem((i) => i.setTitle(x.label).setIcon("eye").onClick(() => this.change((st) => { delete st.ui.hidden[x.key]; })));
+      menu.addSeparator();
+      menu.addItem((i) => i.setTitle("Show all").setIcon("eye").onClick(() => this.change((st) => { st.ui.hidden = {}; })));
+      menu.showAtMouseEvent(e);
+    };
+  }
+
   private attacks(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
     const atk = E.attacks(this.r, this.s, sc);
     this.section(root, "attacks", "Attacks", (el) => {
-      if (!atk.length) { el.createDiv({ cls: "dnd-hint", text: "Equip weapons in the Inventory to list attacks here. Spell attacks are in Spellcasting." }); return; }
+      if (!atk.length) {
+        // shown even when empty (Sheet template); manual mode has no item data to list weapons from
+        el.createDiv({ cls: "dnd-hint", text: this.manual
+          ? "Attacks are listed from equipped weapons when rules data is set (Settings → Rules data). Spell attacks are in Spellcasting."
+          : "Equip weapons in the Inventory to list attacks here. Spell attacks are in Spellcasting." });
+        return;
+      }
       const t = el.createDiv({ cls: "dnd-table-wrap" }).createEl("table", { cls: "dnd-table" });
       const h = t.createEl("tr"); ["Weapon", "To Hit", "Damage", "Notes"].forEach((x) => h.createEl("th", { text: x }));
       for (const a of atk) {
@@ -603,8 +635,9 @@ export class CharacterSheet extends MarkdownRenderChild {
     const casters = E.casters(r, s, sc);
     const slots = E.spellSlots(r, s);
     const granted = E.grantedSpells(r, s);
-    if (!casters.length && !s.spells.length && !granted.length && !slots.pact) return;
     this.section(root, "spells", "Spellcasting", (el) => {
+      // shown even for characters without spellcasting (Sheet template); hide it from its title
+      if (!casters.length && !s.spells.length && !granted.length && !slots.pact) el.createDiv({ cls: "dnd-hint", text: "No spellcasting yet: it appears with a spellcasting class or subclass. You can still add spell slots or spells below." });
       const cs = el.createDiv({ cls: "dnd-casters" });
       for (const c of casters) {
         const box = cs.createDiv({ cls: "dnd-caster" });
