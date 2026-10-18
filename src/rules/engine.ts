@@ -39,7 +39,7 @@ export interface FeatData { id: string; name: string; source: string; link: stri
 export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; attack: boolean; save: string | null; damage: string[]; text: string }
 export interface ItemData { id: string; name: string; source: string; link: string | null; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number; baseItem: string | null }
 export type AdditionalSpells = { ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
-export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[] }
+export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string; importVersion?: number }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[] }
 
 // ------------------------------------------------------------------ character state (stored in frontmatter `dnd`)
 export type ProfLevel = 0 | 1 | 2; // none / proficient / expertise
@@ -116,7 +116,8 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.appearance = merge(d.appearance, s?.appearance);
   out.ui = merge(d.ui, s?.ui);
   out.abilities = merge(d.abilities, s?.abilities);
-  for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);  out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
+  for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);
+  out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
   out.ui.editing = out.ui.editing || {};
   // sheets saved before sections could be hidden show all of them
   out.ui.hidden = out.ui.hidden || {};
