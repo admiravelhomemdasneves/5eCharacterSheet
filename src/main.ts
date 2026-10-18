@@ -142,6 +142,15 @@ export default class CharacterSheetPlugin extends Plugin {
   /** Folder suggested for a new character: the configured one, else the last used one, else the vault root. */
   defaultFolder() { return this.settings.charactersFolder.trim() || this.settings.lastFolder || ""; }
 
+  /** A new character. Without rules data there are no racial or ASI bonuses to add on top of point
+   *  buy, so manual mode starts with the Manual method (scores typed in, 1–30). The setting is read
+   *  instead of `manual` because the rules data may not be loaded yet when a sheet first renders. */
+  freshCharacter(name: string): CharState {
+    const s = newCharacter(name);
+    if (this.settings.dataSource === "none") s.abilities = { ...s.abilities, method: "manual", base: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
+    return s;
+  }
+
   async createCharacter(name: string, folder: string) {
     const dir = normalizePath(folder || "/");
     if (dir !== "/" && !this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
@@ -151,7 +160,7 @@ export default class CharacterSheetPlugin extends Plugin {
     const file = await this.app.vault.create(path, TEMPLATE(name));
     this.settings.lastFolder = dir === "/" ? "" : dir;
     await this.saveData(this.settings);
-    this.states.set(file.path, { ...newCharacter(name) });
+    this.states.set(file.path, this.freshCharacter(name));
     await this.app.workspace.getLeaf(true).openFile(file);
   }
 }

@@ -28,7 +28,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     const file = this.file();
     const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : null;
     // in-memory copy wins over the metadata cache, which lags behind our own writes
-    this.s = E.normalize(this.plugin.states.get(this.sourcePath) ?? (fm?.dnd as Partial<CharState> | undefined) ?? { name: file?.basename ?? "" });
+    this.s = E.normalize(this.plugin.states.get(this.sourcePath) ?? (fm?.dnd as Partial<CharState> | undefined) ?? this.plugin.freshCharacter(file?.basename ?? ""));
     if (!this.s.name && file) this.s.name = file.basename;
     this.render();
     if (file) void this.migrateBody(file);
@@ -290,17 +290,20 @@ export class CharacterSheet extends MarkdownRenderChild {
         const box = boxes.createDiv({ cls: "dnd-ability" });
         box.createDiv({ cls: "dnd-ability-name", text: ABILITY_NAMES[a] });
         this.rollable(box, fmtMod(mod(b.total)), d20(mod(b.total)), `${ABILITY_NAMES[a]} check`, "dnd-ability-mod");
-        box.createDiv({ cls: "dnd-ability-score", text: String(b.total) });
-        if (!editing) continue;
-        const base = box.createDiv({ cls: "dnd-ability-base" });
+        if (!editing) { box.createDiv({ cls: "dnd-ability-score", text: String(b.total) }); continue; }
+        const edit = box.createDiv({ cls: "dnd-ability-base" });
+        // the standard array value is a pick; the editor below adds or removes Adjust on top of it
         if (s.abilities.method === "standard") {
-          select(base, E.STANDARD_ARRAY.map((v) => ({ value: String(v), label: String(v) })), String(s.abilities.base[a]), (v) => this.change((x) => { x.abilities.base[a] = parseInt(v) || 8; }), "—");
-        } else {
-          stepper(base, b.base, (v) => this.change((x) => { x.abilities.base[a] = v; }), s.abilities.method === "pointbuy" ? { min: 8, max: 15, title: "Base score" } : { min: 1, max: 30, title: "Base score" });
+          select(edit, E.STANDARD_ARRAY.map((v) => ({ value: String(v), label: String(v) })), String(s.abilities.base[a]), (v) => this.change((x) => { x.abilities.base[a] = parseInt(v) || 8; }), "—");
         }
-        const parts = [`${b.base} base`, b.race && `${fmtMod(b.race)} race`, b.asi && `${fmtMod(b.asi)} ASI`, b.feat && `${fmtMod(b.feat)} feat`, b.adjust && `${fmtMod(b.adjust)} adj.`].filter(Boolean);
-        box.createDiv({ cls: "dnd-breakdown", text: parts.join(" ") });
-        stepper(labeled(box, "Adjust"), b.adjust, (v) => this.change((x) => { x.abilities.adjust[a] = v; }), { title: "Manual adjustment (magic items, curses…)" });
+        // one editor for the whole score: each step goes to base or Adjust (see E.stepAbility)
+        stepper(edit, b.total, (v) => this.change((x) => {
+          for (let n = v - b.total; n !== 0; n -= Math.sign(n)) E.stepAbility(x, a, n > 0 ? 1 : -1);
+        }), { title: `${ABILITY_NAMES[a]} score` });
+        const terms: [number, string][] = [[b.race, "race"], [b.asi, "ASI"], [b.feat, "feat"], [b.feature, "class"], [b.adjust, "adj."]];
+        const formula = terms.filter(([n]) => n).map(([n, label]) => ` ${n > 0 ? "+" : "−"} ${Math.abs(n)} ${label}`).join("");
+        box.createDiv({ cls: "dnd-breakdown", text: `${b.base} base${formula} · max ${b.max}` });
+        if (b.over) box.createDiv({ cls: "dnd-warn", text: `Above the maximum of ${b.max}` });
       }
       if (editing) this.abilityEditor(el);
 
