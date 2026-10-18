@@ -82,6 +82,8 @@
 .dnd-book:hover { opacity: 1; }
 
 .dnd-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--dnd-s3); }
+/* Combat or Skills hidden: the other takes the full width */
+.dnd-combat-row > :only-child { grid-column: 1 / -1; }
 .dnd-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--dnd-s2) var(--dnd-s3); }
 .dnd-grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--dnd-s2) var(--dnd-s3); }
 .dnd-grid-5 .dnd-field { align-items: center; }
@@ -161,6 +163,12 @@
 }
 .dnd-collapse { width: 1em; color: var(--dnd-accent); text-align: center; }
 .dnd-section-actions { display: flex; gap: var(--dnd-s1); }
+/* hide-section button: only while the title row is hovered or the button has focus */
+.dnd-sheet .dnd-section-hide { opacity: 0; transition: opacity 120ms ease-in-out; }
+.dnd-section-head:hover .dnd-section-hide, .dnd-sheet .dnd-section-hide:focus-visible { opacity: 1; }
+@media (hover: none) { .dnd-sheet .dnd-section-hide { opacity: 1; } }
+/* "Hidden sections" menu button at the top of the sheet */
+.dnd-hidden-bar { display: flex; justify-content: flex-end; }
 .dnd-section-actions .is-active { color: var(--dnd-accent); }
 .dnd-section-body { display: flex; flex-direction: column; gap: var(--dnd-s3); }
 .dnd-section-body:not(:empty) { margin-top: var(--dnd-s3); padding-top: var(--dnd-s3); border-top: 1px solid var(--dnd-rule-soft); }

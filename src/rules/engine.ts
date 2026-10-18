@@ -76,7 +76,8 @@ export interface CharState {
   allies: string;
   biography: string; diary: string; events: string[];
   manual: ManualData; // used when no rules data is configured (manual mode)
-  ui: { collapsed: Record<string, boolean>; sourceFilter: string[]; editing: Record<string, boolean> };
+  /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
+  ui: { collapsed: Record<string, boolean>; sourceFilter: string[]; editing: Record<string, boolean>; hidden: Record<string, boolean> };
 }
 
 const zeroAbilities = (): Record<Ability, number> => ({ str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 });
@@ -96,7 +97,7 @@ export function newCharacter(name = ""): CharState {
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
     allies: "", biography: "", diary: "", events: [], manual: emptyManual(),
-    ui: { collapsed: {}, sourceFilter: [], editing: {} },
+    ui: { collapsed: {}, sourceFilter: [], editing: {}, hidden: {} },
   };
 }
 // Fill in any fields missing from older/partial saved states.
@@ -117,6 +118,8 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.abilities = merge(d.abilities, s?.abilities);
   for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);  out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
   out.ui.editing = out.ui.editing || {};
+  // sheets saved before sections could be hidden show all of them
+  out.ui.hidden = out.ui.hidden || {};
   out.events = Array.isArray(out.events) ? out.events.map((e) => String(e ?? "")) : [];
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
