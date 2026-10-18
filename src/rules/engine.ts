@@ -115,8 +115,7 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.appearance = merge(d.appearance, s?.appearance);
   out.ui = merge(d.ui, s?.ui);
   out.abilities = merge(d.abilities, s?.abilities);
-  for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);
-  out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
+  for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);  out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
   out.ui.editing = out.ui.editing || {};
   out.events = Array.isArray(out.events) ? out.events.map((e) => String(e ?? "")) : [];
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
@@ -186,7 +185,25 @@ export function raceAbilityOptions(r: Rules, s: CharState): AbilityOption[] {
   if (sub?.ability && sub.overwriteAbility) return sub.ability;
   return r.race(s)?.ability || [];
 }
-export interface AbilityBreakdown { base: number; race: number; feat: number; asi: number; adjust: number; total: number }
+/** `feature` = increases from class features. Scores are not capped: `max` is the ability's maximum
+ *  (20, or more from features like Primal Champion) and `over` flags a total above it. */
+export interface AbilityBreakdown { base: number; race: number; feat: number; asi: number; feature: number; adjust: number; total: number; max: number; over: boolean }
+export const ABILITY_MAX = 20;
+// e.g. Primal Champion: "Your Strength and Constitution scores increase by 4. Your maximum for those scores is now 24."
+const SCORE_BOOST = /your ([a-z ,]+?) scores? increases? by (\d+)\.\s*your maximum for (?:those|that|these) scores? is now (\d+)/i;
+/** Ability increases and higher maximums granted by the character's class and subclass features. */
+export function featureAbilityBoosts(r: Rules, s: CharState) {
+  const bonus = zeroAbilities(), max = zeroAbilities();
+  for (const c of classFeatures(r, s)) for (const f of c.features) {
+    const m = SCORE_BOOST.exec(f.text || "");
+    if (!m) continue;
+    for (const a of ABILITIES) if (m[1].toLowerCase().includes(ABILITY_NAMES[a].toLowerCase())) {
+      bonus[a] += parseInt(m[2]);
+      max[a] = Math.max(max[a], parseInt(m[3]));
+    }
+  }
+  return { bonus, max };
+}
 export function abilityScores(r: Rules, s: CharState): Record<Ability, AbilityBreakdown> {
   const out = {} as Record<Ability, AbilityBreakdown>;
   const raceBonus = zeroAbilities();
@@ -212,12 +229,39 @@ export function abilityScores(r: Rules, s: CharState): Record<Ability, AbilityBr
     let i = 0;
     for (const ch of o.choose) for (let n = 0; n < ch.count; n++, i++) { const a = fe.picks[i]; if (a) featBonus[a] += ch.amount; }
   }
+  const boosts = featureAbilityBoosts(r, s);
   for (const a of ABILITIES) {
     const base = s.abilities.base[a] ?? 10, asi = (s.abilities.asi[a] || 0) + asiBonus[a], adjust = s.abilities.adjust[a] || 0;
-    const natural = Math.min(20, base + raceBonus[a] + featBonus[a] + asi);
-    out[a] = { base, race: raceBonus[a], feat: featBonus[a], asi, adjust, total: natural + adjust };
+    const max = Math.max(ABILITY_MAX, boosts.max[a]), feature = boosts.bonus[a];
+    const total = base + raceBonus[a] + featBonus[a] + asi + feature + adjust;
+    out[a] = { base, race: raceBonus[a], feat: featBonus[a], asi, feature, adjust, total, max, over: total > max };
   }
   return out;
+}
+
+/**
+ * The single score editor: move one ability up (+1) or down (−1). Point buy spends base points first
+ * (up to 15 or until the 27 points run out) and puts the rest in Adjust; going down takes Adjust back
+ * first, then base points (refunding them), then makes Adjust negative. The standard array value is
+ * picked separately, so the editor only changes Adjust. Manual and rolled scores change the base.
+ * Only base and adjust change, so saved characters keep the same fields as before.
+ */
+export function stepAbility(s: CharState, a: Ability, delta: 1 | -1) {
+  const ab = s.abilities;
+  if (ab.method === "standard") { ab.adjust[a] = (ab.adjust[a] || 0) + delta; return; }
+  if (ab.method !== "pointbuy") { ab.base[a] = Math.max(1, (ab.base[a] ?? 10) + delta); return; }
+  const base = ab.base[a] ?? 8, adjust = ab.adjust[a] || 0;
+  if (delta > 0) {
+    const cost = (POINT_BUY_COST[base + 1] ?? Infinity) - (POINT_BUY_COST[base] ?? Infinity);
+    // undo a negative Adjust first, so − then + returns to where it was
+    if (adjust < 0) ab.adjust[a] = adjust + 1;
+    else if (cost <= pointBuySpent(ab.base).remaining) ab.base[a] = base + 1;
+    else ab.adjust[a] = adjust + 1;
+  } else {
+    if (adjust > 0) ab.adjust[a] = adjust - 1;
+    else if (base > 8) ab.base[a] = base - 1;
+    else ab.adjust[a] = adjust - 1;
+  }
 }
 export function pointBuySpent(base: Record<Ability, number>) {
   let spent = 0, valid = true;
