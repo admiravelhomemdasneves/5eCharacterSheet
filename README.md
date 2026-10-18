@@ -121,6 +121,7 @@ The character's data is saved in that note's properties. Put your own notes, hea
 ### Settings
 
 - **Characters folder**: optional. Where new characters are created. Leave it empty to use the last folder you created a character in (the vault root the first time).
+- **Theme**: the sheet's accent colour. *Original* keeps the plugin's red accent, *Obsidian theme* uses your theme's accent colour, and *Custom* lets you pick your own.
 - **Rules data**: none (manual mode), SRD 5.1 or imported data (see below).
 - **Compendium folder**: optional, only for links (see [Compendium links](#compendium-links-optional)).
 

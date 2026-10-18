@@ -9,6 +9,10 @@
   --dnd-accent: #922610;
   --dnd-rule: color-mix(in srgb, var(--dnd-accent) 55%, transparent);
   --dnd-rule-soft: color-mix(in srgb, var(--dnd-accent) 18%, transparent);
+  /* Obsidian colours checked checkboxes with these: follow the sheet's accent instead */
+  --checkbox-color: var(--dnd-accent);
+  --checkbox-color-hover: color-mix(in srgb, var(--dnd-accent) 85%, var(--text-normal));
+  accent-color: var(--dnd-accent);
   --dnd-s1: 4px;
   --dnd-s2: 8px;
   --dnd-s3: 12px;
@@ -27,6 +31,8 @@
   line-height: 1.4;
 }
 .theme-dark .dnd-sheet { --dnd-accent: #e0735c; }
+/* Theme setting: "Obsidian theme" follows the theme's accent; "Custom" sets the variables inline */
+.dnd-sheet.dnd-theme-obsidian { --dnd-accent: var(--text-accent); }
 
 /* hide the raw state object from the Properties panel */
 .metadata-property[data-property-key="dnd"] { display: none; }
@@ -206,6 +212,7 @@
 .dnd-hp-grid { display: grid; grid-template-columns: max-content minmax(0, max-content); gap: var(--dnd-s3) var(--dnd-s4); align-items: start; }
 .dnd-sheet input.dnd-fraction { width: 3.6em; text-align: center; padding: 0 var(--dnd-s1); }
 .dnd-hd-roll { gap: var(--dnd-s3); }
+.dnd-death-icon { color: var(--dnd-accent); }
 .dnd-death-fail { margin-left: var(--dnd-s2); }
 .dnd-status { align-items: flex-start; gap: var(--dnd-s4); }
 .dnd-status .dnd-value { min-height: var(--dnd-control-h); }

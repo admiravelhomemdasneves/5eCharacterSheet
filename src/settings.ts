@@ -14,11 +14,16 @@ export interface SheetSettings {
   importRules2014: boolean;
   importOnlyWithNotes: boolean;
   lastImport: string;
+  /** plugin = the sheet's own accent colour, obsidian = the active theme's accent, custom = customAccent */
+  theme: "plugin" | "obsidian" | "custom";
+  customAccent: string;
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
   charactersFolder: "", lastFolder: "", dataSource: "none", compendiumFolder: "",
   fivetoolsPath: "", importRules2014: true, importOnlyWithNotes: false, lastImport: "",
+  theme: "plugin", customAccent: "#922610",
 };
+const THEME_KEYS = ["theme", "customAccent"];
 
 // Texts shared by both settings UIs below
 const T = {
@@ -30,8 +35,12 @@ const T = {
   importNow: ["Import", "Convert the data now. The result is stored in this plugin's folder."],
   compendium: ["Compendium folder", "Optional, only for links. The folder that contains the \"compendium\" and \"rules\" folders of your compendium notes. Races, classes, spells, items and features then link to their notes."],
   license: ["SRD license", ""],
+  theme: ["Theme", "Accent colour of the sheets: the plugin's own, the one of your Obsidian theme, or your own choice."],
+  accent: ["Accent colour", "Used for the name, section titles, lines and rollable values, in both light and dark mode."],
 } as const;
+
 const SOURCE_OPTIONS: Record<SheetSettings["dataSource"], string> = { none: "None (manual mode)", srd: "SRD 5.1 (included)", imported: "Imported from 5etools" };
+const THEME_OPTIONS: Record<SheetSettings["theme"], string> = { plugin: "Original", obsidian: "Obsidian theme", custom: "Custom" };
 const attribution = (srdData as { meta: { attribution?: string } }).meta.attribution || "";
 
 export class SheetSettingTab extends PluginSettingTab {
@@ -41,9 +50,14 @@ export class SheetSettingTab extends PluginSettingTab {
 
   // Obsidian 1.13+: declarative settings, also searchable from the settings search
   getSettingDefinitions(): SettingDefinitionItem[] {
+    const custom = () => this.plugin.settings.theme === "custom";
     return [
       { type: "group", heading: "Characters", items: [
         { name: T.charactersFolder[0], desc: T.charactersFolder[1], control: { type: "folder", key: "charactersFolder", placeholder: "Last used folder", includeRoot: true } },
+      ] },
+      { type: "group", heading: "Theme", items: [
+        { name: T.theme[0], desc: T.theme[1], control: { type: "dropdown", key: "theme", options: THEME_OPTIONS } },
+        { name: T.accent[0], desc: T.accent[1], visible: custom, control: { type: "color", key: "customAccent" } },
       ] },
       { type: "group", heading: "Rules", items: [
         { name: T.dataSource[0], desc: T.dataSource[1], control: { type: "dropdown", key: "dataSource", options: SOURCE_OPTIONS } },
@@ -77,6 +91,10 @@ export class SheetSettingTab extends PluginSettingTab {
     // these two change what the sheets show, so reload the rules data and links
     if (key === "dataSource" || key === "compendiumFolder") await this.plugin.saveSettings();
     else await this.plugin.saveData(this.plugin.settings);
+    // theme changes only restyle the open sheets; the theme choice also shows or hides the custom fields
+    if (THEME_KEYS.includes(key)) this.plugin.refreshSheets();
+    // refreshDomState (Obsidian 1.13+) re-evaluates the `visible` predicates; checked at runtime for older versions
+    if (key === "theme") (this as { refreshDomState?: () => void }).refreshDomState?.();
   }
 
   // Obsidian before 1.13: the same settings built by hand
@@ -88,6 +106,21 @@ export class SheetSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Characters").setHeading();
     new Setting(containerEl).setName(T.charactersFolder[0]).setDesc(T.charactersFolder[1])
       .addText((t) => t.setPlaceholder("Last used folder").setValue(st.charactersFolder).onChange(async (v) => { st.charactersFolder = v; await this.plugin.saveData(st); }));
+
+    new Setting(containerEl).setName("Theme").setHeading();
+    const saveTheme = async () => { await this.plugin.saveData(st); this.plugin.refreshSheets(); };
+    new Setting(containerEl).setName(T.theme[0]).setDesc(T.theme[1])
+      .addDropdown((d) => d.addOptions(THEME_OPTIONS).setValue(st.theme)
+        .onChange(async (v) => { st.theme = v as SheetSettings["theme"]; await saveTheme(); customFields(); }));
+    // the colour picker is only shown for the Custom theme, so it is rebuilt when the choice changes
+    const customEl = containerEl.createDiv();
+    const customFields = () => {
+      customEl.empty();
+      if (st.theme !== "custom") return;
+      new Setting(customEl).setName(T.accent[0]).setDesc(T.accent[1])
+        .addColorPicker((c) => c.setValue(st.customAccent).onChange(async (v) => { st.customAccent = v; await saveTheme(); }));
+    };
+    customFields();
 
     new Setting(containerEl).setName("Rules").setHeading();
     new Setting(containerEl).setName(T.dataSource[0]).setDesc(T.dataSource[1])

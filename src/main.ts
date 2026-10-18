@@ -135,6 +135,9 @@ export default class CharacterSheetPlugin extends Plugin {
     await this.reloadData();
   }
 
+  /** Re-render the open sheets without reloading the rules data (e.g. after a theme change). */
+  refreshSheets() { this.sheets.forEach((s) => s.reload()); }
+
   // ---------------------------------------------------------------- characters
   /** Folder suggested for a new character: the configured one, else the last used one, else the vault root. */
   defaultFolder() { return this.settings.charactersFolder.trim() || this.settings.lastFolder || ""; }
