@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as E from "../src/rules/engine.ts";
-import { buildCompendium, STANDARD_SUBRACE } from "../src/data/build.ts";
+import { buildCompendium, IMPORT_VERSION, importOutdated, STANDARD_SUBRACE } from "../src/data/build.ts";
 
 // A minimal 5etools data folder: just enough races to check how racial ability bonuses are read.
 // As in 5etools, the standard Human's +1 to every ability is on an unnamed subrace, not on the race.
@@ -103,4 +103,12 @@ test("SRD build: a lone Standard subrace is merged into the race", async () => {
   s.abilities.base = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
   const sc = E.abilityScores(new E.Rules(srd), s);
   for (const a of E.ABILITIES) assert.equal(sc[a].total, 11, a);
+});
+
+test("imported data is stamped; data from before the stamp asks for a new import", () => {
+  assert.equal(data.meta.importVersion, IMPORT_VERSION);
+  assert.equal(importOutdated(data.meta), false);
+  // data imported by 1.0.x has no stamp
+  assert.equal(importOutdated({}), true);
+  assert.equal(importOutdated({ importVersion: IMPORT_VERSION - 1 }), true);
 });
