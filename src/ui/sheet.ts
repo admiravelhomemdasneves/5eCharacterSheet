@@ -1,4 +1,4 @@
-import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile } from "obsidian";
+import { Component, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import * as E from "../rules/engine";
 import { ABILITIES, ABILITY_NAMES, Ability, CharState, fmtMod, mod } from "../rules/engine";
@@ -20,6 +20,8 @@ export class CharacterSheet extends MarkdownRenderChild {
   /** what the rules engine reads: the state itself, or its manual-mode view */
   private v!: CharState;
   private saveTimer: number | null = null;
+  /** owns what one render() makes (markdown children); unloaded by the next render */
+  private renderScope: Component | null = null;
 
   constructor(private plugin: CharacterSheetPlugin, el: HTMLElement, private sourcePath: string) {
     super(el);
@@ -103,6 +105,8 @@ export class CharacterSheet extends MarkdownRenderChild {
   render() {
     const root = this.containerEl;
     root.empty();
+    if (this.renderScope) this.removeChild(this.renderScope);
+    this.renderScope = this.addChild(new Component());
     root.addClass("dnd-sheet");
     this.applyTheme(root);
     this.v = this.manual ? E.manualView(this.s) : this.s;
@@ -157,7 +161,7 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
   private md(parent: HTMLElement, text: string) {
     const el = parent.createDiv({ cls: "dnd-md" });
-    void MarkdownRenderer.render(this.app, this.plugin.linker.text(text), el, this.sourcePath, this);
+    void MarkdownRenderer.render(this.app, this.plugin.linker.text(text), el, this.sourcePath, this.renderScope ?? this);
     return el;
   }
   private rollable(parent: HTMLElement, text: string, formula: string, label: string, cls = "") {
