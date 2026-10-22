@@ -7,9 +7,10 @@
 // and where the user keeps a compendium of notes.
 import type {
   Abil, AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
-  RawClassFeatureRef, RawEntry, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
+  HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawMod, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
   RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
+import { HOMEBREW_COLLECTIONS } from "./fivetools.ts";
 import type {
   AbilityOption, BackgroundData, ClassData, Compendium, FeatData, Feature, ItemData, ProfList, RaceData,
   SpellData, Speeds, SubclassData, SubraceData,
@@ -17,8 +18,16 @@ import type {
 
 /** Reads a 5etools data file (path relative to the `data` folder) and returns its parsed JSON. */
 export type ReadJson = (relPath: string) => Promise<unknown>;
+/** A homebrew file in the 5etools format, already parsed; `file` is where it came from. */
+export interface HomebrewFile { file: string; json: unknown }
+/** Told about each file or entry the import leaves out, and why. */
+export type Warn = (message: string) => void;
 export interface BuildOptions {
   read: ReadJson;
+  /** homebrew files whose entries are added to the official data */
+  homebrew?: HomebrewFile[];
+  /** told what was left out; without it, what can't be read is left out silently */
+  warn?: Warn;
   /** keep only SRD 5.1 content (uses 5etools' `srd` flags and SRD names) */
   srdOnly?: boolean;
   /** drop 2024-edition content (XPHB/XDMG/XMM and entries marked edition "one") */
@@ -35,10 +44,10 @@ const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
  * Version of what the importer produces, stamped into imported data as `meta.importVersion`. Raise it
  * (and say what it brings in IMPORT_CHANGES) whenever an importer change needs a new import: data with
  * an older stamp makes the plugin ask the user to press "Import now" again.
- *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces
+ *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces   3 = copied entries completed (_copy, _mod)
  */
-export const IMPORT_VERSION = 2;
-export const IMPORT_CHANGES = "adds the Standard and Variant Human subraces";
+export const IMPORT_VERSION = 3;
+export const IMPORT_CHANGES = "completes entries that 5etools copies from others: the 2024 classes' subclasses get their features, variant backgrounds their own feature, and copied races and magic items their own traits and stats";
 /** Imported data made by an older importer (data from before the stamp counts as version 1). */
 export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
@@ -181,16 +190,93 @@ function langText(arr: RawProf[] | undefined): string[] {
   }
   return out;
 }
-function resolveCopy<T extends RawBase>(list: T[], x: T): T {
-  if (!x._copy) return x;
-  const from = x._copy;
-  const base = list.find((y) => y.name === from.name && y.source === from.source);
-  if (!base) return x;
-  const merged: T = { ...resolveCopy(list, base), ...x };
-  delete merged._copy;
-  // a copy is its own entry: it must not inherit the SRD flag of what it copies
-  merged.srd = x.srd;
-  return merged;
+
+// ---------------------------------------------------------------- _copy and _mod
+/** fields a copy does not take from what it copies, unless its _preserve names them */
+const NOT_COPIED = ["srd", "basicRules", "page", "otherSources", "referenceSources", "reprintedAs", "hasFluff", "hasFluffImages"];
+/** what identifies an entry for _copy, besides name and source */
+const COPY_KEYS: Partial<Record<(typeof HOMEBREW_COLLECTIONS)[number], string[]>> = {
+  subrace: ["raceName", "raceSource"],
+  subclass: ["className", "classSource"],
+  classFeature: ["className", "classSource", "level"],
+  subclassFeature: ["className", "classSource", "subclassShortName", "subclassSource", "level"],
+};
+const asList = (v: unknown): unknown[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
+const entryName = (e: unknown) => (typeof e === "string" ? e : (e as { name?: string } | null)?.name);
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** every string inside v (not `type` fields) with re replaced */
+function replaceText(v: unknown, re: RegExp, by: string): unknown {
+  if (typeof v === "string") return v.replace(re, by);
+  if (Array.isArray(v)) return v.map((x) => replaceText(x, re, by));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "type" ? x : replaceText(x, re, by)]));
+  return v;
+}
+/** one array _mod; unknown modes leave the array as it is */
+function modArray(arr: unknown[], m: Exclude<RawMod, string>): unknown[] {
+  const items = asList(m.items);
+  switch (m.mode) {
+    case "appendArr": return [...arr, ...items];
+    case "prependArr": return [...items, ...arr];
+    case "insertArr": { const i = m.index ?? arr.length; return [...arr.slice(0, i), ...items, ...arr.slice(i)]; }
+    case "appendIfNotExistsArr": return [...arr, ...items.filter((it) => !arr.some((e) => sameJson(e, it)))];
+    case "replaceArr": {
+      // replace: the name (or text) of an entry, { index } or { regex }
+      const r = m.replace;
+      const i = typeof r === "string" ? arr.findIndex((e) => entryName(e) === r)
+        : r?.index != null ? r.index
+        : r?.regex != null ? arr.findIndex((e) => new RegExp(r.regex!, r.flags).test(entryName(e) ?? ""))
+        : -1;
+      return i < 0 || i >= arr.length ? arr : [...arr.slice(0, i), ...items, ...arr.slice(i + 1)];
+    }
+    case "removeArr": {
+      const names = asList(m.names), gone = asList(m.items);
+      return arr.filter((e) => !names.includes(entryName(e)) && !gone.some((g) => sameJson(g, e)));
+    }
+    default: return arr;
+  }
+}
+/** Apply a copy's _mod, the modes the importer understands: array edits and text replacement. */
+function applyMods(x: Record<string, unknown>, mods: Record<string, RawMod | RawMod[]>) {
+  for (const [prop, list] of Object.entries(mods)) for (const m0 of asList(list) as RawMod[]) {
+    const m = typeof m0 === "string" ? { mode: m0 } : m0;
+    if (m.mode === "replaceTxt") {
+      if (typeof m.replace !== "string") continue;
+      let re: RegExp;
+      try { re = new RegExp(m.replace, [...new Set(`g${m.flags || ""}`)].join("")); } catch { continue; }
+      for (const p of prop === "*" ? ["entries", "entriesHigherLevel"] : [prop]) if (x[p] != null) x[p] = replaceText(x[p], re, m.with ?? "");
+    } else if (prop !== "*") x[prop] = modArray(asList(x[prop]), m);
+  }
+}
+/**
+ * Replace every `_copy` entry with the entry it copies, changed by its own fields and `_mod`. Copies
+ * are found across official and homebrew data, also through other copies; a copy whose original is
+ * missing stays as it is.
+ */
+function resolveCopies(raw: RawData) {
+  for (const k of HOMEBREW_COLLECTIONS) {
+    const list = raw[k] as RawBase[];
+    if (!list.some((x) => x._copy)) continue;
+    const fields = ["name", "source", ...COPY_KEYS[k] || []];
+    const keyOf = (x: Record<string, unknown>) => fields.map((f) => lc(x[f] as string | number | undefined)).join("|");
+    const byKey = indexBy(list, (x) => keyOf(x as unknown as Record<string, unknown>));
+    const done = new Map<RawBase, RawBase>();
+    const resolve = (x: RawBase, seen: Set<RawBase>): RawBase => {
+      if (!x._copy) return x;
+      const known = done.get(x);
+      if (known) return known;
+      const original = byKey.get(keyOf(x._copy));
+      if (!original || seen.has(original)) return x;
+      const { _mod, _preserve } = x._copy;
+      const merged: Record<string, unknown> = { ...resolve(original, new Set([...seen, x])), ...x };
+      delete merged._copy;
+      // a copy is its own entry: e.g. it must not inherit the SRD flag of what it copies
+      for (const f of NOT_COPIED) if (!_preserve?.[f]) { if (f in x) merged[f] = (x as unknown as Record<string, unknown>)[f]; else delete merged[f]; }
+      if (_mod) applyMods(merged, _mod);
+      done.set(x, merged as unknown as RawBase);
+      return merged as unknown as RawBase;
+    };
+    (raw[k] as RawBase[]) = list.map((x) => resolve(x, new Set()));
+  }
 }
 /** Fold a race's only subrace into the race itself (e.g. the SRD Human, whose +1s are on its unnamed subrace). */
 function mergeSubrace(race: RaceData, sub: SubraceData) {
@@ -231,9 +317,87 @@ function prereqText(p: Record<string, unknown>): string {
   }).filter(Boolean).join(", ");
 }
 
+/** first entry for each key, like `list.find` on that key */
+function indexBy<T>(list: T[], key: (x: T) => string): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const x of list) { const k = key(x); if (!m.has(k)) m.set(k, x); }
+  return m;
+}
+
+// ---------------------------------------------------------------- load
+/** an entry the importer can use: an object with a name (unnamed subraces excepted) and a source */
+const isEntry = (k: string, x: unknown) =>
+  !!x && typeof x === "object" && typeof (x as RawBase).source === "string" && (typeof (x as RawBase).name === "string" || (k === "subrace" && (x as RawBase).name == null));
+
+/**
+ * Read the collections of an official 5etools `data/` folder into flat lists, then add the homebrew ones.
+ * What a homebrew file gets wrong is left out and told to `warn`, so the rest still imports.
+ */
+export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = [], warn: Warn = () => {}): Promise<RawData> {
+  const read = <T>(rel: string) => readJson(rel) as Promise<T>;
+  const racesJson = await read<RacesFile>("races.json");
+  const raw: RawData = {
+    race: racesJson.race, subrace: racesJson.subrace,
+    class: [], classFeature: [], subclass: [], subclassFeature: [],
+    background: (await read<{ background: RawBackground[] }>("backgrounds.json")).background,
+    feat: (await read<{ feat: RawFeat[] }>("feats.json")).feat,
+    spell: [],
+    baseitem: (await read<{ baseitem: RawItem[] }>("items-base.json")).baseitem,
+    item: (await read<{ item: RawItem[] }>("items.json")).item,
+    spellSources: await read<SpellSourcesFile>("spells/sources.json"),
+    sourceNames: {},
+  };
+  for (const file of Object.values(await read<FileIndex>("class/index.json"))) {
+    const cj = await read<ClassFile>(`class/${file}`);
+    raw.class.push(...cj.class || []);
+    raw.classFeature.push(...cj.classFeature || []);
+    raw.subclass.push(...cj.subclass || []);
+    raw.subclassFeature.push(...cj.subclassFeature || []);
+  }
+  for (const file of Object.values(await read<FileIndex>("spells/index.json"))) {
+    raw.spell.push(...(await read<{ spell?: RawSpell[] }>(`spells/${file}`)).spell || []);
+  }
+  const books = (await read<BooksFile>("books.json")).book, adventures = (await read<AdventuresFile>("adventures.json")).adventure;
+  for (const b of [...books, ...adventures]) raw.sourceNames[b.id] = b.name;
+  const files = homebrew.filter(({ file, json }) => {
+    const ok = !!json && typeof json === "object" && !Array.isArray(json);
+    if (!ok) warn(`${file}: not a 5etools homebrew file`);
+    return ok;
+  });
+  for (const { file, json } of files) {
+    const hb = json as HomebrewJson;
+    // book names of homebrew sources; an official source keeps its own name
+    const sources = Array.isArray(hb._meta?.sources) ? hb._meta.sources : [];
+    for (const s of sources) if (typeof s?.json === "string") raw.sourceNames[s.json] ??= s.full || s.abbreviation || s.json;
+    for (const k of HOMEBREW_COLLECTIONS) {
+      const list = hb[k];
+      if (list == null) continue;
+      if (!Array.isArray(list)) { warn(`${file}: "${k}" is not a list, left out`); continue; }
+      const good = (list as unknown[]).filter((x) => isEntry(k, x));
+      if (good.length < list.length) warn(`${file}: ${list.length - good.length} ${k} without a name or source, left out`);
+      (raw[k] as unknown[]).push(...good);
+    }
+  }
+  // sources a homebrew file needs (for what the importer reads) that are neither official nor loaded
+  const known = new Set(Object.keys(raw.sourceNames).map(lc));
+  for (const { file, json } of files) {
+    const deps = (json as HomebrewJson)._meta?.dependencies || {};
+    const missing = new Set(Object.entries(deps).filter(([k]) => (HOMEBREW_COLLECTIONS as readonly string[]).includes(k))
+      .flatMap(([, ids]): unknown[] => (Array.isArray(ids) ? ids : [])).filter((id): id is string => typeof id === "string" && !known.has(lc(id))));
+    if (missing.size) warn(`${file}: uses ${[...missing].join(", ")}, which ${missing.size > 1 ? "are" : "is"} not loaded; entries from there are missing`);
+  }
+  resolveCopies(raw);
+  return raw;
+}
+
 // ---------------------------------------------------------------- build
 export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
-  const read = <T>(rel: string) => o.read(rel) as Promise<T>;
+  const warn = o.warn || (() => {});
+  const raw = await loadData(o.read, o.homebrew, warn);
+  /** convert one entry; one the importer can't read (e.g. homebrew with unusual fields) is left out and reported */
+  const guard = (kind: string, e: RawBase, convert: () => void) => {
+    try { convert(); } catch (err) { warn(`${kind}: left out ${e.name} (${e.source}): ${(err as Error).message}`); }
+  };
   const is2024 = (e: RawBase) => SOURCES_2024.has(e.source) || e.edition === "one";
   // SRD: 5etools marks SRD entries with srd: true, or srd: "<SRD name>" when the SRD renames them
   const srdName = (e: RawBase): string | null => (e.srd === true ? e.name : typeof e.srd === "string" ? e.srd : null);
@@ -243,18 +407,16 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const nameOf = (e: RawBase) => (o.srdOnly ? srdName(e) || e.name : e.name);
 
   // races
-  const racesJson = await read<RacesFile>("races.json");
   const races: RaceData[] = [];
-  for (const r0 of racesJson.race) {
-    const r = resolveCopy(racesJson.race, r0);
-    if (o.rules2014Only && is2024(r)) continue;
+  for (const r of raw.race) guard("races", r, () => {
+    if (o.rules2014Only && is2024(r)) return;
     const subOut: SubraceData[] = [];
     // An unnamed subrace is the race as written: 5etools keeps e.g. the standard Human's +1 to every
     // ability there. Next to named subraces (Variant Human, the dragonmarks, which replace those +1s)
     // it is offered as "Standard"; on its own it is merged into the race below. Most races' unnamed
     // subrace is an empty placeholder (their bonuses are on the race), which is skipped as before.
     const hasContent = (s: RawSubrace) => !!(s.ability || s.entries?.length || s.speed || s.darkvision || s.skillProficiencies || s.languageProficiencies || s.resist || s.additionalSpells);
-    const subs = racesJson.subrace.filter((x) => x.raceName === r.name && x.raceSource === r.source && (x.name || hasContent(x)));
+    const subs = raw.subrace.filter((x) => x.raceName === r.name && x.raceSource === r.source && (x.name || hasContent(x)));
     for (const s of subs) {
       const name = s.name || STANDARD_SUBRACE;
       if (!allowed("races", s, s.name ? `${r.name} (${s.name})` : r.name)) continue;
@@ -273,7 +435,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       });
     }
     const baseOk = allowed("races", r);
-    if (!baseOk && !subOut.length) continue;
+    if (!baseOk && !subOut.length) return;
     const SIZE: Record<string, string> = { T: "Tiny", S: "Small", M: "Medium", L: "Large" };
     const standard = subOut.find((x) => x.name === STANDARD_SUBRACE && subs.some((s) => !s.name && idOf(r.name, STANDARD_SUBRACE, s.source) === x.id));
     const race: RaceData = {
@@ -294,148 +456,159 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     };
     if (standard && subOut.length === 1) mergeSubrace(race, standard);
     races.push(race);
-  }
+  });
 
   // classes
   const classes: ClassData[] = [];
-  const classIndex = await read<FileIndex>("class/index.json");
-  for (const file of Object.values(classIndex)) {
-    const cj = await read<ClassFile>(`class/${file}`);
-    const classFeatures = cj.classFeature || [], subclassFeatures = cj.subclassFeature || [];
-    for (const c of cj.class || []) {
-      if (!allowed("classes", c)) continue;
-      const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
-      const feat = (ref: RawClassFeatureRef): Feature | null => {
-        const s = typeof ref === "string" ? ref : ref.classFeature;
-        const [name, cls, clsSrc, lvl, src] = s.split("|");
-        const f = classFeatures.find((x) => x.name === name && x.className === cls && x.level === +lvl && x.source === (src || clsSrc || "PHB"));
-        if (!f || !featOk(f)) return null;
-        return { name, level: +lvl, source: f.source, text: renderEntries(f.entries), optional: !!f.isClassFeatureVariant, subclassFeature: typeof ref === "object" && !!ref.gainSubclassFeature, link: null };
-      };
-      const features = (c.classFeatures || []).map(feat).filter((f): f is Feature => f !== null)
-        .filter((f) => !f.optional || !o.rules2014Only || !SOURCES_2024.has(f.source));
-      const tableCols: ClassData["tableCols"] = [];
-      for (const g of c.classTableGroups || []) {
-        if (g.rowsSpellProgression) continue;
-        (g.colLabels || []).forEach((lab, i) => {
-          const label = plain(renderStr(lab));
-          if (/cantrips known|spells known|spell slots|slot level|prepared/i.test(label)) return;
-          tableCols.push({ label, rows: (g.rows || []).map((row) => tableValue(row[i])) });
-        });
-      }
-      const subclasses: SubclassData[] = [];
-      for (const sc of (cj.subclass || []).filter((x) => x.className === c.name && x.classSource === c.source)) {
-        if (!allowed("classes", sc)) continue;
-        const sfeats: Feature[] = [];
-        const pushSub = (name: string, scShort: string, scSrc: string, lvl: string, src: string, clsSrc = "PHB"): RawSubclassFeature | null => {
-          const f = subclassFeatures.find((x) => x.name === name && x.subclassShortName === scShort && x.level === +lvl && x.source === (src || scSrc || clsSrc || "PHB"));
-          if (!f || !featOk(f) || sfeats.some((y) => y.name === name && y.level === +lvl)) return null;
-          sfeats.push({ name, level: +lvl, source: f.source, text: renderEntries(f.entries), link: null });
-          return f;
-        };
-        for (const ref of sc.subclassFeatures || []) {
-          const [name, , clsSrc, scShort, scSrc, lvl, src] = ref.split("|");
-          const f = pushSub(name, scShort, scSrc, lvl, src, clsSrc);
-          // nested refs inside the first feature (e.g. "Evocation Savant" inside "School of Evocation")
-          if (f) for (const m of JSON.stringify(f.entries).matchAll(/"subclassFeature":"([^"]+)"/g)) {
-            const [n2, , , s2, ss2, l2, src2] = m[1].split("|");
-            pushSub(n2, s2, ss2, l2, src2);
-          }
-        }
-        subclasses.push({
-          id: idOf(c.name, sc.shortName, sc.source), name: nameOf(sc), shortName: sc.shortName, source: sc.source, link: null,
-          features: sfeats.sort((a, b) => a.level - b.level),
-          spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
-          additionalSpells: sc.additionalSpells || null,
-        });
-      }
-      const sp = c.startingProficiencies || {};
-      const profText = (a: RawProfItem) => plain(renderStr(typeof a === "string" ? a : a.full || a.proficiency || ""));
-      const pact = c.casterProgression === "pact"
-        ? (c.classTableGroups || []).flatMap((g) => {
-          const labels = g.colLabels || [];
-          if (!labels.includes("Spell Slots")) return [];
-          const iSlots = labels.indexOf("Spell Slots"), iLevel = labels.indexOf("Slot Level");
-          return [(g.rows || []).map((row) => ({ slots: Number(row[iSlots]) || 0, level: parseInt(String(tableValue(row[iLevel]))) || 1 }))];
-        })[0] || null
-        : null;
-      const mc = c.multiclassing;
-      classes.push({
-        id: idOf(c.name, c.source), name: nameOf(c), source: c.source, link: null,
-        hd: c.hd?.faces || 8, saves: c.proficiency || [],
-        armor: (sp.armor || []).map(profText), weapons: (sp.weapons || []).map(profText), tools: (sp.tools || []).map(profText),
-        skills: skillChoices(sp.skills),
-        spellcasting: c.casterProgression && c.spellcastingAbility ? { ability: c.spellcastingAbility, progression: c.casterProgression, prepared: c.preparedSpells || null, cantrips: c.cantripProgression || null, known: c.spellsKnownProgression || null, knownFixed: c.spellsKnownProgressionFixed || null, list: c.name } : null,
-        pactSlots: pact,
-        tableCols,
-        subclassTitle: c.subclassTitle || "Subclass",
-        subclassLevel: features.find((f) => f.subclassFeature)?.level || 3,
-        features,
-        multiclass: mc ? {
-          requirements: mc.requirements || {},
-          armor: (mc.proficienciesGained?.armor || []).map(profText),
-          weapons: (mc.proficienciesGained?.weapons || []).map(profText),
-          skills: (mc.proficienciesGained?.skills || []).flatMap((s) => (s.choose ? [{ from: s.choose.from, count: s.choose.count }] : [])),
-        } : null,
-        subclasses,
+  // features by name|class|level|source, and subclass features by name|class|subclass|level|source
+  const classFeatures = indexBy(raw.classFeature, (x) => [x.name, x.className, x.level, x.source].join("|"));
+  const subclassFeatures = indexBy(raw.subclassFeature, (x) => [x.name, x.className, x.subclassShortName, x.level, x.source].join("|"));
+  // spells on the lists of imported homebrew classes: "name|source" -> class names
+  const classSpells = new Map<string, string[]>();
+  for (const c of raw.class) guard("classes", c, () => {
+    if (!allowed("classes", c)) return;
+    const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
+    const feat = (ref: RawClassFeatureRef): Feature | null => {
+      const s = typeof ref === "string" ? ref : ref?.classFeature;
+      if (typeof s !== "string") return null;
+      const [name, cls, clsSrc, lvl, src] = s.split("|");
+      const f = classFeatures.get([name, cls, +lvl, src || clsSrc || "PHB"].join("|"));
+      if (!f || !featOk(f)) return null;
+      return { name, level: +lvl, source: f.source, text: renderEntries(f.entries), optional: !!f.isClassFeatureVariant, subclassFeature: typeof ref === "object" && !!ref.gainSubclassFeature, link: null };
+    };
+    const features = (c.classFeatures || []).map(feat).filter((f): f is Feature => f !== null)
+      .filter((f) => !f.optional || !o.rules2014Only || !SOURCES_2024.has(f.source));
+    const tableCols: ClassData["tableCols"] = [];
+    for (const g of c.classTableGroups || []) {
+      if (g.rowsSpellProgression) continue;
+      (g.colLabels || []).forEach((lab, i) => {
+        const label = plain(renderStr(lab));
+        if (/cantrips known|spells known|spell slots|slot level|prepared/i.test(label)) return;
+        tableCols.push({ label, rows: (g.rows || []).map((row) => tableValue(row[i])) });
       });
     }
-  }
+    const subclasses: SubclassData[] = [];
+    for (const sc of raw.subclass.filter((x) => x.className === c.name && x.classSource === c.source)) guard("subclasses", sc, () => {
+      if (!allowed("classes", sc)) return;
+      const sfeats: Feature[] = [];
+      const pushSub = (name: string, scShort: string, scSrc: string, lvl: string, src: string, clsSrc = "PHB"): RawSubclassFeature | null => {
+        const f = subclassFeatures.get([name, c.name, scShort, +lvl, src || scSrc || clsSrc || "PHB"].join("|"));
+        if (!f || !featOk(f) || sfeats.some((y) => y.name === name && y.level === +lvl)) return null;
+        sfeats.push({ name, level: +lvl, source: f.source, text: renderEntries(f.entries), link: null });
+        return f;
+      };
+      for (const ref of sc.subclassFeatures || []) {
+        const s = typeof ref === "string" ? ref : ref?.subclassFeature;
+        if (typeof s !== "string") continue;
+        const [name, , clsSrc, scShort, scSrc, lvl, src] = s.split("|");
+        const f = pushSub(name, scShort, scSrc, lvl, src, clsSrc);
+        // nested refs inside the first feature (e.g. "Evocation Savant" inside "School of Evocation")
+        if (f) for (const m of JSON.stringify(f.entries ?? []).matchAll(/"subclassFeature":"([^"]+)"/g)) {
+          const [n2, , , s2, ss2, l2, src2] = m[1].split("|");
+          pushSub(n2, s2, ss2, l2, src2);
+        }
+      }
+      subclasses.push({
+        id: idOf(c.name, sc.shortName, sc.source), name: nameOf(sc), shortName: sc.shortName, source: sc.source, link: null,
+        features: sfeats.sort((a, b) => a.level - b.level),
+        spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
+        additionalSpells: sc.additionalSpells || null,
+      });
+    });
+    const sp = c.startingProficiencies || {};
+    const profText = (a: RawProfItem) => plain(renderStr(typeof a === "string" ? a : a.full || a.proficiency || ""));
+    const pact = c.casterProgression === "pact"
+      ? (c.classTableGroups || []).flatMap((g) => {
+        const labels = g.colLabels || [];
+        if (!labels.includes("Spell Slots")) return [];
+        const iSlots = labels.indexOf("Spell Slots"), iLevel = labels.indexOf("Slot Level");
+        return [(g.rows || []).map((row) => ({ slots: Number(row[iSlots]) || 0, level: parseInt(String(tableValue(row[iLevel]))) || 1 }))];
+      })[0] || null
+      : null;
+    const mc = c.multiclassing;
+    classes.push({
+      id: idOf(c.name, c.source), name: nameOf(c), source: c.source, link: null,
+      hd: c.hd?.faces || 8, saves: c.proficiency || [],
+      armor: (sp.armor || []).map(profText), weapons: (sp.weapons || []).map(profText), tools: (sp.tools || []).map(profText),
+      skills: skillChoices(sp.skills),
+      spellcasting: c.casterProgression && c.spellcastingAbility ? { ability: c.spellcastingAbility, progression: c.casterProgression, prepared: c.preparedSpells || null, cantrips: c.cantripProgression || null, known: c.spellsKnownProgression || null, knownFixed: c.spellsKnownProgressionFixed || null, list: c.name } : null,
+      pactSlots: pact,
+      tableCols,
+      subclassTitle: c.subclassTitle || "Subclass",
+      subclassLevel: features.find((f) => f.subclassFeature)?.level || 3,
+      features,
+      multiclass: mc ? {
+        requirements: mc.requirements || {},
+        armor: (mc.proficienciesGained?.armor || []).map(profText),
+        weapons: (mc.proficienciesGained?.weapons || []).map(profText),
+        skills: (mc.proficienciesGained?.skills || []).flatMap((s) => (s.choose ? [{ from: s.choose.from, count: s.choose.count }] : [])),
+      } : null,
+      subclasses,
+    });
+    for (const ref of c.classSpells || []) {
+      const [name, source] = typeof ref === "string" ? ref.split("|") : [ref?.name, ref?.source];
+      if (!name) continue;
+      const k = `${lc(name)}|${lc(source || "PHB")}`;
+      classSpells.set(k, [...classSpells.get(k) || [], c.name]);
+    }
+  });
 
   // backgrounds
-  const bgJson = await read<{ background: RawBackground[] }>("backgrounds.json");
   const backgrounds: BackgroundData[] = [];
+  // "Feature: Shelter of the Faithful", or with a prefix as in "Baldur's Gate Feature: Religious Community"
+  const FEATURE = /^(?:.*\s)?Feature:\s*/;
   const findFeature = (es: RawEntry[] | undefined): { name: string; entries?: RawEntry[] } | null => {
-    for (const e of es || []) if (typeof e === "object") { if (e.name && /^Feature:/.test(e.name)) return { name: e.name, entries: e.entries }; const r = findFeature(e.entries); if (r) return r; }
+    for (const e of es || []) if (typeof e === "object") { if (e.name && FEATURE.test(e.name)) return { name: e.name, entries: e.entries }; const r = findFeature(e.entries); if (r) return r; }
     return null;
   };
-  for (const b0 of bgJson.background) {
-    const b = resolveCopy(bgJson.background, b0);
-    if (!allowed("backgrounds", b)) continue;
+  for (const b of raw.background) guard("backgrounds", b, () => {
+    if (!allowed("backgrounds", b)) return;
     const fe = findFeature(b.entries);
     backgrounds.push({
       id: idOf(b.name, b.source), name: nameOf(b), source: b.source, link: null,
       skills: profList(b.skillProficiencies), tools: profList(b.toolProficiencies), languages: langText(b.languageProficiencies),
-      feature: fe ? { name: fe.name.replace(/^Feature:\s*/, ""), heading: fe.name, text: renderEntries(fe.entries), link: null } : null,
+      feature: fe ? { name: fe.name.replace(FEATURE, ""), heading: fe.name, text: renderEntries(fe.entries), link: null } : null,
       feats: b.feats || null,
     });
-  }
+  });
 
   // feats
   const feats: FeatData[] = [];
-  for (const f of (await read<{ feat: RawFeat[] }>("feats.json")).feat) {
-    if (!allowed("feats", f)) continue;
+  for (const f of raw.feat) guard("feats", f, () => {
+    if (!allowed("feats", f)) return;
     const prereq = (f.prerequisite || []).map(prereqText).join(" or ");
     feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries) });
-  }
+  });
 
   // spells
-  const spellSources = await read<SpellSourcesFile>("spells/sources.json");
   const SCHOOL: Record<string, string> = { A: "Abjuration", C: "Conjuration", D: "Divination", E: "Enchantment", V: "Evocation", I: "Illusion", N: "Necromancy", T: "Transmutation" };
   const spells: SpellData[] = [];
-  for (const file of Object.values(await read<FileIndex>("spells/index.json"))) {
-    for (const s of (await read<{ spell?: RawSpell[] }>(`spells/${file}`)).spell || []) {
-      if (!allowed("spells", s)) continue;
-      const lists = spellSources[s.source]?.[s.name] || {};
-      const classes2 = [...new Set([...(lists.class || []), ...(lists.classVariant || [])].map((c) => c.name))];
-      const t = s.time?.[0];
-      const dist = s.range?.distance;
-      const range = dist ? (dist.amount ? `${dist.amount} ${dist.type}` : title(dist.type)) + (s.range?.type !== "point" ? ` (${s.range?.type})` : "") : title(s.range?.type || "");
-      const dur = s.duration?.[0];
-      const m = s.components?.m;
-      spells.push({
-        id: idOf(s.name, s.source), name: nameOf(s), source: s.source, link: null,
-        level: s.level, school: SCHOOL[s.school] || s.school,
-        time: t ? `${t.number} ${t.unit}${t.number > 1 ? "s" : ""}` : "",
-        range,
-        components: [s.components?.v && "V", s.components?.s && "S", m && `M (${typeof m === "string" ? m : m.text})`].filter(Boolean).join(", "),
-        duration: dur ? (dur.type === "timed" && dur.duration ? `${dur.concentration ? "Concentration, up to " : ""}${dur.duration.amount} ${dur.duration.type}${dur.duration.amount > 1 ? "s" : ""}` : title(dur.type)) : "",
-        concentration: !!dur?.concentration, ritual: !!s.meta?.ritual, classes: classes2,
-        attack: (s.spellAttack || []).length > 0, save: (s.savingThrow || [])[0] || null, damage: s.damageInflict || [],
-        text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
-      });
-    }
-  }
+  for (const s of raw.spell) guard("spells", s, () => {
+    if (!allowed("spells", s)) return;
+    if (typeof s.level !== "number") throw new Error("no spell level");
+    // class lists: spells/sources.json for official spells, the spell itself or the class for homebrew
+    const lists = raw.spellSources[s.source]?.[s.name] || {}, own = s.classes || {};
+    const classes2 = [...new Set([
+      ...[...(lists.class || []), ...(lists.classVariant || []), ...(own.fromClassList || []), ...(own.fromClassListVariant || [])].map((c) => c.name),
+      ...classSpells.get(`${lc(s.name)}|${lc(s.source)}`) || [],
+    ].filter(Boolean))];
+    const t = s.time?.[0];
+    const dist = s.range?.distance;
+    const range = dist ? (dist.amount ? `${dist.amount} ${dist.type}` : title(dist.type)) + (s.range?.type !== "point" ? ` (${s.range?.type})` : "") : title(s.range?.type || "");
+    const dur = s.duration?.[0];
+    const m = s.components?.m;
+    spells.push({
+      id: idOf(s.name, s.source), name: nameOf(s), source: s.source, link: null,
+      level: s.level, school: SCHOOL[s.school] || s.school,
+      time: t ? `${t.number} ${t.unit}${t.number > 1 ? "s" : ""}` : "",
+      range,
+      components: [s.components?.v && "V", s.components?.s && "S", m && `M (${typeof m === "string" ? m : m.text})`].filter(Boolean).join(", "),
+      duration: dur ? (dur.type === "timed" && dur.duration ? `${dur.concentration ? "Concentration, up to " : ""}${dur.duration.amount} ${dur.duration.type}${dur.duration.amount > 1 ? "s" : ""}` : title(dur.type)) : "",
+      concentration: !!dur?.concentration, ritual: !!s.meta?.ritual, classes: classes2,
+      attack: (s.spellAttack || []).length > 0, save: (s.savingThrow || [])[0] || null, damage: s.damageInflict || [],
+      text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
+    });
+  });
 
   // items (base + magic)
   const DMG: Record<string, string> = { B: "bludgeoning", P: "piercing", S: "slashing", N: "necrotic", R: "radiant", F: "fire", C: "cold", O: "force", L: "lightning", T: "thunder", A: "acid", I: "poison", Y: "psychic" };
@@ -459,8 +632,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       baseItem: it.baseItem ? it.baseItem.split("|")[0] : null,
     });
   };
-  (await read<{ baseitem: RawItem[] }>("items-base.json")).baseitem.forEach((i) => pushItem(i, false));
-  (await read<{ item: RawItem[] }>("items.json")).item.forEach((i) => pushItem(i, true));
+  raw.baseitem.forEach((i) => guard("items", i, () => pushItem(i, false)));
+  raw.item.forEach((i) => guard("items", i, () => pushItem(i, true)));
   // magic armour and weapons inherit the stats of their base item
   const inherited = ["kind", "armorType", "ac", "strength", "stealth", "weaponCategory", "ranged", "dmg1", "dmg2", "dmgType", "properties", "range"] as const;
   for (const it of items) {
@@ -478,8 +651,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
 
   // names only for the sources that are actually used
   const used = new Set<string>([...races, ...races.flatMap((r) => r.subraces), ...classes, ...classes.flatMap((c) => c.subclasses), ...backgrounds, ...feats, ...spells, ...items].map((x) => x.source));
-  const books = (await read<BooksFile>("books.json")).book, adventures = (await read<AdventuresFile>("adventures.json")).adventure;
-  const sources = Object.fromEntries([...books, ...adventures].filter((b) => used.has(b.id)).map((b) => [b.id, b.name]));
+  const sources = Object.fromEntries(Object.entries(raw.sourceNames).filter(([id]) => used.has(id)));
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
   return {
     meta: { generated: new Date().toISOString(), srdOnly: !!o.srdOnly, sources, importVersion: IMPORT_VERSION },

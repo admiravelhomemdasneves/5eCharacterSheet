@@ -13,6 +13,8 @@ export interface SheetSettings {
   /** optional folder of a ttrpg-convert-cli compendium, used only for links */
   compendiumFolder: string;
   fivetoolsPath: string;
+  /** vault paths of 5etools homebrew files added to the data when importing */
+  homebrewFiles: string[];
   importRules2014: boolean;
   importOnlyWithNotes: boolean;
   lastImport: string;
@@ -24,18 +26,22 @@ export interface SheetSettings {
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
   charactersFolder: "", lastFolder: "", dataSource: "none", compendiumFolder: "",
-  fivetoolsPath: "", importRules2014: true, importOnlyWithNotes: false, lastImport: "",
+  fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "",
   theme: "plugin", customAccent: "#922610", hiddenSections: [],
 };
 const THEME_KEYS = ["theme", "customAccent"];
 // Sheet template toggles use "section:<key>" control keys, stored as the list of hidden sections
 const SECTION_PREFIX = "section:";
+// homebrew files are edited one path per line and stored as a list
+const HOMEBREW_PLACEHOLDER = ".5etools/homebrew/My Book.json";
+const pathLines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
 // Texts shared by both settings UIs below
 const T = {
   charactersFolder: ["Characters folder", "Optional. Folder suggested for new characters. Leave empty to use the last folder you created a character in (the vault root the first time)."],
   dataSource: ["Rules data", "Without rules data the sheet works in manual mode: you type races, classes, features, spells and values yourself, and only simple maths (modifiers, proficiency, saves, skills and spellcasting) is automatic."],
   fivetoolsPath: ["Folder with 5etools data", "Used by the import. A folder inside this vault with the data files of a 5etools copy you are entitled to use (it contains races.json). A hidden folder such as .5etools/data keeps them out of your file list and search."],
+  homebrew: ["Homebrew files", "Optional. Homebrew in the 5etools format (JSON files inside this vault), one path per line. Their races, classes, subclasses, backgrounds, feats, spells and items are added to the 5etools data when importing."],
   rules2014: ["Only 2014 rules", "Leave out the 2024 core rulebooks and other 2024-edition entries when importing."],
   onlyNotes: ["Only entries with a note", "Import only what has a note in your compendium folder, so the menus match it exactly. Overrides the option above."],
   importNow: ["Import", "Convert the data now. The result is stored in this plugin's folder."],
@@ -80,6 +86,7 @@ export class SheetSettingTab extends PluginSettingTab {
       ] },
       { type: "group", heading: "Import from 5etools", items: [
         { name: T.fivetoolsPath[0], desc: T.fivetoolsPath[1], control: { type: "text", key: "fivetoolsPath", placeholder: ".5etools/data" } },
+        { name: T.homebrew[0], desc: T.homebrew[1], control: { type: "textarea", key: "homebrewFiles", placeholder: HOMEBREW_PLACEHOLDER, rows: 4 } },
         { name: T.rules2014[0], desc: T.rules2014[1], control: { type: "toggle", key: "importRules2014" } },
         { name: T.onlyNotes[0], desc: T.onlyNotes[1], control: { type: "toggle", key: "importOnlyWithNotes" } },
         {
@@ -100,10 +107,12 @@ export class SheetSettingTab extends PluginSettingTab {
   }
   getControlValue(key: string): unknown {
     if (key.startsWith(SECTION_PREFIX)) return !this.plugin.settings.hiddenSections.includes(key.slice(SECTION_PREFIX.length));
+    if (key === "homebrewFiles") return this.plugin.settings.homebrewFiles.join("\n");
     return (this.plugin.settings as unknown as Record<string, unknown>)[key];
   }
   async setControlValue(key: string, value: unknown) {
     if (key.startsWith(SECTION_PREFIX)) { await this.setSectionShown(key.slice(SECTION_PREFIX.length), !!value); return; }
+    if (key === "homebrewFiles") value = pathLines(typeof value === "string" ? value : "");
     (this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
     // these two change what the sheets show, so reload the rules data and links
     if (key === "dataSource" || key === "compendiumFolder") await this.plugin.saveSettings();
@@ -162,6 +171,8 @@ export class SheetSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Import from 5etools").setHeading();
     new Setting(containerEl).setName(T.fivetoolsPath[0]).setDesc(T.fivetoolsPath[1])
       .addText((t) => t.setPlaceholder(".5etools/data").setValue(st.fivetoolsPath).onChange(async (v) => { st.fivetoolsPath = v; await this.plugin.saveData(st); }));
+    new Setting(containerEl).setName(T.homebrew[0]).setDesc(T.homebrew[1])
+      .addTextArea((t) => { t.setPlaceholder(HOMEBREW_PLACEHOLDER).setValue(st.homebrewFiles.join("\n")).onChange(async (v) => { st.homebrewFiles = pathLines(v); await this.plugin.saveData(st); }); t.inputEl.rows = 4; });
     new Setting(containerEl).setName(T.rules2014[0]).setDesc(T.rules2014[1])
       .addToggle((t) => t.setValue(st.importRules2014).onChange(async (v) => { st.importRules2014 = v; await this.plugin.saveData(st); }));
     new Setting(containerEl).setName(T.onlyNotes[0]).setDesc(T.onlyNotes[1])

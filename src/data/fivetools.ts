@@ -26,8 +26,22 @@ export interface RawBase {
   srd?: boolean | string;
   edition?: string;
   entries?: RawEntry[];
-  _copy?: { name: string; source: string };
+  _copy?: RawCopy;
 }
+/**
+ * "This entry is that one, changed": `name` and `source` (plus e.g. className for subclasses) say
+ * what is copied, `_mod` how its fields change, `_preserve` which normally-skipped fields are kept.
+ */
+export type RawCopy = { name: string; source: string; _mod?: Record<string, RawMod | RawMod[]>; _preserve?: Record<string, boolean> } & Record<string, unknown>;
+export type RawMod = string | {
+  mode: string;
+  items?: unknown;
+  index?: number;
+  replace?: string | { index?: number; regex?: string; flags?: string };
+  with?: string;
+  flags?: string;
+  names?: string | string[];
+};
 export type RawSpeedValue = number | boolean | { number: number };
 export type RawSpeed = number | Partial<Record<"walk" | "fly" | "swim" | "climb" | "burrow", RawSpeedValue>>;
 export type RawAbility = Partial<Record<Abil, number>> & {
@@ -81,6 +95,8 @@ export interface RawClass extends RawBase {
   classTableGroups?: RawTableGroup[];
   classFeatures?: RawClassFeatureRef[];
   subclassTitle?: string;
+  /** homebrew: the class's spell list, as "name|source" (PHB when left out) or { name, source } */
+  classSpells?: (string | { name?: string; source?: string })[];
   multiclassing?: {
     requirements?: Record<string, unknown>;
     proficienciesGained?: { armor?: RawProfItem[]; weapons?: RawProfItem[]; skills?: RawSkillChoice[] };
@@ -91,14 +107,14 @@ export interface RawSubclass extends RawBase {
   shortName: string;
   className: string;
   classSource: string;
-  subclassFeatures?: string[];
+  subclassFeatures?: (string | { subclassFeature?: string })[];
   casterProgression?: string;
   spellcastingAbility?: Abil;
   cantripProgression?: number[];
   spellsKnownProgression?: number[];
   additionalSpells?: RawAdditionalSpells[];
 }
-export interface RawSubclassFeature extends RawBase { subclassShortName: string; level: number }
+export interface RawSubclassFeature extends RawBase { className: string; subclassShortName: string; level: number }
 export interface ClassFile { class?: RawClass[]; subclass?: RawSubclass[]; classFeature?: RawClassFeature[]; subclassFeature?: RawSubclassFeature[] }
 
 // ---------------------------------------------------------------- backgrounds, feats
@@ -123,6 +139,8 @@ export interface RawSpell extends RawBase {
   savingThrow?: string[];
   damageInflict?: string[];
   entriesHigherLevel?: RawEntry[];
+  /** homebrew: class lists on the spell itself (official spells have them in spells/sources.json) */
+  classes?: { fromClassList?: { name: string }[]; fromClassListVariant?: { name: string }[] };
 }
 export type SpellSourcesFile = Record<string, Record<string, { class?: { name: string }[]; classVariant?: { name: string }[] }>>;
 
@@ -152,3 +170,33 @@ export interface RawItem extends RawBase {
 export type FileIndex = Record<string, string>;
 export interface BooksFile { book: { id: string; name: string }[] }
 export interface AdventuresFile { adventure: { id: string; name: string }[] }
+
+// ---------------------------------------------------------------- loaded data
+/** The collections the importer reads, each gathered from all the files it is spread over. */
+export interface RawData {
+  race: RawRace[];
+  subrace: RawSubrace[];
+  class: RawClass[];
+  classFeature: RawClassFeature[];
+  subclass: RawSubclass[];
+  subclassFeature: RawSubclassFeature[];
+  background: RawBackground[];
+  feat: RawFeat[];
+  spell: RawSpell[];
+  baseitem: RawItem[];
+  item: RawItem[];
+  /** spell class lists of official spells (spells/sources.json) */
+  spellSources: SpellSourcesFile;
+  /** source id -> book or adventure name */
+  sourceNames: Record<string, string>;
+}
+/** Collections of RawData that a homebrew file can add to. */
+export const HOMEBREW_COLLECTIONS = ["race", "subrace", "class", "classFeature", "subclass", "subclassFeature", "background", "feat", "spell", "baseitem", "item"] as const;
+/** A 5etools homebrew file: `_meta.sources` names its books, the rest are collections like the official data's. */
+export type HomebrewJson = {
+  _meta?: {
+    sources?: { json: string; full?: string; abbreviation?: string }[];
+    /** sources this file builds on, per collection, e.g. { spell: ["llspell"] } */
+    dependencies?: Record<string, unknown>;
+  };
+} & Partial<Record<string, unknown>>;
