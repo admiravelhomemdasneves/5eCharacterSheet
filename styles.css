@@ -293,7 +293,8 @@
 .dnd-details .dnd-feature-notes .dnd-value { display: block; }
 .dnd-details .dnd-feature-notes .dnd-md { padding: 0; }
 /* hide (data features) and remove (custom features) buttons, shown while the row is hovered */
-.dnd-details summary .dnd-feature-btn { margin-left: auto; align-self: center; opacity: 0; transition: opacity 120ms ease-in-out; }
+.dnd-feature-btns { display: flex; gap: var(--dnd-s1); margin-left: auto; align-self: center; }
+.dnd-details summary .dnd-feature-btn { opacity: 0; transition: opacity 120ms ease-in-out; }
 .dnd-details summary:hover .dnd-feature-btn, .dnd-details summary .dnd-feature-btn:focus-visible { opacity: 1; }
 @media (hover: none) { .dnd-details summary .dnd-feature-btn { opacity: 1; } }
 .dnd-custom-feature-body { display: flex; flex-direction: column; gap: var(--dnd-s2); padding: var(--dnd-s2) 0 var(--dnd-s2) var(--dnd-s4); }

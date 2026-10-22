@@ -621,12 +621,16 @@ export class CharacterSheet extends MarkdownRenderChild {
     ctx.own.add(key);
     if (this.s.removedFeatures.includes(key)) return;
     if (this.s.hiddenFeatures.includes(key)) { ctx.hidden.push({ key, name }); return; }
-    const sm = this.details(el, summary, text, key).querySelector("summary")!;
-    iconButton(sm, "eye-off", "Hide this feature", () => this.change((x) => { x.hiddenFeatures.push(key); }), "dnd-feature-btn");
-    iconButton(sm, "trash-2", "Remove this feature", () => {
+    this.featureButtons(this.details(el, summary, text, key), key, () => {
       new Notice(`Removed ${name}. To get it back, pick it in "+ Add feature".`);
       this.change((x) => { x.removedFeatures.push(key); });
-    }, "dnd-feature-btn");
+    });
+  }
+  /** Hide (by `hideKey`, listed under the section) and remove buttons, together at the end of the feature's summary. */
+  private featureButtons(d: HTMLElement, hideKey: string, remove: () => void) {
+    const btns = d.querySelector("summary")!.createSpan({ cls: "dnd-feature-btns" });
+    iconButton(btns, "eye-off", "Hide this feature", () => this.change((x) => { x.hiddenFeatures.push(hideKey); }), "dnd-feature-btn");
+    iconButton(btns, "trash-2", "Remove this feature", remove, "dnd-feature-btn");
   }
   /**
    * The features the player added: from the rules data (shown from the data, with notes) or custom
@@ -639,17 +643,18 @@ export class CharacterSheet extends MarkdownRenderChild {
     const remove = (id: string) => this.change((x) => { x.customFeatures = x.customFeatures.filter((y) => y.id !== id); });
     const index = E.featureIndex(this.r, kind);
     for (const f of E.customFeatures(this.s, kind)) {
+      // already listed above when the character's class, race or background now gives it
+      if (f.ref && ctx.own.has(f.ref)) continue;
+      // the data's text and link while the feature is in the data, else the copy saved with it
+      const data = f.ref ? index.find((x) => x.key === f.ref) : undefined;
+      const hideKey = f.ref ?? `custom#${f.id}`;
+      if (this.s.hiddenFeatures.includes(hideKey)) { ctx.hidden.push({ key: hideKey, name: data?.name ?? (f.name || "New feature") }); continue; }
       if (f.ref) {
-        // already listed above when the character's class, race or background now gives it
-        if (ctx.own.has(f.ref)) continue;
-        // the data's text and link while the feature is in the data, else the copy saved with it
-        const data = index.find((x) => x.key === f.ref);
-        const sm = this.details(el, (sm) => {
+        this.featureButtons(this.details(el, (sm) => {
           if (kind === "class") sm.createSpan({ cls: "dnd-feature-level", text: `Lv ${data?.level ?? f.level}` });
           this.link(sm, data?.name ?? f.name, data?.link, "dnd-feature-name");
           sm.createSpan({ cls: "dnd-tag", text: data?.from ?? "added" });
-        }, data?.text ?? f.text, f.ref).querySelector("summary")!;
-        iconButton(sm, "trash-2", "Remove this feature", () => remove(f.id), "dnd-feature-btn");
+        }, data?.text ?? f.text, f.ref), hideKey, () => remove(f.id));
         continue;
       }
       const autoEdit = this.focusItem === `feature:${f.id}`;
@@ -660,7 +665,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       const lvl = kind === "class" ? sm.createSpan({ cls: "dnd-feature-level", text: `Lv ${f.level}` }) : null;
       const nameEl = sm.createSpan({ cls: "dnd-feature-name", text: f.name || "New feature" });
       sm.createSpan({ cls: "dnd-tag", text: "custom" });
-      iconButton(sm, "trash-2", "Remove this feature", () => remove(f.id), "dnd-feature-btn");
+      this.featureButtons(d, hideKey, () => remove(f.id));
       const body = d.createDiv({ cls: "dnd-custom-feature-body" });
       const row = body.createDiv({ cls: "dnd-row dnd-fill" });
       // saved without a re-render so the feature stays open; the summary is updated in place
