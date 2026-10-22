@@ -9,6 +9,8 @@ import { SECTIONS } from "../sections";
 
 const ORD = ["Cantrip", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
 const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+/** a data feature the player hid: its featureKey() and the name shown to restore it */
+type HiddenFeature = { key: string; name: string };
 
 export class CharacterSheet extends MarkdownRenderChild {
   private s!: CharState;
@@ -552,17 +554,19 @@ export class CharacterSheet extends MarkdownRenderChild {
     const s = this.v, r = this.r;
     const race = r.race(s), sub = r.subrace(s), bg = r.background(s);
     this.section(root, "race-features", "Race & Background Features", (el) => {
-      if (!race && !bg) { el.createDiv({ cls: "dnd-hint", text: "Choose a race and a background to see their features." }); return; }
+      const hidden: HiddenFeature[] = [];
+      if (!race && !bg) el.createDiv({ cls: "dnd-hint", text: "Choose a race and a background to see their features." });
       const skip = new Set(["Age", "Size", "Alignment", "Speed", "Languages", "Ability Score Increase"]);
       if (race) {
         const h = el.createDiv({ cls: "dnd-subtitle" }); this.link(h, sub ? `${race.name} (${sub.name})` : race.name, sub?.link || race.link);
         const traits = [...race.traits.map((t) => ({ t, owner: race.id })), ...(sub?.traits || []).map((t) => ({ t, owner: sub!.id }))];
-        for (const { t, owner } of traits.filter(({ t }) => !skip.has(t.name))) this.details(el, (sm) => sm.createSpan({ text: t.name, cls: "dnd-feature-name" }), t.text, E.featureKey(owner, t.name));
+        for (const { t, owner } of traits.filter(({ t }) => !skip.has(t.name))) this.dataFeature(el, E.featureKey(owner, t.name), t.name, (sm) => sm.createSpan({ text: t.name, cls: "dnd-feature-name" }), t.text, hidden);
       }
       if (bg) {
         const h = el.createDiv({ cls: "dnd-subtitle" }); this.link(h, `Background: ${bg.name}`, bg.link);
-        if (bg.feature) this.details(el, (sm) => this.link(sm, bg.feature!.name, bg.feature!.link || bg.link, "dnd-feature-name"), bg.feature.text || "*See the background note.*", E.featureKey(bg.id, bg.feature.name));
+        if (bg.feature) this.dataFeature(el, E.featureKey(bg.id, bg.feature.name), bg.feature.name, (sm) => this.link(sm, bg.feature!.name, bg.feature!.link || bg.link, "dnd-feature-name"), bg.feature.text || "*See the background note.*", hidden);
       }
+      this.customFeatures(el, "race", hidden);
     });
   }
   private classFeaturesSection(root: HTMLElement) {
@@ -573,7 +577,8 @@ export class CharacterSheet extends MarkdownRenderChild {
     const s = this.v, r = this.r;
     this.section(root, "class-features", "Class Features", (el) => {
       const groups = E.classFeatures(r, s);
-      if (!groups.length) { el.createDiv({ cls: "dnd-hint", text: "Choose a class to see its features." }); return; }
+      const hidden: HiddenFeature[] = [];
+      if (!groups.length) el.createDiv({ cls: "dnd-hint", text: "Choose a class to see its features." });
       const res = E.classResources(r, s);
       if (res.length) {
         const rr = el.createDiv({ cls: "dnd-resources" });
@@ -596,14 +601,58 @@ export class CharacterSheet extends MarkdownRenderChild {
         this.link(h, `${g.cls.name} ${g.level}`, g.cls.link);
         if (g.sub) { h.createSpan({ text: " · " }); this.link(h, g.sub.name, g.sub.link); }
         for (const f of g.features) {
-          this.details(el, (sm) => {
+          this.dataFeature(el, E.featureKey(g.sub?.features.includes(f) ? g.sub.id : g.cls.id, f.name, f.level), `${f.name} (Lv ${f.level})`, (sm) => {
             sm.createSpan({ cls: "dnd-feature-level", text: `Lv ${f.level}` });
             this.link(sm, f.name, f.link, "dnd-feature-name");
             if (f.optional) sm.createSpan({ cls: "dnd-tag", text: "optional (TCE)" });
-          }, f.text, E.featureKey(g.sub?.features.includes(f) ? g.sub.id : g.cls.id, f.name, f.level));
+          }, f.text, hidden);
         }
       }
+      this.customFeatures(el, "class", hidden);
     });
+  }
+  /** A feature from the rules data, with a button to hide it; a hidden one goes to `hidden` instead. */
+  private dataFeature(el: HTMLElement, key: string, name: string, summary: (el: HTMLElement) => void, text: string, hidden: HiddenFeature[]) {
+    if (this.s.hiddenFeatures.includes(key)) { hidden.push({ key, name }); return; }
+    const d = this.details(el, summary, text, key);
+    iconButton(d.querySelector("summary")!, "eye-off", "Hide this feature", () => this.change((x) => { x.hiddenFeatures.push(key); }), "dnd-feature-btn");
+  }
+  /**
+   * The player's own features (editable name, level and text), then the hidden data features to
+   * show again and "+ Add feature". A feature just added opens with its name being edited.
+   */
+  private customFeatures(el: HTMLElement, kind: E.CustomFeature["kind"], hidden: HiddenFeature[]) {
+    const edit = (x: CharState, id: string, set: (f: E.CustomFeature) => void) => { const f = x.customFeatures.find((y) => y.id === id); if (f) set(f); };
+    for (const f of E.customFeatures(this.s, kind)) {
+      const autoEdit = this.focusItem === `feature:${f.id}`;
+      if (autoEdit) this.focusItem = null;
+      const d = el.createEl("details", { cls: "dnd-details dnd-custom-feature" });
+      d.open = autoEdit;
+      const sm = d.createEl("summary");
+      const lvl = kind === "class" ? sm.createSpan({ cls: "dnd-feature-level", text: `Lv ${f.level}` }) : null;
+      const nameEl = sm.createSpan({ cls: "dnd-feature-name", text: f.name || "New feature" });
+      sm.createSpan({ cls: "dnd-tag", text: "custom" });
+      iconButton(sm, "trash-2", "Remove this feature", () => this.change((x) => { x.customFeatures = x.customFeatures.filter((y) => y.id !== f.id); }), "dnd-feature-btn");
+      const body = d.createDiv({ cls: "dnd-custom-feature-body" });
+      const row = body.createDiv({ cls: "dnd-row dnd-fill" });
+      // saved without a re-render so the feature stays open; the summary is updated in place
+      this.richText(labeled(row, "Name"), f.name, (v) => { nameEl.setText(v || "New feature"); this.change((x) => edit(x, f.id, (y) => { y.name = v; }), false); }, { placeholder: "Feature name", singleLine: true, autoEdit });
+      if (lvl) stepper(labeled(row, "Level", "dnd-field-narrow"), f.level, (v) => { lvl.setText(`Lv ${v}`); this.change((x) => edit(x, f.id, (y) => { y.level = v; }), false); }, { min: 1, max: 20 });
+      this.richText(labeled(body, "Text", "dnd-rich-field"), f.text, (v) => this.change((x) => edit(x, f.id, (y) => { y.text = v; }), false), { placeholder: "What it does: uses, range, rulings… Type [[ to link a note." });
+    }
+    if (hidden.length) {
+      const row = el.createDiv({ cls: "dnd-hidden-features" });
+      row.createSpan({ cls: "dnd-label", text: "Hidden" });
+      for (const h of hidden) {
+        const chip = row.createSpan({ cls: "dnd-chip", text: h.name, attr: { "aria-label": "Show this feature again" } });
+        chip.onclick = () => this.change((x) => { x.hiddenFeatures = x.hiddenFeatures.filter((k) => k !== h.key); });
+      }
+    }
+    button(el, "+ Add feature", () => {
+      const f = E.newCustomFeature(kind, E.totalLevel(this.v) || 1);
+      this.focusItem = `feature:${f.id}`;
+      this.change((x) => { x.customFeatures.push(f); });
+    }, "dnd-small");
   }
   private feats(root: HTMLElement) {
     if (this.manual) {

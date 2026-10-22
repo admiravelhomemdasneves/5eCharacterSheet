@@ -79,6 +79,10 @@ export interface CharState {
   biography: string; diary: string; events: string[];
   /** the player's notes on class, race and background features, by featureKey() */
   featureNotes: Record<string, string>;
+  /** one-off features the player added (with rules data) */
+  customFeatures: CustomFeature[];
+  /** data features the player hid, by featureKey(); they are listed so they can be shown again */
+  hiddenFeatures: string[];
   manual: ManualData; // used when no rules data is configured (manual mode)
   /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
   ui: { collapsed: Record<string, boolean>; sourceFilter: string[]; editing: Record<string, boolean>; hidden: Record<string, boolean> };
@@ -100,7 +104,7 @@ export function newCharacter(name = ""): CharState {
     proficiencies: { armor: "", weapons: "", tools: "", languages: "" },
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
-    allies: "", biography: "", diary: "", events: [], featureNotes: {}, manual: emptyManual(),
+    allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], manual: emptyManual(),
     ui: { collapsed: {}, sourceFilter: [], editing: {}, hidden: {} },
   };
 }
@@ -128,6 +132,11 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.events = Array.isArray(out.events) ? out.events.map((e) => String(e ?? "")) : [];
   const notes: unknown = out.featureNotes;
   out.featureNotes = notes && typeof notes === "object" && !Array.isArray(notes) ? Object.fromEntries(Object.entries(notes).map(([k, v]) => [k, String(v ?? "")])) : {};
+  out.customFeatures = (Array.isArray(out.customFeatures) ? out.customFeatures : []).filter((f) => f && typeof f === "object").map((f) => ({
+    id: String(f.id || newCustomFeature("class").id), kind: f.kind === "race" ? "race" : "class",
+    name: String(f.name ?? ""), level: Math.max(1, Math.min(20, Number(f.level) || 1)), text: String(f.text ?? ""),
+  }));
+  out.hiddenFeatures = Array.isArray(out.hiddenFeatures) ? out.hiddenFeatures.map(String) : [];
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
   // migrate ASI points stored on the scores (v0.1) into Ability Score Improvement entries
@@ -412,6 +421,16 @@ export const inventoryWeight = (s: CharState) => s.inventory.reduce((a, i) => a 
  */
 export function featureKey(owner: string, name: string, level?: number) {
   return [owner, name.trim().toLowerCase(), ...(level != null ? [level] : [])].join("#");
+}
+/** A feature the player adds to one character: shown in Class Features ("class") or Race & Background Features ("race"). */
+export interface CustomFeature { id: string; kind: "class" | "race"; name: string; level: number; text: string }
+export function newCustomFeature(kind: CustomFeature["kind"], level = 1): CustomFeature {
+  return { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, kind, name: "", level: Math.max(1, Math.min(20, level)), text: "" };
+}
+/** The player's features of one kind, class features by level. */
+export function customFeatures(s: CharState, kind: CustomFeature["kind"]) {
+  const list = s.customFeatures.filter((f) => f.kind === kind);
+  return kind === "class" ? list.sort((a, b) => a.level - b.level) : list;
 }
 export function classFeatures(r: Rules, s: CharState) {
   const out: { cls: ClassData; sub: SubclassData | null; level: number; features: Feature[] }[] = [];
