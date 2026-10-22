@@ -98,7 +98,7 @@ export interface RawSubclass extends RawBase {
   spellsKnownProgression?: number[];
   additionalSpells?: RawAdditionalSpells[];
 }
-export interface RawSubclassFeature extends RawBase { subclassShortName: string; level: number }
+export interface RawSubclassFeature extends RawBase { className: string; subclassShortName: string; level: number }
 export interface ClassFile { class?: RawClass[]; subclass?: RawSubclass[]; classFeature?: RawClassFeature[]; subclassFeature?: RawSubclassFeature[] }
 
 // ---------------------------------------------------------------- backgrounds, feats
@@ -152,3 +152,23 @@ export interface RawItem extends RawBase {
 export type FileIndex = Record<string, string>;
 export interface BooksFile { book: { id: string; name: string }[] }
 export interface AdventuresFile { adventure: { id: string; name: string }[] }
+
+// ---------------------------------------------------------------- loaded data
+/** The collections the importer reads, each gathered from all the files it is spread over. */
+export interface RawData {
+  race: RawRace[];
+  subrace: RawSubrace[];
+  class: RawClass[];
+  classFeature: RawClassFeature[];
+  subclass: RawSubclass[];
+  subclassFeature: RawSubclassFeature[];
+  background: RawBackground[];
+  feat: RawFeat[];
+  spell: RawSpell[];
+  baseitem: RawItem[];
+  item: RawItem[];
+  /** spell class lists of official spells (spells/sources.json) */
+  spellSources: SpellSourcesFile;
+  /** source id -> book or adventure name */
+  sourceNames: Record<string, string>;
+}

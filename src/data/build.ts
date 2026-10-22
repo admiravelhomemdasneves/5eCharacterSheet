@@ -7,7 +7,7 @@
 // and where the user keeps a compendium of notes.
 import type {
   Abil, AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
-  RawClassFeatureRef, RawEntry, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
+  RawClassFeatureRef, RawData, RawEntry, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
   RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
 import type {
@@ -231,9 +231,47 @@ function prereqText(p: Record<string, unknown>): string {
   }).filter(Boolean).join(", ");
 }
 
+/** first entry for each key, like `list.find` on that key */
+function indexBy<T>(list: T[], key: (x: T) => string): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const x of list) { const k = key(x); if (!m.has(k)) m.set(k, x); }
+  return m;
+}
+
+// ---------------------------------------------------------------- load
+/** Read the collections of an official 5etools `data/` folder into flat lists. */
+export async function loadData(readJson: ReadJson): Promise<RawData> {
+  const read = <T>(rel: string) => readJson(rel) as Promise<T>;
+  const racesJson = await read<RacesFile>("races.json");
+  const raw: RawData = {
+    race: racesJson.race, subrace: racesJson.subrace,
+    class: [], classFeature: [], subclass: [], subclassFeature: [],
+    background: (await read<{ background: RawBackground[] }>("backgrounds.json")).background,
+    feat: (await read<{ feat: RawFeat[] }>("feats.json")).feat,
+    spell: [],
+    baseitem: (await read<{ baseitem: RawItem[] }>("items-base.json")).baseitem,
+    item: (await read<{ item: RawItem[] }>("items.json")).item,
+    spellSources: await read<SpellSourcesFile>("spells/sources.json"),
+    sourceNames: {},
+  };
+  for (const file of Object.values(await read<FileIndex>("class/index.json"))) {
+    const cj = await read<ClassFile>(`class/${file}`);
+    raw.class.push(...cj.class || []);
+    raw.classFeature.push(...cj.classFeature || []);
+    raw.subclass.push(...cj.subclass || []);
+    raw.subclassFeature.push(...cj.subclassFeature || []);
+  }
+  for (const file of Object.values(await read<FileIndex>("spells/index.json"))) {
+    raw.spell.push(...(await read<{ spell?: RawSpell[] }>(`spells/${file}`)).spell || []);
+  }
+  const books = (await read<BooksFile>("books.json")).book, adventures = (await read<AdventuresFile>("adventures.json")).adventure;
+  for (const b of [...books, ...adventures]) raw.sourceNames[b.id] = b.name;
+  return raw;
+}
+
 // ---------------------------------------------------------------- build
 export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
-  const read = <T>(rel: string) => o.read(rel) as Promise<T>;
+  const raw = await loadData(o.read);
   const is2024 = (e: RawBase) => SOURCES_2024.has(e.source) || e.edition === "one";
   // SRD: 5etools marks SRD entries with srd: true, or srd: "<SRD name>" when the SRD renames them
   const srdName = (e: RawBase): string | null => (e.srd === true ? e.name : typeof e.srd === "string" ? e.srd : null);
@@ -243,10 +281,9 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const nameOf = (e: RawBase) => (o.srdOnly ? srdName(e) || e.name : e.name);
 
   // races
-  const racesJson = await read<RacesFile>("races.json");
   const races: RaceData[] = [];
-  for (const r0 of racesJson.race) {
-    const r = resolveCopy(racesJson.race, r0);
+  for (const r0 of raw.race) {
+    const r = resolveCopy(raw.race, r0);
     if (o.rules2014Only && is2024(r)) continue;
     const subOut: SubraceData[] = [];
     // An unnamed subrace is the race as written: 5etools keeps e.g. the standard Human's +1 to every
@@ -254,7 +291,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     // it is offered as "Standard"; on its own it is merged into the race below. Most races' unnamed
     // subrace is an empty placeholder (their bonuses are on the race), which is skipped as before.
     const hasContent = (s: RawSubrace) => !!(s.ability || s.entries?.length || s.speed || s.darkvision || s.skillProficiencies || s.languageProficiencies || s.resist || s.additionalSpells);
-    const subs = racesJson.subrace.filter((x) => x.raceName === r.name && x.raceSource === r.source && (x.name || hasContent(x)));
+    const subs = raw.subrace.filter((x) => x.raceName === r.name && x.raceSource === r.source && (x.name || hasContent(x)));
     for (const s of subs) {
       const name = s.name || STANDARD_SUBRACE;
       if (!allowed("races", s, s.name ? `${r.name} (${s.name})` : r.name)) continue;
@@ -298,99 +335,96 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
 
   // classes
   const classes: ClassData[] = [];
-  const classIndex = await read<FileIndex>("class/index.json");
-  for (const file of Object.values(classIndex)) {
-    const cj = await read<ClassFile>(`class/${file}`);
-    const classFeatures = cj.classFeature || [], subclassFeatures = cj.subclassFeature || [];
-    for (const c of cj.class || []) {
-      if (!allowed("classes", c)) continue;
-      const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
-      const feat = (ref: RawClassFeatureRef): Feature | null => {
-        const s = typeof ref === "string" ? ref : ref.classFeature;
-        const [name, cls, clsSrc, lvl, src] = s.split("|");
-        const f = classFeatures.find((x) => x.name === name && x.className === cls && x.level === +lvl && x.source === (src || clsSrc || "PHB"));
-        if (!f || !featOk(f)) return null;
-        return { name, level: +lvl, source: f.source, text: renderEntries(f.entries), optional: !!f.isClassFeatureVariant, subclassFeature: typeof ref === "object" && !!ref.gainSubclassFeature, link: null };
-      };
-      const features = (c.classFeatures || []).map(feat).filter((f): f is Feature => f !== null)
-        .filter((f) => !f.optional || !o.rules2014Only || !SOURCES_2024.has(f.source));
-      const tableCols: ClassData["tableCols"] = [];
-      for (const g of c.classTableGroups || []) {
-        if (g.rowsSpellProgression) continue;
-        (g.colLabels || []).forEach((lab, i) => {
-          const label = plain(renderStr(lab));
-          if (/cantrips known|spells known|spell slots|slot level|prepared/i.test(label)) return;
-          tableCols.push({ label, rows: (g.rows || []).map((row) => tableValue(row[i])) });
-        });
-      }
-      const subclasses: SubclassData[] = [];
-      for (const sc of (cj.subclass || []).filter((x) => x.className === c.name && x.classSource === c.source)) {
-        if (!allowed("classes", sc)) continue;
-        const sfeats: Feature[] = [];
-        const pushSub = (name: string, scShort: string, scSrc: string, lvl: string, src: string, clsSrc = "PHB"): RawSubclassFeature | null => {
-          const f = subclassFeatures.find((x) => x.name === name && x.subclassShortName === scShort && x.level === +lvl && x.source === (src || scSrc || clsSrc || "PHB"));
-          if (!f || !featOk(f) || sfeats.some((y) => y.name === name && y.level === +lvl)) return null;
-          sfeats.push({ name, level: +lvl, source: f.source, text: renderEntries(f.entries), link: null });
-          return f;
-        };
-        for (const ref of sc.subclassFeatures || []) {
-          const [name, , clsSrc, scShort, scSrc, lvl, src] = ref.split("|");
-          const f = pushSub(name, scShort, scSrc, lvl, src, clsSrc);
-          // nested refs inside the first feature (e.g. "Evocation Savant" inside "School of Evocation")
-          if (f) for (const m of JSON.stringify(f.entries).matchAll(/"subclassFeature":"([^"]+)"/g)) {
-            const [n2, , , s2, ss2, l2, src2] = m[1].split("|");
-            pushSub(n2, s2, ss2, l2, src2);
-          }
-        }
-        subclasses.push({
-          id: idOf(c.name, sc.shortName, sc.source), name: nameOf(sc), shortName: sc.shortName, source: sc.source, link: null,
-          features: sfeats.sort((a, b) => a.level - b.level),
-          spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
-          additionalSpells: sc.additionalSpells || null,
-        });
-      }
-      const sp = c.startingProficiencies || {};
-      const profText = (a: RawProfItem) => plain(renderStr(typeof a === "string" ? a : a.full || a.proficiency || ""));
-      const pact = c.casterProgression === "pact"
-        ? (c.classTableGroups || []).flatMap((g) => {
-          const labels = g.colLabels || [];
-          if (!labels.includes("Spell Slots")) return [];
-          const iSlots = labels.indexOf("Spell Slots"), iLevel = labels.indexOf("Slot Level");
-          return [(g.rows || []).map((row) => ({ slots: Number(row[iSlots]) || 0, level: parseInt(String(tableValue(row[iLevel]))) || 1 }))];
-        })[0] || null
-        : null;
-      const mc = c.multiclassing;
-      classes.push({
-        id: idOf(c.name, c.source), name: nameOf(c), source: c.source, link: null,
-        hd: c.hd?.faces || 8, saves: c.proficiency || [],
-        armor: (sp.armor || []).map(profText), weapons: (sp.weapons || []).map(profText), tools: (sp.tools || []).map(profText),
-        skills: skillChoices(sp.skills),
-        spellcasting: c.casterProgression && c.spellcastingAbility ? { ability: c.spellcastingAbility, progression: c.casterProgression, prepared: c.preparedSpells || null, cantrips: c.cantripProgression || null, known: c.spellsKnownProgression || null, knownFixed: c.spellsKnownProgressionFixed || null, list: c.name } : null,
-        pactSlots: pact,
-        tableCols,
-        subclassTitle: c.subclassTitle || "Subclass",
-        subclassLevel: features.find((f) => f.subclassFeature)?.level || 3,
-        features,
-        multiclass: mc ? {
-          requirements: mc.requirements || {},
-          armor: (mc.proficienciesGained?.armor || []).map(profText),
-          weapons: (mc.proficienciesGained?.weapons || []).map(profText),
-          skills: (mc.proficienciesGained?.skills || []).flatMap((s) => (s.choose ? [{ from: s.choose.from, count: s.choose.count }] : [])),
-        } : null,
-        subclasses,
+  // features by name|class|level|source, and subclass features by name|class|subclass|level|source
+  const classFeatures = indexBy(raw.classFeature, (x) => [x.name, x.className, x.level, x.source].join("|"));
+  const subclassFeatures = indexBy(raw.subclassFeature, (x) => [x.name, x.className, x.subclassShortName, x.level, x.source].join("|"));
+  for (const c of raw.class) {
+    if (!allowed("classes", c)) continue;
+    const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
+    const feat = (ref: RawClassFeatureRef): Feature | null => {
+      const s = typeof ref === "string" ? ref : ref.classFeature;
+      const [name, cls, clsSrc, lvl, src] = s.split("|");
+      const f = classFeatures.get([name, cls, +lvl, src || clsSrc || "PHB"].join("|"));
+      if (!f || !featOk(f)) return null;
+      return { name, level: +lvl, source: f.source, text: renderEntries(f.entries), optional: !!f.isClassFeatureVariant, subclassFeature: typeof ref === "object" && !!ref.gainSubclassFeature, link: null };
+    };
+    const features = (c.classFeatures || []).map(feat).filter((f): f is Feature => f !== null)
+      .filter((f) => !f.optional || !o.rules2014Only || !SOURCES_2024.has(f.source));
+    const tableCols: ClassData["tableCols"] = [];
+    for (const g of c.classTableGroups || []) {
+      if (g.rowsSpellProgression) continue;
+      (g.colLabels || []).forEach((lab, i) => {
+        const label = plain(renderStr(lab));
+        if (/cantrips known|spells known|spell slots|slot level|prepared/i.test(label)) return;
+        tableCols.push({ label, rows: (g.rows || []).map((row) => tableValue(row[i])) });
       });
     }
+    const subclasses: SubclassData[] = [];
+    for (const sc of raw.subclass.filter((x) => x.className === c.name && x.classSource === c.source)) {
+      if (!allowed("classes", sc)) continue;
+      const sfeats: Feature[] = [];
+      const pushSub = (name: string, scShort: string, scSrc: string, lvl: string, src: string, clsSrc = "PHB"): RawSubclassFeature | null => {
+        const f = subclassFeatures.get([name, c.name, scShort, +lvl, src || scSrc || clsSrc || "PHB"].join("|"));
+        if (!f || !featOk(f) || sfeats.some((y) => y.name === name && y.level === +lvl)) return null;
+        sfeats.push({ name, level: +lvl, source: f.source, text: renderEntries(f.entries), link: null });
+        return f;
+      };
+      for (const ref of sc.subclassFeatures || []) {
+        const [name, , clsSrc, scShort, scSrc, lvl, src] = ref.split("|");
+        const f = pushSub(name, scShort, scSrc, lvl, src, clsSrc);
+        // nested refs inside the first feature (e.g. "Evocation Savant" inside "School of Evocation")
+        if (f) for (const m of JSON.stringify(f.entries ?? []).matchAll(/"subclassFeature":"([^"]+)"/g)) {
+          const [n2, , , s2, ss2, l2, src2] = m[1].split("|");
+          pushSub(n2, s2, ss2, l2, src2);
+        }
+      }
+      subclasses.push({
+        id: idOf(c.name, sc.shortName, sc.source), name: nameOf(sc), shortName: sc.shortName, source: sc.source, link: null,
+        features: sfeats.sort((a, b) => a.level - b.level),
+        spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
+        additionalSpells: sc.additionalSpells || null,
+      });
+    }
+    const sp = c.startingProficiencies || {};
+    const profText = (a: RawProfItem) => plain(renderStr(typeof a === "string" ? a : a.full || a.proficiency || ""));
+    const pact = c.casterProgression === "pact"
+      ? (c.classTableGroups || []).flatMap((g) => {
+        const labels = g.colLabels || [];
+        if (!labels.includes("Spell Slots")) return [];
+        const iSlots = labels.indexOf("Spell Slots"), iLevel = labels.indexOf("Slot Level");
+        return [(g.rows || []).map((row) => ({ slots: Number(row[iSlots]) || 0, level: parseInt(String(tableValue(row[iLevel]))) || 1 }))];
+      })[0] || null
+      : null;
+    const mc = c.multiclassing;
+    classes.push({
+      id: idOf(c.name, c.source), name: nameOf(c), source: c.source, link: null,
+      hd: c.hd?.faces || 8, saves: c.proficiency || [],
+      armor: (sp.armor || []).map(profText), weapons: (sp.weapons || []).map(profText), tools: (sp.tools || []).map(profText),
+      skills: skillChoices(sp.skills),
+      spellcasting: c.casterProgression && c.spellcastingAbility ? { ability: c.spellcastingAbility, progression: c.casterProgression, prepared: c.preparedSpells || null, cantrips: c.cantripProgression || null, known: c.spellsKnownProgression || null, knownFixed: c.spellsKnownProgressionFixed || null, list: c.name } : null,
+      pactSlots: pact,
+      tableCols,
+      subclassTitle: c.subclassTitle || "Subclass",
+      subclassLevel: features.find((f) => f.subclassFeature)?.level || 3,
+      features,
+      multiclass: mc ? {
+        requirements: mc.requirements || {},
+        armor: (mc.proficienciesGained?.armor || []).map(profText),
+        weapons: (mc.proficienciesGained?.weapons || []).map(profText),
+        skills: (mc.proficienciesGained?.skills || []).flatMap((s) => (s.choose ? [{ from: s.choose.from, count: s.choose.count }] : [])),
+      } : null,
+      subclasses,
+    });
   }
 
   // backgrounds
-  const bgJson = await read<{ background: RawBackground[] }>("backgrounds.json");
   const backgrounds: BackgroundData[] = [];
   const findFeature = (es: RawEntry[] | undefined): { name: string; entries?: RawEntry[] } | null => {
     for (const e of es || []) if (typeof e === "object") { if (e.name && /^Feature:/.test(e.name)) return { name: e.name, entries: e.entries }; const r = findFeature(e.entries); if (r) return r; }
     return null;
   };
-  for (const b0 of bgJson.background) {
-    const b = resolveCopy(bgJson.background, b0);
+  for (const b0 of raw.background) {
+    const b = resolveCopy(raw.background, b0);
     if (!allowed("backgrounds", b)) continue;
     const fe = findFeature(b.entries);
     backgrounds.push({
@@ -403,38 +437,35 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
 
   // feats
   const feats: FeatData[] = [];
-  for (const f of (await read<{ feat: RawFeat[] }>("feats.json")).feat) {
+  for (const f of raw.feat) {
     if (!allowed("feats", f)) continue;
     const prereq = (f.prerequisite || []).map(prereqText).join(" or ");
     feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries) });
   }
 
   // spells
-  const spellSources = await read<SpellSourcesFile>("spells/sources.json");
   const SCHOOL: Record<string, string> = { A: "Abjuration", C: "Conjuration", D: "Divination", E: "Enchantment", V: "Evocation", I: "Illusion", N: "Necromancy", T: "Transmutation" };
   const spells: SpellData[] = [];
-  for (const file of Object.values(await read<FileIndex>("spells/index.json"))) {
-    for (const s of (await read<{ spell?: RawSpell[] }>(`spells/${file}`)).spell || []) {
-      if (!allowed("spells", s)) continue;
-      const lists = spellSources[s.source]?.[s.name] || {};
-      const classes2 = [...new Set([...(lists.class || []), ...(lists.classVariant || [])].map((c) => c.name))];
-      const t = s.time?.[0];
-      const dist = s.range?.distance;
-      const range = dist ? (dist.amount ? `${dist.amount} ${dist.type}` : title(dist.type)) + (s.range?.type !== "point" ? ` (${s.range?.type})` : "") : title(s.range?.type || "");
-      const dur = s.duration?.[0];
-      const m = s.components?.m;
-      spells.push({
-        id: idOf(s.name, s.source), name: nameOf(s), source: s.source, link: null,
-        level: s.level, school: SCHOOL[s.school] || s.school,
-        time: t ? `${t.number} ${t.unit}${t.number > 1 ? "s" : ""}` : "",
-        range,
-        components: [s.components?.v && "V", s.components?.s && "S", m && `M (${typeof m === "string" ? m : m.text})`].filter(Boolean).join(", "),
-        duration: dur ? (dur.type === "timed" && dur.duration ? `${dur.concentration ? "Concentration, up to " : ""}${dur.duration.amount} ${dur.duration.type}${dur.duration.amount > 1 ? "s" : ""}` : title(dur.type)) : "",
-        concentration: !!dur?.concentration, ritual: !!s.meta?.ritual, classes: classes2,
-        attack: (s.spellAttack || []).length > 0, save: (s.savingThrow || [])[0] || null, damage: s.damageInflict || [],
-        text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
-      });
-    }
+  for (const s of raw.spell) {
+    if (!allowed("spells", s)) continue;
+    const lists = raw.spellSources[s.source]?.[s.name] || {};
+    const classes2 = [...new Set([...(lists.class || []), ...(lists.classVariant || [])].map((c) => c.name))];
+    const t = s.time?.[0];
+    const dist = s.range?.distance;
+    const range = dist ? (dist.amount ? `${dist.amount} ${dist.type}` : title(dist.type)) + (s.range?.type !== "point" ? ` (${s.range?.type})` : "") : title(s.range?.type || "");
+    const dur = s.duration?.[0];
+    const m = s.components?.m;
+    spells.push({
+      id: idOf(s.name, s.source), name: nameOf(s), source: s.source, link: null,
+      level: s.level, school: SCHOOL[s.school] || s.school,
+      time: t ? `${t.number} ${t.unit}${t.number > 1 ? "s" : ""}` : "",
+      range,
+      components: [s.components?.v && "V", s.components?.s && "S", m && `M (${typeof m === "string" ? m : m.text})`].filter(Boolean).join(", "),
+      duration: dur ? (dur.type === "timed" && dur.duration ? `${dur.concentration ? "Concentration, up to " : ""}${dur.duration.amount} ${dur.duration.type}${dur.duration.amount > 1 ? "s" : ""}` : title(dur.type)) : "",
+      concentration: !!dur?.concentration, ritual: !!s.meta?.ritual, classes: classes2,
+      attack: (s.spellAttack || []).length > 0, save: (s.savingThrow || [])[0] || null, damage: s.damageInflict || [],
+      text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
+    });
   }
 
   // items (base + magic)
@@ -459,8 +490,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       baseItem: it.baseItem ? it.baseItem.split("|")[0] : null,
     });
   };
-  (await read<{ baseitem: RawItem[] }>("items-base.json")).baseitem.forEach((i) => pushItem(i, false));
-  (await read<{ item: RawItem[] }>("items.json")).item.forEach((i) => pushItem(i, true));
+  raw.baseitem.forEach((i) => pushItem(i, false));
+  raw.item.forEach((i) => pushItem(i, true));
   // magic armour and weapons inherit the stats of their base item
   const inherited = ["kind", "armorType", "ac", "strength", "stealth", "weaponCategory", "ranged", "dmg1", "dmg2", "dmgType", "properties", "range"] as const;
   for (const it of items) {
@@ -478,8 +509,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
 
   // names only for the sources that are actually used
   const used = new Set<string>([...races, ...races.flatMap((r) => r.subraces), ...classes, ...classes.flatMap((c) => c.subclasses), ...backgrounds, ...feats, ...spells, ...items].map((x) => x.source));
-  const books = (await read<BooksFile>("books.json")).book, adventures = (await read<AdventuresFile>("adventures.json")).adventure;
-  const sources = Object.fromEntries([...books, ...adventures].filter((b) => used.has(b.id)).map((b) => [b.id, b.name]));
+  const sources = Object.fromEntries(Object.entries(raw.sourceNames).filter(([id]) => used.has(id)));
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
   return {
     meta: { generated: new Date().toISOString(), srdOnly: !!o.srdOnly, sources, importVersion: IMPORT_VERSION },
