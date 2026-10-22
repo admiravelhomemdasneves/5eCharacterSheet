@@ -166,11 +166,24 @@ export class CharacterSheet extends MarkdownRenderChild {
     };
     return b;
   }
-  private details(parent: HTMLElement, summary: (el: HTMLElement) => void, text: string) {
+  /** `noteKey`: the feature's E.featureKey(); adds the player's notes field under the text */
+  private details(parent: HTMLElement, summary: (el: HTMLElement) => void, text: string, noteKey?: string) {
     const d = parent.createEl("details", { cls: "dnd-details" });
-    summary(d.createEl("summary"));
+    const sm = d.createEl("summary");
+    summary(sm);
+    // shows, while closed, that the feature has notes; kept in step as they are edited
+    const tag = noteKey ? sm.createSpan({ cls: "dnd-tag", text: "notes" }) : null;
+    tag?.toggle(!!this.s.featureNotes[noteKey!]);
     let done = false;
-    d.addEventListener("toggle", () => { if (d.open && !done) { done = true; this.md(d, text); } });
+    d.addEventListener("toggle", () => {
+      if (!d.open || done) return;
+      done = true;
+      this.md(d, text);
+      if (noteKey) this.richText(labeled(d, "Notes", "dnd-feature-notes"), this.s.featureNotes[noteKey] ?? "", (v) => {
+        tag?.toggle(!!v.trim());
+        this.change((x) => { if (v.trim()) x.featureNotes[noteKey] = v; else delete x.featureNotes[noteKey]; }, false);
+      }, { placeholder: "Your notes: reminders, uses, rulings… Type [[ to link a note." });
+    });
     return d;
   }
 
@@ -543,11 +556,12 @@ export class CharacterSheet extends MarkdownRenderChild {
       const skip = new Set(["Age", "Size", "Alignment", "Speed", "Languages", "Ability Score Increase"]);
       if (race) {
         const h = el.createDiv({ cls: "dnd-subtitle" }); this.link(h, sub ? `${race.name} (${sub.name})` : race.name, sub?.link || race.link);
-        for (const t of [...race.traits, ...(sub?.traits || [])].filter((t) => !skip.has(t.name))) this.details(el, (sm) => sm.createSpan({ text: t.name, cls: "dnd-feature-name" }), t.text);
+        const traits = [...race.traits.map((t) => ({ t, owner: race.id })), ...(sub?.traits || []).map((t) => ({ t, owner: sub!.id }))];
+        for (const { t, owner } of traits.filter(({ t }) => !skip.has(t.name))) this.details(el, (sm) => sm.createSpan({ text: t.name, cls: "dnd-feature-name" }), t.text, E.featureKey(owner, t.name));
       }
       if (bg) {
         const h = el.createDiv({ cls: "dnd-subtitle" }); this.link(h, `Background: ${bg.name}`, bg.link);
-        if (bg.feature) this.details(el, (sm) => this.link(sm, bg.feature!.name, bg.feature!.link || bg.link, "dnd-feature-name"), bg.feature.text || "*See the background note.*");
+        if (bg.feature) this.details(el, (sm) => this.link(sm, bg.feature!.name, bg.feature!.link || bg.link, "dnd-feature-name"), bg.feature.text || "*See the background note.*", E.featureKey(bg.id, bg.feature.name));
       }
     });
   }
@@ -586,7 +600,7 @@ export class CharacterSheet extends MarkdownRenderChild {
             sm.createSpan({ cls: "dnd-feature-level", text: `Lv ${f.level}` });
             this.link(sm, f.name, f.link, "dnd-feature-name");
             if (f.optional) sm.createSpan({ cls: "dnd-tag", text: "optional (TCE)" });
-          }, f.text);
+          }, f.text, E.featureKey(g.sub?.features.includes(f) ? g.sub.id : g.cls.id, f.name, f.level));
         }
       }
     });

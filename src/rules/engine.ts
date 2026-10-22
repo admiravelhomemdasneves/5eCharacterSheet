@@ -77,6 +77,8 @@ export interface CharState {
   appearance: { age: string; height: string; weight: string; eyes: string; skin: string; hair: string };
   allies: string;
   biography: string; diary: string; events: string[];
+  /** the player's notes on class, race and background features, by featureKey() */
+  featureNotes: Record<string, string>;
   manual: ManualData; // used when no rules data is configured (manual mode)
   /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
   ui: { collapsed: Record<string, boolean>; sourceFilter: string[]; editing: Record<string, boolean>; hidden: Record<string, boolean> };
@@ -98,7 +100,7 @@ export function newCharacter(name = ""): CharState {
     proficiencies: { armor: "", weapons: "", tools: "", languages: "" },
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
-    allies: "", biography: "", diary: "", events: [], manual: emptyManual(),
+    allies: "", biography: "", diary: "", events: [], featureNotes: {}, manual: emptyManual(),
     ui: { collapsed: {}, sourceFilter: [], editing: {}, hidden: {} },
   };
 }
@@ -124,6 +126,8 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   // sheets saved before sections could be hidden show all of them
   out.ui.hidden = out.ui.hidden || {};
   out.events = Array.isArray(out.events) ? out.events.map((e) => String(e ?? "")) : [];
+  const notes: unknown = out.featureNotes;
+  out.featureNotes = notes && typeof notes === "object" && !Array.isArray(notes) ? Object.fromEntries(Object.entries(notes).map(([k, v]) => [k, String(v ?? "")])) : {};
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
   // migrate ASI points stored on the scores (v0.1) into Ability Score Improvement entries
@@ -401,6 +405,14 @@ export const carryingCapacity = (scores: Record<Ability, AbilityBreakdown>) => s
 export const inventoryWeight = (s: CharState) => s.inventory.reduce((a, i) => a + (i.weight || 0) * (i.qty || 1), 0) + Object.values(s.coins).reduce((a, n) => a + (n || 0), 0) / 50;
 
 // ------------------------------------------------------------------ features
+/**
+ * Key for a feature's notes: the id of the class, subclass, race, subrace or background it belongs
+ * to, its name and (class features) its level. Ids and names are stable, so notes survive level
+ * changes and re-imports; the level tells apart repeated features like Ability Score Improvement.
+ */
+export function featureKey(owner: string, name: string, level?: number) {
+  return [owner, name.trim().toLowerCase(), ...(level != null ? [level] : [])].join("#");
+}
 export function classFeatures(r: Rules, s: CharState) {
   const out: { cls: ClassData; sub: SubclassData | null; level: number; features: Feature[] }[] = [];
   for (const e of s.classes) {
