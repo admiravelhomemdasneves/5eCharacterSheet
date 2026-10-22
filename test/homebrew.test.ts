@@ -13,13 +13,21 @@ const FILES: Record<string, unknown> = {
     classFeature: [{ name: "Arcane Study", source: "PHB", className: "Wizard", classSource: "PHB", level: 1, entries: ["Text."] }],
     subclass: [], subclassFeature: [],
   },
-  "backgrounds.json": { background: [] }, "feats.json": { feat: [] },
+  "backgrounds.json": {
+    background: [
+      { name: "Sage", source: "PHB", srd: true, skillProficiencies: [{ arcana: true }], entries: [{ type: "entries", name: "Feature: Researcher", entries: ["You know where to look."] }] },
+      // official copies are resolved too: here a variant that swaps the feature
+      { name: "Variant Sage (Archivist)", source: "PHB", _copy: { name: "Sage", source: "PHB", _mod: { entries: { mode: "replaceArr", replace: "Feature: Researcher", items: { type: "entries", name: "Feature: Catalogue", entries: ["You file things."] } } } } },
+    ],
+  },
+  "feats.json": { feat: [] },
   "spells/sources.json": { PHB: { "Spark Bolt": { class: [{ name: "Wizard", source: "PHB" }] } } },
   "spells/index.json": { PHB: "spells-phb.json", XGE: "spells-xge.json" },
   "spells/spells-phb.json": { spell: [spell("Spark Bolt", "PHB"), spell("Quiet Step", "PHB")] },
   "spells/spells-xge.json": { spell: [spell("Frost Needle", "XGE")] },
-  "items-base.json": { baseitem: [] }, "items.json": { item: [] },
-  "books.json": { book: [{ id: "PHB", name: "Player's Handbook" }, { id: "XGE", name: "Xanathar's Guide to Everything" }] },
+  "items-base.json": { baseitem: [] },
+  "items.json": { item: [{ name: "Ring of Shielding", source: "DMG", rarity: "rare", reqAttune: true, weight: 0.1, bonusAc: "+1", property: ["F"], entries: ["You gain a +1 bonus to AC."] }] },
+  "books.json": { book: [{ id: "PHB", name: "Player's Handbook" }, { id: "XGE", name: "Xanathar's Guide to Everything" }, { id: "DMG", name: "Dungeon Master's Guide" }] },
   "adventures.json": { adventure: [] },
 };
 const read = async (p: string) => structuredClone(FILES[p]);
@@ -90,6 +98,72 @@ test("spell class lists: homebrew spells carry their own (fromClassList and from
 test("spell class lists: a homebrew class's classSpells add it to those spells, sources matched in any case", () => {
   assert.deepEqual(spellClasses("Quiet Step"), ["Warden"]);
   assert.deepEqual(spellClasses("Frost Needle"), ["Warden"]);
+});
+
+// _copy: homebrew entries that are an official (or other homebrew) entry, changed by _mod
+const COPIES: HomebrewFile = {
+  file: "homebrew/Copies.json",
+  json: {
+    _meta: { sources: [{ json: "CP", full: "Copies" }] },
+    item: [
+      // copies an official item; its own fields win, _mod edits the copied arrays
+      { name: "+2 Ring of Shielding", source: "CP", bonusAc: "+2", _copy: { name: "Ring of Shielding", source: "DMG", _mod: { entries: { mode: "replaceTxt", replace: "\\+1", with: "+2" }, property: { mode: "appendIfNotExistsArr", items: ["F", "L"] } } } },
+      // a chain of copies, matched in any case
+      { name: "Shard (Awakened)", source: "CP", rarity: "very rare", _copy: { name: "ring of shielding", source: "dmg" } },
+      { name: "Shard (Exalted)", source: "CP", rarity: "legendary", _copy: { name: "Shard (Awakened)", source: "CP" } },
+      // copies of something that isn't there, or of each other, stay as they are
+      { name: "Lost Copy", source: "CP", _copy: { name: "Nothing", source: "DMG" } },
+      { name: "Loop A", source: "CP", _copy: { name: "Loop B", source: "CP" } },
+      { name: "Loop B", source: "CP", _copy: { name: "Loop A", source: "CP" } },
+    ],
+    background: [
+      { name: "Sage Apprentice", source: "CP", _copy: { name: "Sage", source: "PHB", _preserve: { srd: true }, _mod: { entries: [
+        { mode: "insertArr", index: 0, items: "Apprentices start small." },
+        { mode: "appendArr", items: { type: "entries", name: "Extra", entries: ["More."] } },
+      ] } } },
+      { name: "Sage Hermit", source: "CP", _copy: { name: "Sage", source: "PHB", _mod: { entries: { mode: "removeArr", names: "Feature: Researcher" } } } },
+      { name: "Sage Scout", source: "CP", _copy: { name: "Sage", source: "PHB", _mod: { "*": { mode: "replaceTxt", replace: "LOOK", with: "search", flags: "i" } } } },
+    ],
+  },
+};
+const copied = await buildCompendium({ read, homebrew: [COPIES] });
+const item = (name: string) => copied.items.find((i) => i.name === name)!;
+const background = (name: string) => copied.backgrounds.find((b) => b.name === name)!;
+
+test("_copy: a homebrew item takes the official item's fields, with its own and _mod's changes", () => {
+  const it = item("+2 Ring of Shielding");
+  assert.equal(it.rarity, "rare");
+  assert.equal(it.attunement, true);
+  assert.equal(it.weight, 0.1);
+  assert.equal(it.bonusAc, 2);
+  assert.deepEqual(it.properties, ["finesse", "light"]);
+});
+
+test("_copy: chains of copies resolve, and missing or circular copies are kept without failing", () => {
+  assert.equal(item("Shard (Exalted)").rarity, "legendary");
+  assert.equal(item("Shard (Exalted)").attunement, true);
+  assert.equal(item("Shard (Awakened)").weight, 0.1);
+  for (const n of ["Lost Copy", "Loop A", "Loop B"]) assert.ok(item(n), n);
+});
+
+test("_mod: replaceArr swaps an entry (official copies too), removeArr drops it", () => {
+  assert.equal(background("Variant Sage (Archivist)").feature?.name, "Catalogue");
+  assert.equal(background("Sage Hermit").feature, null);
+  assert.deepEqual(background("Sage Hermit").skills.fixed, ["arcana"]);
+});
+
+test("_mod: insertArr and appendArr keep the copied feature", () => {
+  assert.equal(background("Sage Apprentice").feature?.name, "Researcher");
+});
+
+test("_mod: replaceTxt changes the text, with its flags", () => {
+  assert.equal(background("Sage Scout").feature?.text, "You know where to search.");
+  assert.equal(background("Sage").feature?.text, "You know where to look.");
+});
+
+test("_copy: the SRD flag is only kept when _preserve says so", async () => {
+  const srd = await buildCompendium({ read, homebrew: [COPIES], srdOnly: true });
+  assert.deepEqual(srd.backgrounds.map((b) => b.name).sort(), ["Sage", "Sage Apprentice"]);
 });
 
 test("spell class lists: a class left out of the import adds nothing", async () => {

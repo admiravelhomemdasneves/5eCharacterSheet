@@ -7,7 +7,7 @@
 // and where the user keeps a compendium of notes.
 import type {
   Abil, AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
-  HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
+  HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawMod, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
   RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
 import { HOMEBREW_COLLECTIONS } from "./fivetools.ts";
@@ -186,16 +186,93 @@ function langText(arr: RawProf[] | undefined): string[] {
   }
   return out;
 }
-function resolveCopy<T extends RawBase>(list: T[], x: T): T {
-  if (!x._copy) return x;
-  const from = x._copy;
-  const base = list.find((y) => y.name === from.name && y.source === from.source);
-  if (!base) return x;
-  const merged: T = { ...resolveCopy(list, base), ...x };
-  delete merged._copy;
-  // a copy is its own entry: it must not inherit the SRD flag of what it copies
-  merged.srd = x.srd;
-  return merged;
+
+// ---------------------------------------------------------------- _copy and _mod
+/** fields a copy does not take from what it copies, unless its _preserve names them */
+const NOT_COPIED = ["srd", "basicRules", "page", "otherSources", "referenceSources", "reprintedAs", "hasFluff", "hasFluffImages"];
+/** what identifies an entry for _copy, besides name and source */
+const COPY_KEYS: Partial<Record<(typeof HOMEBREW_COLLECTIONS)[number], string[]>> = {
+  subrace: ["raceName", "raceSource"],
+  subclass: ["className", "classSource"],
+  classFeature: ["className", "classSource", "level"],
+  subclassFeature: ["className", "classSource", "subclassShortName", "subclassSource", "level"],
+};
+const asList = (v: unknown): unknown[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
+const entryName = (e: unknown) => (typeof e === "string" ? e : (e as { name?: string } | null)?.name);
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** every string inside v (not `type` fields) with re replaced */
+function replaceText(v: unknown, re: RegExp, by: string): unknown {
+  if (typeof v === "string") return v.replace(re, by);
+  if (Array.isArray(v)) return v.map((x) => replaceText(x, re, by));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "type" ? x : replaceText(x, re, by)]));
+  return v;
+}
+/** one array _mod; unknown modes leave the array as it is */
+function modArray(arr: unknown[], m: Exclude<RawMod, string>): unknown[] {
+  const items = asList(m.items);
+  switch (m.mode) {
+    case "appendArr": return [...arr, ...items];
+    case "prependArr": return [...items, ...arr];
+    case "insertArr": { const i = m.index ?? arr.length; return [...arr.slice(0, i), ...items, ...arr.slice(i)]; }
+    case "appendIfNotExistsArr": return [...arr, ...items.filter((it) => !arr.some((e) => sameJson(e, it)))];
+    case "replaceArr": {
+      // replace: the name (or text) of an entry, { index } or { regex }
+      const r = m.replace;
+      const i = typeof r === "string" ? arr.findIndex((e) => entryName(e) === r)
+        : r?.index != null ? r.index
+        : r?.regex != null ? arr.findIndex((e) => new RegExp(r.regex!, r.flags).test(entryName(e) ?? ""))
+        : -1;
+      return i < 0 || i >= arr.length ? arr : [...arr.slice(0, i), ...items, ...arr.slice(i + 1)];
+    }
+    case "removeArr": {
+      const names = asList(m.names), gone = asList(m.items);
+      return arr.filter((e) => !names.includes(entryName(e)) && !gone.some((g) => sameJson(g, e)));
+    }
+    default: return arr;
+  }
+}
+/** Apply a copy's _mod, the modes the importer understands: array edits and text replacement. */
+function applyMods(x: Record<string, unknown>, mods: Record<string, RawMod | RawMod[]>) {
+  for (const [prop, list] of Object.entries(mods)) for (const m0 of asList(list) as RawMod[]) {
+    const m = typeof m0 === "string" ? { mode: m0 } : m0;
+    if (m.mode === "replaceTxt") {
+      if (typeof m.replace !== "string") continue;
+      let re: RegExp;
+      try { re = new RegExp(m.replace, [...new Set(`g${m.flags || ""}`)].join("")); } catch { continue; }
+      for (const p of prop === "*" ? ["entries", "entriesHigherLevel"] : [prop]) if (x[p] != null) x[p] = replaceText(x[p], re, m.with ?? "");
+    } else if (prop !== "*") x[prop] = modArray(asList(x[prop]), m);
+  }
+}
+/**
+ * Replace every `_copy` entry with the entry it copies, changed by its own fields and `_mod`. Copies
+ * are found across official and homebrew data, also through other copies; a copy whose original is
+ * missing stays as it is.
+ */
+function resolveCopies(raw: RawData) {
+  for (const k of HOMEBREW_COLLECTIONS) {
+    const list = raw[k] as RawBase[];
+    if (!list.some((x) => x._copy)) continue;
+    const fields = ["name", "source", ...COPY_KEYS[k] || []];
+    const keyOf = (x: Record<string, unknown>) => fields.map((f) => lc(x[f] as string | number | undefined)).join("|");
+    const byKey = indexBy(list, (x) => keyOf(x as unknown as Record<string, unknown>));
+    const done = new Map<RawBase, RawBase>();
+    const resolve = (x: RawBase, seen: Set<RawBase>): RawBase => {
+      if (!x._copy) return x;
+      const known = done.get(x);
+      if (known) return known;
+      const original = byKey.get(keyOf(x._copy));
+      if (!original || seen.has(original)) return x;
+      const { _mod, _preserve } = x._copy;
+      const merged: Record<string, unknown> = { ...resolve(original, new Set([...seen, x])), ...x };
+      delete merged._copy;
+      // a copy is its own entry: e.g. it must not inherit the SRD flag of what it copies
+      for (const f of NOT_COPIED) if (!_preserve?.[f]) { if (f in x) merged[f] = (x as unknown as Record<string, unknown>)[f]; else delete merged[f]; }
+      if (_mod) applyMods(merged, _mod);
+      done.set(x, merged as unknown as RawBase);
+      return merged as unknown as RawBase;
+    };
+    (raw[k] as RawBase[]) = list.map((x) => resolve(x, new Set()));
+  }
 }
 /** Fold a race's only subrace into the race itself (e.g. the SRD Human, whose +1s are on its unnamed subrace). */
 function mergeSubrace(race: RaceData, sub: SubraceData) {
@@ -280,6 +357,7 @@ export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = []
       if (Array.isArray(list)) (raw[k] as unknown[]).push(...(list as unknown[]));
     }
   }
+  resolveCopies(raw);
   return raw;
 }
 
@@ -296,8 +374,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
 
   // races
   const races: RaceData[] = [];
-  for (const r0 of raw.race) {
-    const r = resolveCopy(raw.race, r0);
+  for (const r of raw.race) {
     if (o.rules2014Only && is2024(r)) continue;
     const subOut: SubraceData[] = [];
     // An unnamed subrace is the race as written: 5etools keeps e.g. the standard Human's +1 to every
@@ -441,18 +518,19 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
 
   // backgrounds
   const backgrounds: BackgroundData[] = [];
+  // "Feature: Shelter of the Faithful", or with a prefix as in "Baldur's Gate Feature: Religious Community"
+  const FEATURE = /^(?:.*\s)?Feature:\s*/;
   const findFeature = (es: RawEntry[] | undefined): { name: string; entries?: RawEntry[] } | null => {
-    for (const e of es || []) if (typeof e === "object") { if (e.name && /^Feature:/.test(e.name)) return { name: e.name, entries: e.entries }; const r = findFeature(e.entries); if (r) return r; }
+    for (const e of es || []) if (typeof e === "object") { if (e.name && FEATURE.test(e.name)) return { name: e.name, entries: e.entries }; const r = findFeature(e.entries); if (r) return r; }
     return null;
   };
-  for (const b0 of raw.background) {
-    const b = resolveCopy(raw.background, b0);
+  for (const b of raw.background) {
     if (!allowed("backgrounds", b)) continue;
     const fe = findFeature(b.entries);
     backgrounds.push({
       id: idOf(b.name, b.source), name: nameOf(b), source: b.source, link: null,
       skills: profList(b.skillProficiencies), tools: profList(b.toolProficiencies), languages: langText(b.languageProficiencies),
-      feature: fe ? { name: fe.name.replace(/^Feature:\s*/, ""), heading: fe.name, text: renderEntries(fe.entries), link: null } : null,
+      feature: fe ? { name: fe.name.replace(FEATURE, ""), heading: fe.name, text: renderEntries(fe.entries), link: null } : null,
       feats: b.feats || null,
     });
   }
