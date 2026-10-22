@@ -26,8 +26,22 @@ export interface RawBase {
   srd?: boolean | string;
   edition?: string;
   entries?: RawEntry[];
-  _copy?: { name: string; source: string };
+  _copy?: RawCopy;
 }
+/**
+ * "This entry is that one, changed": `name` and `source` (plus e.g. className for subclasses) say
+ * what is copied, `_mod` how its fields change, `_preserve` which normally-skipped fields are kept.
+ */
+export type RawCopy = { name: string; source: string; _mod?: Record<string, RawMod | RawMod[]>; _preserve?: Record<string, boolean> } & Record<string, unknown>;
+export type RawMod = string | {
+  mode: string;
+  items?: unknown;
+  index?: number;
+  replace?: string | { index?: number; regex?: string; flags?: string };
+  with?: string;
+  flags?: string;
+  names?: string | string[];
+};
 export type RawSpeedValue = number | boolean | { number: number };
 export type RawSpeed = number | Partial<Record<"walk" | "fly" | "swim" | "climb" | "burrow", RawSpeedValue>>;
 export type RawAbility = Partial<Record<Abil, number>> & {
