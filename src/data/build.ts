@@ -45,9 +45,10 @@ const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
  * (and say what it brings in IMPORT_CHANGES) whenever an importer change needs a new import: data with
  * an older stamp makes the plugin ask the user to press "Import now" again.
  *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces   3 = copied entries completed (_copy, _mod)
+ *   4 = homebrew subclass spell lists (subclassSpells)
  */
-export const IMPORT_VERSION = 3;
-export const IMPORT_CHANGES = "completes entries that 5etools copies from others: the 2024 classes' subclasses get their features, variant backgrounds their own feature, and copied races and magic items their own traits and stats";
+export const IMPORT_VERSION = 4;
+export const IMPORT_CHANGES = "adds the extra spells of homebrew subclasses to the spell lists of characters with that subclass";
 /** Imported data made by an older importer (data from before the stamp counts as version 1). */
 export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
