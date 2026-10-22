@@ -303,3 +303,20 @@ test("Only entries with a note: homebrew entries are kept by their own source", 
   const d = await buildCompendium({ read, homebrew: [BOOK, EXPANDED], keep: (kind, name, source) => linker.has(kind, name, source) });
   assert.deepEqual(d.spells.map((s) => `${s.name} (${s.source})`).sort(), ["Colon Spell (TC:E)", "Ink Blot (TestBook)", "Spark Bolt (PHB)"]);
 });
+
+test("variant backgrounds: \"Variant Sage (Archivist)\" matches the note \"Sage (Archivist) (Variant)\"", async () => {
+  const linker = new Linker("Compendium", [
+    noteInfoFromText("Compendium/compendium/backgrounds/sage", note("Sage", "compendium/src/5e/phb")),
+    noteInfoFromText("Compendium/compendium/backgrounds/sage-archivist-variant", note("Sage (Archivist) (Variant)", "compendium/src/5e/phb")),
+    // only backgrounds: other kinds keep their names as they are
+    noteInfoFromText("Compendium/compendium/spells/ink-blot-variant", note("Ink Blot (Variant)", "compendium/src/5e/testbook")),
+  ].filter((n) => n !== null));
+  const d = await buildCompendium({ read, keep: (kind, name, source) => linker.has(kind, name, source) });
+  assert.deepEqual(d.backgrounds.map((b) => b.name), ["Sage", "Variant Sage (Archivist)"]);
+  const variant = linker.attach(d).backgrounds.find((b) => b.name === "Variant Sage (Archivist)")!;
+  assert.equal(variant.link, "Compendium/compendium/backgrounds/sage-archivist-variant");
+  assert.equal(variant.feature?.link, "Compendium/compendium/backgrounds/sage-archivist-variant#Feature: Catalogue");
+  assert.ok(linker.has("backgrounds", "Sage (Archivist) (Variant)", "PHB"));
+  assert.ok(!linker.has("backgrounds", "Variant Sage (Archivist)", "XPHB"));
+  assert.ok(!linker.has("spells", "Variant Ink Blot", "TestBook"));
+});
