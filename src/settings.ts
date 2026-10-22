@@ -3,6 +3,7 @@ import type CharacterSheetPlugin from "./main";
 import srdData from "../data/srd-5.1.json";
 import { SECTIONS } from "./sections";
 import { IMPORT_CHANGES } from "./data/build";
+import { DetectModal } from "./ui/detect";
 
 export interface SheetSettings {
   /** optional fixed folder for new characters; empty = last used folder (vault root the first time) */
@@ -40,6 +41,7 @@ const pathLines = (text: string) => text.split("\n").map((l) => l.trim()).filter
 const T = {
   charactersFolder: ["Characters folder", "Optional. Folder suggested for new characters. Leave empty to use the last folder you created a character in (the vault root the first time)."],
   dataSource: ["Rules data", "Without rules data the sheet works in manual mode: you type races, classes, features, spells and values yourself, and only simple maths (modifiers, proficiency, saves, skills and spellcasting) is automatic."],
+  detect: ["Detect", "Look through this vault, hidden folders included, for a 5etools data folder, 5etools homebrew files and a compendium folder. You choose what to use; nothing is read until you press the button."],
   fivetoolsPath: ["Folder with 5etools data", "Used by the import. A folder inside this vault with the data files of a 5etools copy you are entitled to use (it contains races.json). A hidden folder such as .5etools/data keeps them out of your file list and search."],
   homebrew: ["Homebrew files", "Optional. Homebrew in the 5etools format (JSON files inside this vault), one path per line. Their races, classes, subclasses, backgrounds, feats, spells and items are added to the 5etools data when importing."],
   rules2014: ["Only 2014 rules", "Leave out the 2024 core rulebooks and other 2024-edition entries when importing."],
@@ -85,6 +87,7 @@ export class SheetSettingTab extends PluginSettingTab {
         { name: T.license[0], desc: attribution },
       ] },
       { type: "group", heading: "Import from 5etools", items: [
+        { name: T.detect[0], desc: T.detect[1], render: (setting) => { setting.addButton((b) => b.setButtonText("Detect").onClick(() => this.openDetect())); } },
         { name: T.fivetoolsPath[0], desc: T.fivetoolsPath[1], control: { type: "text", key: "fivetoolsPath", placeholder: ".5etools/data" } },
         { name: T.homebrew[0], desc: T.homebrew[1], control: { type: "textarea", key: "homebrewFiles", placeholder: HOMEBREW_PLACEHOLDER, rows: 4 } },
         { name: T.rules2014[0], desc: T.rules2014[1], control: { type: "toggle", key: "importRules2014" } },
@@ -123,6 +126,17 @@ export class SheetSettingTab extends PluginSettingTab {
     if (key === "theme") (this as { refreshDomState?: () => void }).refreshDomState?.();
   }
 
+  /** "Detect": scan the vault, then show what was found; the tab is redrawn with the choices made */
+  private async openDetect() {
+    const found = await this.plugin.detectFiveTools();
+    // Obsidian 1.13+ redraws the declarative settings with update(); older versions use display()
+    const redraw = () => {
+      const tab = this as { update?: () => void };
+      if (tab.update) tab.update(); else this.build();
+    };
+    new DetectModal(this.plugin, found, redraw).open();
+  }
+
   /** Sheet template: only affects sheets created from now on */
   private async setSectionShown(key: string, shown: boolean) {
     const st = this.plugin.settings;
@@ -131,7 +145,8 @@ export class SheetSettingTab extends PluginSettingTab {
   }
 
   // Obsidian before 1.13: the same settings built by hand
-  display() {
+  display() { this.build(); }
+  private build() {
     const { containerEl } = this;
     const st = this.plugin.settings;
     containerEl.empty();
@@ -169,6 +184,7 @@ export class SheetSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName(T.license[0]).setDesc(attribution);
 
     new Setting(containerEl).setName("Import from 5etools").setHeading();
+    new Setting(containerEl).setName(T.detect[0]).setDesc(T.detect[1]).addButton((b) => b.setButtonText("Detect").onClick(() => this.openDetect()));
     new Setting(containerEl).setName(T.fivetoolsPath[0]).setDesc(T.fivetoolsPath[1])
       .addText((t) => t.setPlaceholder(".5etools/data").setValue(st.fivetoolsPath).onChange(async (v) => { st.fivetoolsPath = v; await this.plugin.saveData(st); }));
     new Setting(containerEl).setName(T.homebrew[0]).setDesc(T.homebrew[1])

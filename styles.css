@@ -384,3 +384,7 @@
 .dnd-richtext.is-single .dnd-richtext-view { min-height: var(--dnd-control-h); display: flex; align-items: center; }
 .dnd-table .dnd-richtext.is-single .dnd-richtext-view { min-height: 26px; }
 .dnd-grid-3 .dnd-value, .dnd-prof-field .dnd-value { display: block; }
+
+/* ------------------------------------------------------- detect (settings) */
+.dnd-detect .dnd-detect-option { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-4-1) 0; cursor: pointer; overflow-wrap: anywhere; }
+.dnd-detect .dnd-hint { color: var(--text-muted); font-size: var(--font-ui-small); }

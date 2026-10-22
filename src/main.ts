@@ -3,6 +3,7 @@ import { CharState, Compendium, Rules, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo, sourceOfTag } from "./data/links";
 import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
+import { SKIP_FOLDERS, detect } from "./data/detect";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import srdData from "../data/srd-5.1.json";
 
@@ -101,6 +102,24 @@ export default class CharacterSheetPlugin extends Plugin {
       if ((typeof alias === "string" || typeof alias === "number") && source) notes.push({ path: f.path.replace(/\.md$/, ""), alias: String(alias), source });
     });
     return new Linker(root, notes);
+  }
+
+  /**
+   * Look through the vault for 5etools data, 5etools homebrew and a compendium ("Detect" in the
+   * settings). Read through the adapter, so hidden folders such as `.5etools` are found too.
+   */
+  async detectFiveTools() {
+    const adapter = this.app.vault.adapter;
+    const notice = new Notice("Looking for 5etools data in this vault…", 0);
+    try {
+      return await detect({
+        list: (dir) => adapter.list(normalizePath(dir || "/")),
+        read: (path) => adapter.read(path),
+        size: async (path) => (await adapter.stat(path))?.size ?? null,
+      }, { skip: [this.app.vault.configDir, ...SKIP_FOLDERS] });
+    } finally {
+      notice.hide();
+    }
   }
 
   /**
