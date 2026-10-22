@@ -11,6 +11,18 @@ export interface NoteInfo {
 }
 
 const lc = (s: string | number | null | undefined) => String(s ?? "").toLowerCase();
+/**
+ * A 5etools source id as ttrpg-convert-cli writes it in its source tags: lowercased and otherwise
+ * unchanged, so homebrew ids keep their other characters ("LLAR:E" -> "llar:e"). Used on both
+ * sides, for the notes' tags and for the sheet data's sources.
+ */
+export const sourceTag = (source: string | null | undefined) => lc(source);
+/** the source in a ttrpg-convert-cli source tag, ".../compendium/src/5e/<source>", up to the end of the tag */
+const SOURCE_TAG = /compendium\/src\/5e\/([^\s/"',\]]+)/;
+export const sourceOfTag = (tag: string): string | null => {
+  const m = tag.match(SOURCE_TAG)?.[1];
+  return m ? sourceTag(m) : null;
+};
 
 export class Linker {
   private exact = new Map<string, string>();
@@ -22,20 +34,20 @@ export class Linker {
       // kind = folder right under "<root>/compendium/", e.g. spells, races, classes
       const m = n.path.match(/\/compendium\/([^/]+)\//);
       if (!m) continue;
-      this.exact.set(`${m[1]}|${lc(n.alias)}|${lc(n.source)}`, n.path);
+      this.exact.set(`${m[1]}|${lc(n.alias)}|${sourceTag(n.source)}`, n.path);
       if (!this.byName.has(`${m[1]}|${lc(n.alias)}`)) this.byName.set(`${m[1]}|${lc(n.alias)}`, n.path);
     }
   }
   get enabled() { return !!this.root && this.exact.size > 0; }
   /** note for an entity of a kind (spells, races, classes, …), preferring the same source */
   note(kind: string, name: string, source?: string): string | null {
-    return this.exact.get(`${kind}|${lc(name)}|${lc(source)}`) ?? this.byName.get(`${kind}|${lc(name)}`) ?? null;
+    return this.exact.get(`${kind}|${lc(name)}|${sourceTag(source)}`) ?? this.byName.get(`${kind}|${lc(name)}`) ?? null;
   }
   /** heading inside a rules note, e.g. rule("conditions", "Blinded") */
   rule(file: string, heading: string): string | null {
     return this.enabled ? `${this.root}/rules/${file}#${heading}` : null;
   }
-  has(kind: string, name: string, source: string) { return this.exact.has(`${kind}|${lc(name)}|${lc(source)}`); }
+  has(kind: string, name: string, source: string) { return this.exact.has(`${kind}|${lc(name)}|${sourceTag(source)}`); }
 
   /** replace ⟦kind|name|source|display⟧ tokens with wikilinks, or plain text when there is no note */
   text(s: string): string {
@@ -74,6 +86,6 @@ export class Linker {
 export function noteInfoFromText(path: string, text: string): NoteInfo | null {
   const fm = text.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
   const alias = fm.match(/aliases:\n- "?([^"\n]*)"?/)?.[1];
-  const source = fm.match(/compendium\/src\/5e\/([a-z0-9-]+)/)?.[1];
+  const source = sourceOfTag(fm);
   return alias && source ? { path, alias, source } : null;
 }

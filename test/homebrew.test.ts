@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildCompendium, type HomebrewFile } from "../src/data/build.ts";
+import { Linker, noteInfoFromText, sourceOfTag } from "../src/data/links.ts";
 
 // A minimal 5etools data folder (one class, two spells) and homebrew files shaped like the ones in
 // TheGiddyLimit/homebrew. Names and text are made up.
@@ -224,4 +225,44 @@ test("a missing dependency is reported only for what the importer reads", () => 
 test("without a warn callback the same files import silently", async () => {
   const quiet = await buildCompendium({ read, homebrew: [MESSY, NOT_HOMEBREW] });
   assert.equal(quiet.spells.length, messy.spells.length);
+});
+
+// Compendium notes of homebrew made by ttrpg-convert-cli: its source tag is the 5etools source id,
+// lowercased and otherwise as it is ("compendium/src/5e/tc:e")
+const EXPANDED: HomebrewFile = {
+  file: "homebrew/Test Class Expanded.json",
+  json: {
+    _meta: { sources: [{ json: "TC:E", full: "Test Class Expanded" }] },
+    spell: [{ ...spell("Colon Spell", "TC:E"), entries: ["Works like {@spell ink blot|TestBook}."] }],
+  },
+};
+const note = (alias: string, tag: string) => `---\naliases:\n- "${alias}"\ntags:\n- ${tag}\n- compendium/src/5e\n---\n# ${alias}\n`;
+const notes = [
+  noteInfoFromText("Compendium/compendium/spells/colon-spell-tc-e", note("Colon Spell", "compendium/src/5e/tc:e")),
+  noteInfoFromText("Compendium/compendium/spells/ink-blot-testbook", note("Ink Blot", "compendium/src/5e/testbook")),
+  noteInfoFromText("Compendium/compendium/spells/spark-bolt", note("Spark Bolt", "ttrpg-cli/compendium/src/5e/phb")),
+].filter((n) => n !== null);
+
+test("source tags: read up to the end of the tag, lowercased", () => {
+  assert.equal(sourceOfTag("compendium/src/5e/tc:e"), "tc:e");
+  assert.equal(sourceOfTag("compendium/src/5e/TalDoreiCampaignSettingReborn"), "taldoreicampaignsettingreborn");
+  assert.equal(sourceOfTag("ttrpg-cli/compendium/src/5e/phb"), "phb");
+  assert.equal(sourceOfTag("compendium/src/5e"), null);
+  assert.deepEqual(notes.map((n) => n.source), ["tc:e", "testbook", "phb"]);
+});
+
+test("homebrew entries link to their notes, also from text, and match only their own source", async () => {
+  const linker = new Linker("Compendium", notes);
+  const d = linker.attach(await buildCompendium({ read, homebrew: [BOOK, EXPANDED] }));
+  const colon = d.spells.find((s) => s.name === "Colon Spell")!;
+  assert.equal(colon.link, "Compendium/compendium/spells/colon-spell-tc-e");
+  assert.equal(linker.text(colon.text), "Works like [[Compendium/compendium/spells/ink-blot-testbook|ink blot]].");
+  assert.ok(linker.has("spells", "Colon Spell", "TC:E"));
+  assert.ok(!linker.has("spells", "Colon Spell", "TC"));
+});
+
+test("Only entries with a note: homebrew entries are kept by their own source", async () => {
+  const linker = new Linker("Compendium", notes);
+  const d = await buildCompendium({ read, homebrew: [BOOK, EXPANDED], keep: (kind, name, source) => linker.has(kind, name, source) });
+  assert.deepEqual(d.spells.map((s) => `${s.name} (${s.source})`).sort(), ["Colon Spell (TC:E)", "Ink Blot (TestBook)", "Spark Bolt (PHB)"]);
 });
