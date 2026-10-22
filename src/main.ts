@@ -119,20 +119,21 @@ export default class CharacterSheetPlugin extends Plugin {
     try {
       const linker = this.settings.importOnlyWithNotes ? this.buildLinker() : null;
       if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
-      // homebrew files that are missing or not valid JSON are left out and reported, the rest is imported
-      const homebrew: HomebrewFile[] = [], skipped: string[] = [];
+      // homebrew files, and entries in them, that can't be read are left out and reported; the rest is imported
+      const homebrew: HomebrewFile[] = [], leftOut: string[] = [];
       for (const path of this.settings.homebrewFiles) {
         const file = normalizePath(path);
         try {
           if (!(await adapter.exists(file))) throw new Error("not found");
           homebrew.push({ file, json: JSON.parse(await adapter.read(file)) as unknown });
         } catch (e) {
-          skipped.push(`${file} (${(e as Error).message})`);
+          leftOut.push(`${file}: ${(e as Error).message}`);
         }
       }
       const data = await buildCompendium({
         read: async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown,
         homebrew,
+        warn: (message) => leftOut.push(message),
         rules2014Only: this.settings.importRules2014 && !this.settings.importOnlyWithNotes,
         keep: linker ? (kind, name, source) => linker.has(kind, name, source) : undefined,
       });
@@ -145,7 +146,11 @@ export default class CharacterSheetPlugin extends Plugin {
       await this.saveSettings();
       notice.hide();
       new Notice(`Imported${brew}: ${summarize(data)}`, 8000);
-      if (skipped.length) new Notice(`Homebrew files left out: ${skipped.join("; ")}`, 15000);
+      if (leftOut.length) {
+        console.warn(`5e Character Sheet: left out of the import:\n${leftOut.join("\n")}`);
+        const more = leftOut.length > 3 ? `\n…and ${leftOut.length - 3} more (see the developer console).` : "";
+        new Notice(`Left out of the import:\n${leftOut.slice(0, 3).join("\n")}${more}`, 20000);
+      }
     } catch (e) {
       notice.hide();
       console.error("5e Character Sheet: import failed", e);
