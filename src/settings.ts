@@ -102,8 +102,6 @@ export class SheetSettingTab extends PluginSettingTab {
   }
 
   // Obsidian 1.13+: declarative settings, also searchable from the settings search
-  /** shown on the Sheet template page entry */
-  private sectionsShown() { return `${SECTIONS.length - this.plugin.settings.hiddenSections.length} of ${SECTIONS.length} sections shown`; }
   /** the imported data is chosen but missing or out of date */
   private importNeedsAttention() { const st = this.plugin.settings; return st.dataSource === "imported" && (!st.lastImport || this.plugin.importIsOutdated); }
 
@@ -121,10 +119,10 @@ export class SheetSettingTab extends PluginSettingTab {
         ] },
         { type: "group", items: [{ name: T.more, desc: withLinks("", L.general) }] },
       ] },
-      { type: "page", name: "Sheet template", desc: T.template, displayValue: () => this.sectionsShown(), items: [
+      { type: "page", name: "Sheet template", desc: T.template, items: [
         { type: "group", items: SECTIONS.map((sec) => ({ name: sec.label, control: { type: "toggle" as const, key: SECTION_PREFIX + sec.key } })) },
       ] },
-      { type: "page", name: "Rules data", desc: T.rules, displayValue: () => SOURCE_OPTIONS[st.dataSource], status: () => (this.importNeedsAttention() ? "warning" : null), items: [
+      { type: "page", name: "Rules data", desc: T.rules, status: () => (this.importNeedsAttention() ? "warning" : null), items: [
         { type: "group", items: [
           { name: T.dataSource[0], desc: withLinks(T.dataSource[1], L.rules), control: { type: "dropdown", key: "dataSource", options: SOURCE_OPTIONS } },
           { name: T.license[0], desc: attribution },
@@ -153,7 +151,7 @@ export class SheetSettingTab extends PluginSettingTab {
           },
         ] },
       ] },
-      { type: "page", name: "Compendium", desc: T.compendiumPage, displayValue: () => st.compendiumFolder.trim() || "Not set", items: [
+      { type: "page", name: "Compendium", desc: T.compendiumPage, items: [
         { type: "group", items: [
           { name: T.compendium[0], desc: withLinks(T.compendium[1], L.compendium), control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
           { name: "Making a compendium", desc: withLinks(T.makeCompendium, L.convert, L.convertCli, L.convertUi) },
