@@ -24,6 +24,15 @@ export const sourceOfTag = (tag: string): string | null => {
   return m ? sourceTag(m) : null;
 };
 
+/**
+ * Names a note stands for: its alias, and for a variant background also the 5etools name.
+ * ttrpg-convert-cli titles "Variant Criminal (Spy)" as "Criminal (Spy) (Variant)".
+ */
+function namesOf(kind: string, alias: string): string[] {
+  const variant = kind === "backgrounds" ? alias.match(/^(.+) \(Variant\)$/i)?.[1] : undefined;
+  return variant ? [alias, `Variant ${variant}`] : [alias];
+}
+
 export class Linker {
   private exact = new Map<string, string>();
   private byName = new Map<string, string>();
@@ -34,8 +43,10 @@ export class Linker {
       // kind = folder right under "<root>/compendium/", e.g. spells, races, classes
       const m = n.path.match(/\/compendium\/([^/]+)\//);
       if (!m) continue;
-      this.exact.set(`${m[1]}|${lc(n.alias)}|${sourceTag(n.source)}`, n.path);
-      if (!this.byName.has(`${m[1]}|${lc(n.alias)}`)) this.byName.set(`${m[1]}|${lc(n.alias)}`, n.path);
+      for (const name of namesOf(m[1], n.alias)) {
+        this.exact.set(`${m[1]}|${lc(name)}|${sourceTag(n.source)}`, n.path);
+        if (!this.byName.has(`${m[1]}|${lc(name)}`)) this.byName.set(`${m[1]}|${lc(name)}`, n.path);
+      }
     }
   }
   get enabled() { return !!this.root && this.exact.size > 0; }
