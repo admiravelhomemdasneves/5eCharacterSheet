@@ -1,7 +1,7 @@
 import { Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } from "obsidian";
 import { CharState, Compendium, Rules, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
-import { Linker, NoteInfo } from "./data/links";
+import { Linker, NoteInfo, sourceOfTag } from "./data/links";
 import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import srdData from "../data/srd-5.1.json";
@@ -97,7 +97,7 @@ export default class CharacterSheetPlugin extends Plugin {
       if (!fm) return;
       const alias: unknown = Array.isArray(fm.aliases) ? (fm.aliases as unknown[])[0] : fm.aliases;
       const tags: unknown[] = Array.isArray(fm.tags) ? (fm.tags as unknown[]) : fm.tags ? [fm.tags] : [];
-      const source = tags.map((t) => String(t).match(/compendium\/src\/5e\/([a-z0-9-]+)/)?.[1]).find(Boolean);
+      const source = tags.map((t) => sourceOfTag(String(t))).find(Boolean);
       if ((typeof alias === "string" || typeof alias === "number") && source) notes.push({ path: f.path.replace(/\.md$/, ""), alias: String(alias), source });
     });
     return new Linker(root, notes);
