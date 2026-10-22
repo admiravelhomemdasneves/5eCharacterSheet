@@ -120,11 +120,14 @@ The character's data is saved in that note's properties. Put your own notes, hea
 
 ### Settings
 
-- **Characters folder**: optional. Where new characters are created. Leave it empty to use the last folder you created a character in (the vault root the first time).
-- **Theme**: the sheet's accent colour. *Original* keeps the plugin's red accent, *Obsidian theme* uses your theme's accent colour, and *Custom* lets you pick your own.
+The settings have four pages (tabs in Obsidian before 1.13):
+
+- **General**
+  - **Characters folder**: optional. Where new characters are created. Leave it empty to use the last folder you created a character in (the vault root the first time).
+  - **Theme**: the sheet's accent colour. *Original* keeps the plugin's red accent, *Obsidian theme* uses your theme's accent colour, and *Custom* lets you pick your own.
 - **Sheet template**: which sections new sheets show (all of them by default, even while empty). On a sheet, hover a section's title to hide it, and use the **Hidden sections** menu at the top to show it again.
-- **Rules data**: none (manual mode), SRD 5.1 or imported data (see below).
-- **Compendium folder**: optional, only for links (see [Compendium links](#compendium-links-optional)).
+- **Rules data**: none (manual mode), SRD 5.1 or imported data (see below). For imported data it walks you through the three steps of the import. A warning on the page means the import is still to do or out of date.
+- **Compendium**: optional, only for links (see [Compendium links](#compendium-links-optional)).
 
 ### Rules data
 
@@ -136,15 +139,21 @@ The character's data is saved in that note's properties. Put your own notes, hea
 
 Switching sources never loses information: manual fields and data-driven choices are stored separately.
 
-#### Importing your own data
+#### Setting up 5etools data, step by step
 
-Only for content **you are entitled to use**. The plugin does not download anything.
+New to 5etools? This is everything you need, in order. Only for content **you are entitled to use**; the plugin does not download anything.
 
-1. Copy the `data` folder of a 5etools copy into your vault. A hidden folder such as `.5etools/data` keeps those files out of your file list and search.
-2. In the settings choose **Imported from 5etools**, enter that folder (e.g. `.5etools/data`) and press **Import now**. Or press **Detect** to find it: it also finds 5etools homebrew files and a compendium folder, and you choose what to use.
-3. Optional: **Only 2014 rules** leaves out the 2024 core books; **Only entries with a note** imports exactly what your compendium contains.
+1. **Get the data.** 5etools keeps the content of the books as JSON files in a folder named `data` (with files such as `races.json` and `backgrounds.json`, and folders such as `class` and `spells`). You need that `data` folder from a copy of 5etools.
+2. **Put it in your vault.** Copy the whole `data` folder into your vault, e.g. as `.5etools/data`. A folder whose name starts with a dot is hidden, so the hundreds of JSON files don't show up in your file list, search or graph. Obsidian on mobile can only reach files inside the vault, so keep it there on every device you use.
+3. **Choose it in the settings.** Open *Settings → 5e Character Sheet → Rules data* and choose **Imported from 5etools**. Three steps appear.
+4. **Find it.** Press **Detect**. It looks through your vault, hidden folders included, and lists the 5etools data folders, homebrew files and compendium folders it finds; pick what to use and press **Use these**. Or type the folder (e.g. `.5etools/data`) in **Folder with 5etools data**.
+5. **Import.** Optional: **Only 2014 rules** leaves out the 2024 core books, and **Only entries with a note** imports exactly what your compendium contains. Press **Import now**. A notice tells you what was imported.
+6. **Done.** The races, classes, backgrounds, spells and items are in the menus of every sheet. The data is converted on your device and stored in the plugin's folder in your vault, so you can delete the copied `data` folder afterwards. Import again after you update it.
 
-The data is converted on your device and stored in the plugin's folder in your vault. After the import you can delete the copied `data` folder.
+Optional extras:
+
+- **Homebrew**: 5etools homebrew files go next to the data, e.g. in `.5etools/homebrew` (see [Homebrew](#homebrew)).
+- **Compendium notes**: [ttrpg-convert-cli](https://github.com/ebullient/ttrpg-convert-cli) turns the same 5etools data into notes for your vault, and the sheet then links to them (see [Compendium links](#compendium-links-optional)). The Obsidian TTRPG Tutorials explain it step by step, for the [command-line version](https://obsidianttrpgtutorials.com/Obsidian+TTRPG+Tutorials/Plugin+Tutorials/Community+Plugins/TTRPG-Convert-CLI/TTRPG-Convert-CLI+5e) and the [app version](https://obsidianttrpgtutorials.com/Obsidian+TTRPG+Tutorials/Plugin+Tutorials/Community+Plugins/TTRPG-Convert-CLI/TTRPG-Convert-CLI-UI).
 
 #### Homebrew
 

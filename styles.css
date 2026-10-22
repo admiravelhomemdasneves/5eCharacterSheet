@@ -388,3 +388,7 @@
 /* ------------------------------------------------------- detect (settings) */
 .dnd-detect .dnd-detect-option { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-4-1) 0; cursor: pointer; overflow-wrap: anywhere; }
 .dnd-detect .dnd-hint { color: var(--text-muted); font-size: var(--font-ui-small); }
+
+/* ------------------------------------------------- settings tabs (Obsidian before 1.13) */
+.dnd-settings-tabs { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin-bottom: var(--size-4-4); }
+.dnd-settings-tabs .is-active { background: var(--interactive-accent); color: var(--text-on-accent); }

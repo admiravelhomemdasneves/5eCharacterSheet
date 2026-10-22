@@ -52,7 +52,41 @@ const T = {
   theme: ["Theme", "Accent colour of the sheets: the plugin's own, the one of your Obsidian theme, or your own choice."],
   accent: ["Accent colour", "Used for the name, section titles, lines and rollable values, in both light and dark mode."],
   template: "Sections shown in new character sheets, even while empty. Existing sheets keep their own choice: hide a section with the button next to its title, and show it again from the \"Hidden sections\" menu at the top of the sheet.",
+  // pages, and the steps of the import
+  general: "Where new characters are created and how the sheets look.",
+  rules: "Where races, classes, spells and items come from: typed in by you (manual mode), the SRD 5.1 included with the plugin, or your own 5etools data.",
+  compendiumPage: "Optional. Links from the sheets to the notes of a compendium, with page previews.",
+  step1: ["Step 1: Get the data", "What you need", "The \"data\" folder of a 5etools copy: JSON files with the races, classes, spells and items of the books. Use only content you are entitled to use; the plugin downloads nothing."],
+  step2: ["Step 2: Put it in your vault", "Where to put it", "Copy that folder into this vault. A hidden folder such as .5etools/data keeps its files out of your file list and search. Then press Detect, or fill in the paths below."],
+  step3: "Step 3: Import",
+  makeCompendium: "The compendium notes are made from your 5etools data by ttrpg-convert-cli, a separate tool.",
+  more: "Read more",
 } as const;
+
+const README = "https://github.com/admiravelhomemdasneves/5eCharacterSheet";
+const TUTORIALS = "https://obsidianttrpgtutorials.com/Obsidian+TTRPG+Tutorials/Plugin+Tutorials/Community+Plugins/TTRPG-Convert-CLI";
+type Link = readonly [label: string, href: string];
+const L = {
+  general: ["Settings in the README", `${README}#settings`],
+  rules: ["Rules data in the README", `${README}#rules-data`],
+  guide: ["Step-by-step guide", `${README}#setting-up-5etools-data-step-by-step`],
+  homebrew: ["Homebrew in the README", `${README}#homebrew`],
+  homebrewRepo: ["5etools homebrew repository", "https://github.com/TheGiddyLimit/homebrew"],
+  compendium: ["Compendium links in the README", `${README}#compendium-links-optional`],
+  convert: ["ttrpg-convert-cli", "https://github.com/ebullient/ttrpg-convert-cli"],
+  convertCli: ["Command-line tutorial", `${TUTORIALS}/TTRPG-Convert-CLI+5e`],
+  convertUi: ["App tutorial", `${TUTORIALS}/TTRPG-Convert-CLI-UI`],
+} as const satisfies Record<string, Link>;
+/** A description followed by links, for both settings UIs (setDesc and `desc` take a fragment). */
+function withLinks(text: string, ...links: Link[]) {
+  return createFragment((f) => {
+    if (text) f.createSpan({ text });
+    links.forEach(([label, href], i) => { if (text || i) f.createSpan({ text: i ? " · " : " " }); f.createEl("a", { text: label, href }); });
+  });
+}
+/** The settings pages; before Obsidian 1.13 they are tabs */
+const PAGES = [["general", "General"], ["template", "Sheet template"], ["rules", "Rules data"], ["compendium", "Compendium"]] as const;
+type Page = (typeof PAGES)[number][0];
 
 const SOURCE_OPTIONS: Record<SheetSettings["dataSource"], string> = { none: "None (manual mode)", srd: "SRD 5.1 (included)", imported: "Imported from 5etools" };
 const THEME_OPTIONS: Record<SheetSettings["theme"], string> = { plugin: "Original", obsidian: "Obsidian theme", custom: "Custom" };
@@ -68,43 +102,60 @@ export class SheetSettingTab extends PluginSettingTab {
   }
 
   // Obsidian 1.13+: declarative settings, also searchable from the settings search
+  /** the imported data is chosen but missing or out of date */
+  private importNeedsAttention() { const st = this.plugin.settings; return st.dataSource === "imported" && (!st.lastImport || this.plugin.importIsOutdated); }
+
   getSettingDefinitions(): SettingDefinitionItem[] {
-    const custom = () => this.plugin.settings.theme === "custom";
+    const st = this.plugin.settings;
+    const custom = () => st.theme === "custom", imported = () => st.dataSource === "imported";
     return [
-      { type: "group", heading: "Characters", items: [
-        { name: T.charactersFolder[0], desc: T.charactersFolder[1], control: { type: "folder", key: "charactersFolder", placeholder: "Last used folder", includeRoot: true } },
+      { type: "page", name: "General", desc: T.general, items: [
+        { type: "group", heading: "Characters", items: [
+          { name: T.charactersFolder[0], desc: T.charactersFolder[1], control: { type: "folder", key: "charactersFolder", placeholder: "Last used folder", includeRoot: true } },
+        ] },
+        { type: "group", heading: "Theme", items: [
+          { name: T.theme[0], desc: T.theme[1], control: { type: "dropdown", key: "theme", options: THEME_OPTIONS } },
+          { name: T.accent[0], desc: T.accent[1], visible: custom, control: { type: "color", key: "customAccent" } },
+        ] },
+        { type: "group", items: [{ name: T.more, desc: withLinks("", L.general) }] },
       ] },
-      { type: "group", heading: "Theme", items: [
-        { name: T.theme[0], desc: T.theme[1], control: { type: "dropdown", key: "theme", options: THEME_OPTIONS } },
-        { name: T.accent[0], desc: T.accent[1], visible: custom, control: { type: "color", key: "customAccent" } },
+      { type: "page", name: "Sheet template", desc: T.template, items: [
+        { type: "group", items: SECTIONS.map((sec) => ({ name: sec.label, control: { type: "toggle" as const, key: SECTION_PREFIX + sec.key } })) },
       ] },
-      { type: "group", heading: "Sheet template", items: [
-        { name: "Sections", desc: T.template },
-        ...SECTIONS.map((sec) => ({ name: sec.label, control: { type: "toggle" as const, key: SECTION_PREFIX + sec.key } })),
-      ] },
-      { type: "group", heading: "Rules", items: [
-        { name: T.dataSource[0], desc: T.dataSource[1], control: { type: "dropdown", key: "dataSource", options: SOURCE_OPTIONS } },
-        { name: T.license[0], desc: attribution },
-      ] },
-      { type: "group", heading: "Import from 5etools", items: [
-        { name: T.detect[0], desc: T.detect[1], render: (setting) => { setting.addButton((b) => b.setButtonText("Detect").onClick(() => this.openDetect())); } },
-        { name: T.fivetoolsPath[0], desc: T.fivetoolsPath[1], control: { type: "text", key: "fivetoolsPath", placeholder: ".5etools/data" } },
-        { name: T.homebrew[0], desc: T.homebrew[1], control: { type: "textarea", key: "homebrewFiles", placeholder: HOMEBREW_PLACEHOLDER, rows: 4 } },
-        { name: T.rules2014[0], desc: T.rules2014[1], control: { type: "toggle", key: "importRules2014" } },
-        { name: T.onlyNotes[0], desc: T.onlyNotes[1], control: { type: "toggle", key: "importOnlyWithNotes" } },
-        {
-          name: T.importNow[0], desc: T.importNow[1],
-          render: (setting) => {
-            setting.setDesc(this.importStatus());
-            setting.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => {
-              await this.plugin.importFiveTools();
+      { type: "page", name: "Rules data", desc: T.rules, status: () => (this.importNeedsAttention() ? "warning" : null), items: [
+        { type: "group", items: [
+          { name: T.dataSource[0], desc: withLinks(T.dataSource[1], L.rules), control: { type: "dropdown", key: "dataSource", options: SOURCE_OPTIONS } },
+          { name: T.license[0], desc: attribution },
+        ] },
+        { type: "group", heading: T.step1[0], visible: imported, items: [
+          { name: T.step1[1], desc: withLinks(T.step1[2], L.guide) },
+        ] },
+        { type: "group", heading: T.step2[0], visible: imported, items: [
+          { name: T.step2[1], desc: T.step2[2] },
+          { name: T.detect[0], desc: T.detect[1], render: (setting) => { setting.addButton((b) => b.setButtonText("Detect").onClick(() => this.openDetect())); } },
+          { name: T.fivetoolsPath[0], desc: T.fivetoolsPath[1], control: { type: "text", key: "fivetoolsPath", placeholder: ".5etools/data" } },
+          { name: T.homebrew[0], desc: withLinks(T.homebrew[1], L.homebrew, L.homebrewRepo), control: { type: "textarea", key: "homebrewFiles", placeholder: HOMEBREW_PLACEHOLDER, rows: 4 } },
+        ] },
+        { type: "group", heading: T.step3, visible: imported, items: [
+          { name: T.rules2014[0], desc: T.rules2014[1], control: { type: "toggle", key: "importRules2014" } },
+          { name: T.onlyNotes[0], desc: T.onlyNotes[1], control: { type: "toggle", key: "importOnlyWithNotes" } },
+          {
+            name: T.importNow[0], desc: T.importNow[1],
+            render: (setting) => {
               setting.setDesc(this.importStatus());
-            }));
+              setting.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => {
+                await this.plugin.importFiveTools();
+                setting.setDesc(this.importStatus());
+              }));
+            },
           },
-        },
+        ] },
       ] },
-      { type: "group", heading: "Compendium", items: [
-        { name: T.compendium[0], desc: T.compendium[1], control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
+      { type: "page", name: "Compendium", desc: T.compendiumPage, items: [
+        { type: "group", items: [
+          { name: T.compendium[0], desc: withLinks(T.compendium[1], L.compendium), control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
+          { name: "Making a compendium", desc: withLinks(T.makeCompendium, L.convert, L.convertCli, L.convertUi) },
+        ] },
       ] },
     ];
   }
@@ -122,8 +173,9 @@ export class SheetSettingTab extends PluginSettingTab {
     else await this.plugin.saveData(this.plugin.settings);
     // theme changes only restyle the open sheets; the theme choice also shows or hides the custom fields
     if (THEME_KEYS.includes(key)) this.plugin.refreshSheets();
-    // refreshDomState (Obsidian 1.13+) re-evaluates the `visible` predicates; checked at runtime for older versions
-    if (key === "theme") (this as { refreshDomState?: () => void }).refreshDomState?.();
+    // refreshDomState (Obsidian 1.13+) re-evaluates the `visible` predicates (the custom colour, the
+    // import steps); checked at runtime for older versions
+    if (key === "theme" || key === "dataSource") (this as { refreshDomState?: () => void }).refreshDomState?.();
   }
 
   /** "Detect": scan the vault, then show what was found; the tab is redrawn with the choices made */
@@ -144,13 +196,27 @@ export class SheetSettingTab extends PluginSettingTab {
     await this.plugin.saveData(st);
   }
 
-  // Obsidian before 1.13: the same settings built by hand
+  // Obsidian before 1.13: the same settings built by hand, one page at a time under a row of tabs
+  private page: Page = "general";
   display() { this.build(); }
   private build() {
     const { containerEl } = this;
-    const st = this.plugin.settings;
     containerEl.empty();
-
+    const tabs = containerEl.createDiv({ cls: "dnd-settings-tabs" });
+    for (const [key, label] of PAGES) {
+      const b = tabs.createEl("button", { text: label, cls: key === this.page ? "is-active" : "" });
+      if (key === "rules" && this.importNeedsAttention()) b.addClass("mod-warning");
+      b.onclick = () => { this.page = key; this.build(); };
+    }
+    const el = containerEl.createDiv();
+    if (this.page === "general") this.generalPage(el);
+    else if (this.page === "template") this.templatePage(el);
+    else if (this.page === "rules") this.rulesPage(el);
+    else this.compendiumPage(el);
+  }
+  private generalPage(containerEl: HTMLElement) {
+    const st = this.plugin.settings;
+    containerEl.createEl("p", { cls: "setting-item-description", text: T.general });
     new Setting(containerEl).setName("Characters").setHeading();
     new Setting(containerEl).setName(T.charactersFolder[0]).setDesc(T.charactersFolder[1])
       .addText((t) => t.setPlaceholder("Last used folder").setValue(st.charactersFolder).onChange(async (v) => { st.charactersFolder = v; await this.plugin.saveData(st); }));
@@ -169,36 +235,49 @@ export class SheetSettingTab extends PluginSettingTab {
         .addColorPicker((c) => c.setValue(st.customAccent).onChange(async (v) => { st.customAccent = v; await saveTheme(); }));
     };
     customFields();
-
-    new Setting(containerEl).setName("Sheet template").setHeading();
-    new Setting(containerEl).setName("Sections").setDesc(T.template);
+    new Setting(containerEl).setName(T.more).setDesc(withLinks("", L.general));
+  }
+  private templatePage(containerEl: HTMLElement) {
+    const st = this.plugin.settings;
+    containerEl.createEl("p", { cls: "setting-item-description", text: T.template });
     for (const sec of SECTIONS) {
       new Setting(containerEl).setName(sec.label)
         .addToggle((t) => t.setValue(!st.hiddenSections.includes(sec.key)).onChange((v) => this.setSectionShown(sec.key, v)));
     }
-
-    new Setting(containerEl).setName("Rules").setHeading();
-    new Setting(containerEl).setName(T.dataSource[0]).setDesc(T.dataSource[1])
+  }
+  private rulesPage(containerEl: HTMLElement) {
+    const st = this.plugin.settings;
+    containerEl.createEl("p", { cls: "setting-item-description", text: T.rules });
+    new Setting(containerEl).setName(T.dataSource[0]).setDesc(withLinks(T.dataSource[1], L.rules))
       .addDropdown((d) => d.addOptions(SOURCE_OPTIONS).setValue(st.dataSource)
-        .onChange(async (v) => { st.dataSource = v as SheetSettings["dataSource"]; await this.plugin.saveSettings(); }));
+        // the import steps are shown for imported data only
+        .onChange(async (v) => { st.dataSource = v as SheetSettings["dataSource"]; await this.plugin.saveSettings(); this.build(); }));
     new Setting(containerEl).setName(T.license[0]).setDesc(attribution);
+    if (st.dataSource !== "imported") return;
 
-    new Setting(containerEl).setName("Import from 5etools").setHeading();
+    new Setting(containerEl).setName(T.step1[0]).setHeading();
+    new Setting(containerEl).setName(T.step1[1]).setDesc(withLinks(T.step1[2], L.guide));
+    new Setting(containerEl).setName(T.step2[0]).setHeading();
+    new Setting(containerEl).setName(T.step2[1]).setDesc(T.step2[2]);
     new Setting(containerEl).setName(T.detect[0]).setDesc(T.detect[1]).addButton((b) => b.setButtonText("Detect").onClick(() => this.openDetect()));
     new Setting(containerEl).setName(T.fivetoolsPath[0]).setDesc(T.fivetoolsPath[1])
       .addText((t) => t.setPlaceholder(".5etools/data").setValue(st.fivetoolsPath).onChange(async (v) => { st.fivetoolsPath = v; await this.plugin.saveData(st); }));
-    new Setting(containerEl).setName(T.homebrew[0]).setDesc(T.homebrew[1])
+    new Setting(containerEl).setName(T.homebrew[0]).setDesc(withLinks(T.homebrew[1], L.homebrew, L.homebrewRepo))
       .addTextArea((t) => { t.setPlaceholder(HOMEBREW_PLACEHOLDER).setValue(st.homebrewFiles.join("\n")).onChange(async (v) => { st.homebrewFiles = pathLines(v); await this.plugin.saveData(st); }); t.inputEl.rows = 4; });
+    new Setting(containerEl).setName(T.step3).setHeading();
     new Setting(containerEl).setName(T.rules2014[0]).setDesc(T.rules2014[1])
       .addToggle((t) => t.setValue(st.importRules2014).onChange(async (v) => { st.importRules2014 = v; await this.plugin.saveData(st); }));
     new Setting(containerEl).setName(T.onlyNotes[0]).setDesc(T.onlyNotes[1])
       .addToggle((t) => t.setValue(st.importOnlyWithNotes).onChange(async (v) => { st.importOnlyWithNotes = v; await this.plugin.saveData(st); }));
     const imp = new Setting(containerEl).setName(T.importNow[0]).setDesc(this.importStatus());
-    imp.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => { await this.plugin.importFiveTools(); imp.setDesc(this.importStatus()); }));
-
-    new Setting(containerEl).setName("Compendium").setHeading();
-    new Setting(containerEl).setName(T.compendium[0]).setDesc(T.compendium[1])
+    imp.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => { await this.plugin.importFiveTools(); this.build(); }));
+  }
+  private compendiumPage(containerEl: HTMLElement) {
+    const st = this.plugin.settings;
+    containerEl.createEl("p", { cls: "setting-item-description", text: T.compendiumPage });
+    new Setting(containerEl).setName(T.compendium[0]).setDesc(withLinks(T.compendium[1], L.compendium))
       .addText((t) => t.setPlaceholder("Compendium").setValue(st.compendiumFolder).onChange(async (v) => { st.compendiumFolder = v; await this.plugin.saveData(st); }))
       .addButton((b) => b.setButtonText("Apply").onClick(async () => { await this.plugin.saveSettings(); }));
+    new Setting(containerEl).setName("Making a compendium").setDesc(withLinks(T.makeCompendium, L.convert, L.convertCli, L.convertUi));
   }
 }
