@@ -32,6 +32,53 @@ export interface DetectOptions {
 export const SKIP_FOLDERS = [".git", ".trash", "node_modules"];
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
+/** A vault path as the scan writes it: forward slashes, none doubled, none at the ends ("" = not set). */
+export function vaultPath(p: string) {
+  return p.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+}
+
+/**
+ * The folders offered for one setting (data or compendium): those found, plus the one set now when
+ * the scan did not find it, so unchecking it is a choice too. `initial` is the one checked when the
+ * dialog opens: the one set now, else the first found.
+ */
+export function folderOptions(found: string[], setting: string) {
+  const current = vaultPath(setting);
+  const options = current && !found.includes(current) ? [...found, current] : found;
+  return { options, current, initial: current || found[0] || null };
+}
+
+/** Homebrew files grouped by their folder, in the order found. */
+export function homebrewFolders(files: DetectedHomebrew[]) {
+  const out: { folder: string; files: DetectedHomebrew[] }[] = [];
+  for (const f of files) {
+    const folder = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
+    const g = out.find((x) => x.folder === folder);
+    if (g) g.files.push(f); else out.push({ folder, files: [f] });
+  }
+  return out;
+}
+
+export interface ImportPaths { fivetoolsPath: string; compendiumFolder: string; homebrewFiles: string[] }
+/** The choices of the Detect dialog: a folder for each setting (null = none) and the checked homebrew files. */
+export interface DetectPicks { data: string | null; compendium: string | null; homebrew: Set<string> }
+/**
+ * The import settings after "Use these". An unchecked data or compendium folder leaves the setting
+ * empty. The homebrew list keeps its order: unchecked files leave it, new checked ones go at the
+ * end, and files listed by hand that the scan did not find stay.
+ */
+export function applyDetected(cur: ImportPaths, found: Detected, picks: DetectPicks): ImportPaths {
+  const scanned = new Set(found.homebrew.map((h) => h.path)), listed = new Set(cur.homebrewFiles.map(vaultPath));
+  return {
+    fivetoolsPath: picks.data ?? "",
+    compendiumFolder: picks.compendium ?? "",
+    homebrewFiles: [
+      ...cur.homebrewFiles.filter((p) => !scanned.has(vaultPath(p)) || picks.homebrew.has(vaultPath(p))),
+      ...found.homebrew.map((h) => h.path).filter((p) => picks.homebrew.has(p) && !listed.has(p)),
+    ],
+  };
+}
+
 /** The book names of a 5etools homebrew file, or null when the JSON is not one. */
 export function homebrewSources(json: unknown): string[] | null {
   const meta = (json as { _meta?: { sources?: unknown } } | null)?._meta;

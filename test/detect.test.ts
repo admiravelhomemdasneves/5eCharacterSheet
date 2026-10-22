@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { detect, homebrewSources, type DetectFs } from "../src/data/detect.ts";
+import { applyDetected, detect, folderOptions, homebrewFolders, homebrewSources, vaultPath, type DetectFs, type Detected } from "../src/data/detect.ts";
 
 // A vault on disk, read the way the vault adapter does: vault paths, "" for the root
 function vault(files: Record<string, string>) {
@@ -61,4 +61,33 @@ test("homebrew sources: book names from _meta.sources, null for other JSON", () 
   assert.equal(homebrewSources({ _meta: { sources: [] } }), null);
   assert.equal(homebrewSources({ race: [] }), null);
   assert.equal(homebrewSources(null), null);
+});
+
+test("vault paths: forward slashes, none doubled or at the ends", () => {
+  assert.equal(vaultPath(" .5etools\\data/ "), ".5etools/data");
+  assert.equal(vaultPath("/a//b/"), "a/b");
+  assert.equal(vaultPath(""), "");
+});
+
+test("folder options: the set folder is checked, and listed when the scan missed it", () => {
+  assert.deepEqual(folderOptions(["a", "b"], "b\\"), { options: ["a", "b"], current: "b", initial: "b" });
+  assert.deepEqual(folderOptions(["a"], "old"), { options: ["a", "old"], current: "old", initial: "old" });
+  assert.deepEqual(folderOptions(["a", "b"], ""), { options: ["a", "b"], current: "", initial: "a" });
+  assert.deepEqual(folderOptions([], ""), { options: [], current: "", initial: null });
+});
+
+test("homebrew grouped by folder, in the order found", () => {
+  const g = homebrewFolders([{ path: "x/A.json", sources: [] }, { path: "y/B.json", sources: [] }, { path: "x/C.json", sources: [] }, { path: "D.json", sources: [] }]);
+  assert.deepEqual(g.map((x) => [x.folder, x.files.map((f) => f.path)]), [["x", ["x/A.json", "x/C.json"]], ["y", ["y/B.json"]], ["", ["D.json"]]]);
+});
+
+test("apply detected: unchecked folders are cleared; the homebrew list keeps its order", () => {
+  const found: Detected = { dataFolders: ["d"], compendiums: ["c"], truncated: false, homebrew: ["h/1.json", "h/2.json", "h/3.json"].map((path) => ({ path, sources: [] })) };
+  const cur = { fivetoolsPath: "d", compendiumFolder: "c", homebrewFiles: ["h\\2.json", "manual/x.json", "h/1.json"] };
+  assert.deepEqual(applyDetected(cur, found, { data: null, compendium: "c", homebrew: new Set(["h/1.json", "h/3.json"]) }), {
+    fivetoolsPath: "", compendiumFolder: "c",
+    // h/2 unchecked leaves, the hand-listed file stays, h/1 keeps its place, h/3 is new and goes last
+    homebrewFiles: ["manual/x.json", "h/1.json", "h/3.json"],
+  });
+  assert.deepEqual(applyDetected(cur, found, { data: "d", compendium: null, homebrew: new Set() }).homebrewFiles, ["manual/x.json"]);
 });
