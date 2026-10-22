@@ -1,4 +1,5 @@
-import { Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } from "obsidian";
+import { CachedMetadata, Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } from "obsidian";
+import * as E from "./rules/engine";
 import { CharState, Compendium, Rules, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo, sourceOfTag } from "./data/links";
@@ -30,7 +31,11 @@ export default class CharacterSheetPlugin extends Plugin {
   settings: SheetSettings = { ...DEFAULT_SETTINGS };
   rules: Rules = new Rules(EMPTY);
   linker: Linker = new Linker(null, []);
+  /** the state of each sheet note opened this session, shared by all its sheets; by note path */
   states = new Map<string, CharState>();
+  /** pending saves (debounced) and saves being written, by note path */
+  private saveTimers = new Map<string, number>();
+  private writing = new Set<string>();
   /** the imported rules data was made by an older importer and should be imported again */
   importIsOutdated = false;
   private importNoticeShown = false;
@@ -51,8 +56,18 @@ export default class CharacterSheetPlugin extends Plugin {
     this.addRibbonIcon("scroll-text", "New character sheet", () => new NewCharacterModal(this).open());
 
     // keep the in-memory cache in sync when a sheet note is renamed or deleted
-    this.registerEvent(this.app.vault.on("rename", (f, old) => { const s = this.states.get(old); if (s) { this.states.delete(old); this.states.set(f.path, s); } }));
-    this.registerEvent(this.app.vault.on("delete", (f) => this.states.delete(f.path)));
+    this.registerEvent(this.app.vault.on("rename", (f, old) => {
+      const s = this.states.get(old);
+      if (!s) return;
+      this.states.delete(old); this.states.set(f.path, s);
+      if (this.saveTimers.has(old)) { window.clearTimeout(this.saveTimers.get(old)); this.saveTimers.delete(old); this.requestSave(f.path); }
+    }));
+    this.registerEvent(this.app.vault.on("delete", (f) => {
+      this.states.delete(f.path);
+      window.clearTimeout(this.saveTimers.get(f.path)); this.saveTimers.delete(f.path);
+    }));
+    // the note was changed outside the sheet (properties, sync, another plugin): show that
+    this.registerEvent(this.app.metadataCache.on("changed", (f, _data, cache) => this.externalChange(f, cache)));
 
     // data and compendium links need the metadata cache, which is ready after layout
     this.app.workspace.onLayoutReady(() => this.reloadData());
@@ -184,6 +199,63 @@ export default class CharacterSheetPlugin extends Plugin {
 
   /** Re-render the open sheets without reloading the rules data (e.g. after a theme change). */
   refreshSheets() { this.sheets.forEach((s) => s.reload()); }
+  /** Re-render the open sheets of one note, except `except` (the sheet that made the change). */
+  reloadSheets(path: string, except?: CharacterSheet) { this.sheets.forEach((s) => { if (s !== except && s.sourcePath === path) s.reload(); }); }
+
+  onunload() {
+    // write what is still waiting to be saved
+    for (const [path, timer] of this.saveTimers) { window.clearTimeout(timer); void this.writeState(path); }
+    this.saveTimers.clear();
+  }
+
+  // ---------------------------------------------------------------- saving sheets
+  /** Save a note's state soon: changes within half a second are written together. */
+  requestSave(path: string) {
+    window.clearTimeout(this.saveTimers.get(path));
+    this.saveTimers.set(path, window.setTimeout(() => { this.saveTimers.delete(path); void this.writeState(path); }, 500));
+  }
+  /** Write a note's state into its frontmatter, with the flat keys other plugins read. */
+  private async writeState(path: string) {
+    const file = this.app.vault.getAbstractFileByPath(path), s0 = this.states.get(path);
+    if (!(file instanceof TFile) || !s0) return;
+    const r = this.rules, man = this.manual;
+    const s = man ? E.manualView(s0) : s0;
+    const sc = E.abilityScores(r, s);
+    this.writing.add(path);
+    try {
+      await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+        fm.dnd = JSON.parse(JSON.stringify(s0)) as CharState;
+        // flat keys for Dataview, Initiative Tracker (players) and Fantasy Statblocks
+        fm.name = s.name || file.basename;
+        fm.player = s.player || undefined;
+        fm.race = (man ? [s0.manual.race, s0.manual.subrace] : [r.race(s)?.name, r.subrace(s)?.name]).filter(Boolean).join(" ") || undefined;
+        fm.class = (man ? s0.manual.classes.map((c) => `${c.name || "?"} ${c.level}`) : s.classes.map((e) => `${r.cls(e.id)?.name ?? "?"} ${e.level}`)).join(" / ") || undefined;
+        fm.level = E.totalLevel(s);
+        fm.hp = man ? s0.manual.maxHp : E.hpBreakdown(r, s, sc).max;
+        fm.ac = man ? s0.manual.ac : E.armorClass(r, s, sc).value;
+        fm.modifier = E.initiative(r, s, sc);
+        fm.stats = E.ABILITIES.map((a) => sc[a].total);
+        if (s0.image) fm.image = s0.image; else delete fm.image;
+        for (const k of Object.keys(fm)) if (fm[k] === undefined) delete fm[k];
+      });
+    } finally {
+      this.writing.delete(path);
+    }
+  }
+  /**
+   * A sheet note's frontmatter changed: when its `dnd` is no longer the state the sheets hold, it was
+   * edited outside them, so that becomes the state. Changes not yet written win (they are saved over it).
+   */
+  private externalChange(file: TFile, cache: CachedMetadata) {
+    const cur = this.states.get(file.path);
+    if (!cur || this.saveTimers.has(file.path) || this.writing.has(file.path)) return;
+    const dnd: unknown = cache.frontmatter?.dnd;
+    if (!dnd || typeof dnd !== "object") return;
+    const next = E.normalize(dnd);
+    if (E.sameState(next, cur)) return;
+    this.states.set(file.path, next);
+    this.reloadSheets(file.path);
+  }
 
   // ---------------------------------------------------------------- characters
   /** Folder suggested for a new character: the configured one, else the last used one, else the vault root. */
@@ -210,6 +282,8 @@ export default class CharacterSheetPlugin extends Plugin {
     this.settings.lastFolder = dir === "/" ? "" : dir;
     await this.saveData(this.settings);
     this.states.set(file.path, this.freshCharacter(name));
+    // written soon, so the note gets the full state (and its frontmatter is not read as a change)
+    this.requestSave(file.path);
     await this.app.workspace.getLeaf(true).openFile(file);
   }
 }
