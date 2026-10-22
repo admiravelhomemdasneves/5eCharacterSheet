@@ -113,6 +113,8 @@ export interface RawSubclass extends RawBase {
   cantripProgression?: number[];
   spellsKnownProgression?: number[];
   additionalSpells?: RawAdditionalSpells[];
+  /** homebrew: spells added to the class's list for this subclass only, written like classSpells */
+  subclassSpells?: (string | { name?: string; source?: string })[];
 }
 export interface RawSubclassFeature extends RawBase { className: string; subclassShortName: string; level: number }
 export interface ClassFile { class?: RawClass[]; subclass?: RawSubclass[]; classFeature?: RawClassFeature[]; subclassFeature?: RawSubclassFeature[] }

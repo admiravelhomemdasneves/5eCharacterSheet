@@ -201,6 +201,11 @@ const COPY_KEYS: Partial<Record<(typeof HOMEBREW_COLLECTIONS)[number], string[]>
   classFeature: ["className", "classSource", "level"],
   subclassFeature: ["className", "classSource", "subclassShortName", "subclassSource", "level"],
 };
+/** key of a homebrew spell reference, "name|source" (PHB when left out) or { name, source }: both lowercase */
+function spellKey(ref: string | { name?: string; source?: string } | null | undefined): string | null {
+  const [name, source] = typeof ref === "string" ? ref.split("|") : [ref?.name, ref?.source];
+  return name ? `${lc(name)}|${lc(source || "PHB")}` : null;
+}
 const asList = (v: unknown): unknown[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 const entryName = (e: unknown) => (typeof e === "string" ? e : (e as { name?: string } | null)?.name);
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -465,6 +470,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const subclassFeatures = indexBy(raw.subclassFeature, (x) => [x.name, x.className, x.subclassShortName, x.level, x.source].join("|"));
   // spells on the lists of imported homebrew classes: "name|source" -> class names
   const classSpells = new Map<string, string[]>();
+  // the subclassSpells of each subclass, as keys; they become spell ids once the spells are converted
+  const subclassSpells = new Map<SubclassData, string[]>();
   for (const c of raw.class) guard("classes", c, () => {
     if (!allowed("classes", c)) return;
     const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
@@ -508,12 +515,15 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
           pushSub(n2, s2, ss2, l2, src2);
         }
       }
-      subclasses.push({
+      const sub: SubclassData = {
         id: idOf(c.name, sc.shortName, sc.source), name: nameOf(sc), shortName: sc.shortName, source: sc.source, link: null,
         features: sfeats.sort((a, b) => a.level - b.level),
         spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
         additionalSpells: sc.additionalSpells || null,
-      });
+      };
+      const keys = (sc.subclassSpells || []).map(spellKey).filter((k): k is string => !!k);
+      if (keys.length) subclassSpells.set(sub, keys);
+      subclasses.push(sub);
     });
     const sp = c.startingProficiencies || {};
     const profText = (a: RawProfItem) => plain(renderStr(typeof a === "string" ? a : a.full || a.proficiency || ""));
@@ -546,10 +556,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       subclasses,
     });
     for (const ref of c.classSpells || []) {
-      const [name, source] = typeof ref === "string" ? ref.split("|") : [ref?.name, ref?.source];
-      if (!name) continue;
-      const k = `${lc(name)}|${lc(source || "PHB")}`;
-      classSpells.set(k, [...classSpells.get(k) || [], c.name]);
+      const k = spellKey(ref);
+      if (k) classSpells.set(k, [...classSpells.get(k) || [], c.name]);
     }
   });
 
@@ -583,6 +591,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   // spells
   const SCHOOL: Record<string, string> = { A: "Abjuration", C: "Conjuration", D: "Divination", E: "Enchantment", V: "Evocation", I: "Illusion", N: "Necromancy", T: "Transmutation" };
   const spells: SpellData[] = [];
+  const spellIds = new Map<string, string>(); // key as spellKey makes it -> id
   for (const s of raw.spell) guard("spells", s, () => {
     if (!allowed("spells", s)) return;
     if (typeof s.level !== "number") throw new Error("no spell level");
@@ -597,6 +606,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     const range = dist ? (dist.amount ? `${dist.amount} ${dist.type}` : title(dist.type)) + (s.range?.type !== "point" ? ` (${s.range?.type})` : "") : title(s.range?.type || "");
     const dur = s.duration?.[0];
     const m = s.components?.m;
+    spellIds.set(`${lc(s.name)}|${lc(s.source)}`, idOf(s.name, s.source));
     spells.push({
       id: idOf(s.name, s.source), name: nameOf(s), source: s.source, link: null,
       level: s.level, school: SCHOOL[s.school] || s.school,
@@ -609,6 +619,15 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
     });
   });
+
+  // subclass spell lists: the spells that were imported; one with the wrong source is found by its name,
+  // as for granted spells (e.g. LaserLlama's "enemies abound|tce" is in XGE)
+  const spellByName = indexBy([...spellIds], ([k]) => k.split("|")[0]);
+  const spellIdOf = (k: string) => spellIds.get(k) ?? spellByName.get(k.split("|")[0])?.[1];
+  for (const [sub, keys] of subclassSpells) {
+    const ids = [...new Set(keys.map(spellIdOf).filter((id): id is string => !!id))];
+    if (ids.length) sub.spells = ids;
+  }
 
   // items (base + magic)
   const DMG: Record<string, string> = { B: "bludgeoning", P: "piercing", S: "slashing", N: "necrotic", R: "radiant", F: "fire", C: "cold", O: "force", L: "lightning", T: "thunder", A: "acid", I: "poison", Y: "psychic" };
