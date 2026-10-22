@@ -2,7 +2,7 @@ import { Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } 
 import { CharState, Compendium, Rules, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo } from "./data/links";
-import { IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
+import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import srdData from "../data/srd-5.1.json";
 
@@ -119,19 +119,33 @@ export default class CharacterSheetPlugin extends Plugin {
     try {
       const linker = this.settings.importOnlyWithNotes ? this.buildLinker() : null;
       if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
+      // homebrew files that are missing or not valid JSON are left out and reported, the rest is imported
+      const homebrew: HomebrewFile[] = [], skipped: string[] = [];
+      for (const path of this.settings.homebrewFiles) {
+        const file = normalizePath(path);
+        try {
+          if (!(await adapter.exists(file))) throw new Error("not found");
+          homebrew.push({ file, json: JSON.parse(await adapter.read(file)) as unknown });
+        } catch (e) {
+          skipped.push(`${file} (${(e as Error).message})`);
+        }
+      }
       const data = await buildCompendium({
         read: async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown,
+        homebrew,
         rules2014Only: this.settings.importRules2014 && !this.settings.importOnlyWithNotes,
         keep: linker ? (kind, name, source) => linker.has(kind, name, source) : undefined,
       });
       const dir = normalizePath(`${this.manifest.dir}/data`);
       if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.adapter.mkdir(dir);
       await this.app.vault.adapter.write(`${dir}/imported.json`, JSON.stringify(data));
-      this.settings.lastImport = `${new Date().toLocaleString()} — ${summarize(data)}`;
+      const brew = homebrew.length ? ` (with ${homebrew.length} homebrew file${homebrew.length > 1 ? "s" : ""})` : "";
+      this.settings.lastImport = `${new Date().toLocaleString()} — ${summarize(data)}${brew}`;
       this.settings.dataSource = "imported";
       await this.saveSettings();
       notice.hide();
-      new Notice(`Imported: ${summarize(data)}`, 8000);
+      new Notice(`Imported${brew}: ${summarize(data)}`, 8000);
+      if (skipped.length) new Notice(`Homebrew files left out: ${skipped.join("; ")}`, 15000);
     } catch (e) {
       notice.hide();
       console.error("5e Character Sheet: import failed", e);

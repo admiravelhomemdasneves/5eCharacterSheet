@@ -7,9 +7,10 @@
 // and where the user keeps a compendium of notes.
 import type {
   Abil, AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
-  RawClassFeatureRef, RawData, RawEntry, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
+  HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
   RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
+import { HOMEBREW_COLLECTIONS } from "./fivetools.ts";
 import type {
   AbilityOption, BackgroundData, ClassData, Compendium, FeatData, Feature, ItemData, ProfList, RaceData,
   SpellData, Speeds, SubclassData, SubraceData,
@@ -17,8 +18,12 @@ import type {
 
 /** Reads a 5etools data file (path relative to the `data` folder) and returns its parsed JSON. */
 export type ReadJson = (relPath: string) => Promise<unknown>;
+/** A homebrew file in the 5etools format, already parsed; `file` is where it came from. */
+export interface HomebrewFile { file: string; json: unknown }
 export interface BuildOptions {
   read: ReadJson;
+  /** homebrew files whose entries are added to the official data */
+  homebrew?: HomebrewFile[];
   /** keep only SRD 5.1 content (uses 5etools' `srd` flags and SRD names) */
   srdOnly?: boolean;
   /** drop 2024-edition content (XPHB/XDMG/XMM and entries marked edition "one") */
@@ -239,8 +244,8 @@ function indexBy<T>(list: T[], key: (x: T) => string): Map<string, T> {
 }
 
 // ---------------------------------------------------------------- load
-/** Read the collections of an official 5etools `data/` folder into flat lists. */
-export async function loadData(readJson: ReadJson): Promise<RawData> {
+/** Read the collections of an official 5etools `data/` folder into flat lists, then add the homebrew ones. */
+export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = []): Promise<RawData> {
   const read = <T>(rel: string) => readJson(rel) as Promise<T>;
   const racesJson = await read<RacesFile>("races.json");
   const raw: RawData = {
@@ -266,12 +271,21 @@ export async function loadData(readJson: ReadJson): Promise<RawData> {
   }
   const books = (await read<BooksFile>("books.json")).book, adventures = (await read<AdventuresFile>("adventures.json")).adventure;
   for (const b of [...books, ...adventures]) raw.sourceNames[b.id] = b.name;
+  for (const { json } of homebrew) {
+    const hb = json as HomebrewJson;
+    // book names of homebrew sources; an official source keeps its own name
+    for (const s of hb._meta?.sources || []) if (s.json) raw.sourceNames[s.json] ??= s.full || s.abbreviation || s.json;
+    for (const k of HOMEBREW_COLLECTIONS) {
+      const list = hb[k];
+      if (Array.isArray(list)) (raw[k] as unknown[]).push(...(list as unknown[]));
+    }
+  }
   return raw;
 }
 
 // ---------------------------------------------------------------- build
 export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
-  const raw = await loadData(o.read);
+  const raw = await loadData(o.read, o.homebrew);
   const is2024 = (e: RawBase) => SOURCES_2024.has(e.source) || e.edition === "one";
   // SRD: 5etools marks SRD entries with srd: true, or srd: "<SRD name>" when the SRD renames them
   const srdName = (e: RawBase): string | null => (e.srd === true ? e.name : typeof e.srd === "string" ? e.srd : null);
