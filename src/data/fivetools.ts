@@ -81,6 +81,8 @@ export interface RawClass extends RawBase {
   classTableGroups?: RawTableGroup[];
   classFeatures?: RawClassFeatureRef[];
   subclassTitle?: string;
+  /** homebrew: the class's spell list, as "name|source" (PHB when left out) or { name, source } */
+  classSpells?: (string | { name?: string; source?: string })[];
   multiclassing?: {
     requirements?: Record<string, unknown>;
     proficienciesGained?: { armor?: RawProfItem[]; weapons?: RawProfItem[]; skills?: RawSkillChoice[] };
@@ -123,6 +125,8 @@ export interface RawSpell extends RawBase {
   savingThrow?: string[];
   damageInflict?: string[];
   entriesHigherLevel?: RawEntry[];
+  /** homebrew: class lists on the spell itself (official spells have them in spells/sources.json) */
+  classes?: { fromClassList?: { name: string }[]; fromClassListVariant?: { name: string }[] };
 }
 export type SpellSourcesFile = Record<string, Record<string, { class?: { name: string }[]; classVariant?: { name: string }[] }>>;
 

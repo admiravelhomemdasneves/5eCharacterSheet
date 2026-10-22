@@ -352,8 +352,16 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   // features by name|class|level|source, and subclass features by name|class|subclass|level|source
   const classFeatures = indexBy(raw.classFeature, (x) => [x.name, x.className, x.level, x.source].join("|"));
   const subclassFeatures = indexBy(raw.subclassFeature, (x) => [x.name, x.className, x.subclassShortName, x.level, x.source].join("|"));
+  // spells on the lists of imported homebrew classes: "name|source" -> class names
+  const classSpells = new Map<string, string[]>();
   for (const c of raw.class) {
     if (!allowed("classes", c)) continue;
+    for (const ref of c.classSpells || []) {
+      const [name, source] = typeof ref === "string" ? ref.split("|") : [ref.name, ref.source];
+      if (!name) continue;
+      const k = `${lc(name)}|${lc(source || "PHB")}`;
+      classSpells.set(k, [...classSpells.get(k) || [], c.name]);
+    }
     const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
     const feat = (ref: RawClassFeatureRef): Feature | null => {
       const s = typeof ref === "string" ? ref : ref.classFeature;
@@ -462,8 +470,12 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const spells: SpellData[] = [];
   for (const s of raw.spell) {
     if (!allowed("spells", s)) continue;
-    const lists = raw.spellSources[s.source]?.[s.name] || {};
-    const classes2 = [...new Set([...(lists.class || []), ...(lists.classVariant || [])].map((c) => c.name))];
+    // class lists: spells/sources.json for official spells, the spell itself or the class for homebrew
+    const lists = raw.spellSources[s.source]?.[s.name] || {}, own = s.classes || {};
+    const classes2 = [...new Set([
+      ...[...(lists.class || []), ...(lists.classVariant || []), ...(own.fromClassList || []), ...(own.fromClassListVariant || [])].map((c) => c.name),
+      ...classSpells.get(`${lc(s.name)}|${lc(s.source)}`) || [],
+    ].filter(Boolean))];
     const t = s.time?.[0];
     const dist = s.range?.distance;
     const range = dist ? (dist.amount ? `${dist.amount} ${dist.type}` : title(dist.type)) + (s.range?.type !== "point" ? ` (${s.range?.type})` : "") : title(s.range?.type || "");
