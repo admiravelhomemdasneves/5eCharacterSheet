@@ -83,6 +83,8 @@ export interface CharState {
   customFeatures: CustomFeature[];
   /** data features the player hid, by featureKey(); they are listed so they can be shown again */
   hiddenFeatures: string[];
+  /** data features the player removed, by featureKey(); not listed, they come back from "+ Add feature" */
+  removedFeatures: string[];
   manual: ManualData; // used when no rules data is configured (manual mode)
   /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
   ui: { collapsed: Record<string, boolean>; sourceFilter: string[]; editing: Record<string, boolean>; hidden: Record<string, boolean> };
@@ -104,7 +106,7 @@ export function newCharacter(name = ""): CharState {
     proficiencies: { armor: "", weapons: "", tools: "", languages: "" },
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
-    allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], manual: emptyManual(),
+    allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], removedFeatures: [], manual: emptyManual(),
     ui: { collapsed: {}, sourceFilter: [], editing: {}, hidden: {} },
   };
 }
@@ -135,8 +137,10 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.customFeatures = (Array.isArray(out.customFeatures) ? out.customFeatures : []).filter((f) => f && typeof f === "object").map((f) => ({
     id: String(f.id || newCustomFeature("class").id), kind: f.kind === "race" ? "race" : "class",
     name: String(f.name ?? ""), level: Math.max(1, Math.min(20, Number(f.level) || 1)), text: String(f.text ?? ""),
+    ...(f.ref ? { ref: String(f.ref) } : {}),
   }));
   out.hiddenFeatures = Array.isArray(out.hiddenFeatures) ? out.hiddenFeatures.map(String) : [];
+  out.removedFeatures = Array.isArray(out.removedFeatures) ? out.removedFeatures.map(String) : [];
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
   // migrate ASI points stored on the scores (v0.1) into Ability Score Improvement entries
@@ -422,8 +426,40 @@ export const inventoryWeight = (s: CharState) => s.inventory.reduce((a, i) => a 
 export function featureKey(owner: string, name: string, level?: number) {
   return [owner, name.trim().toLowerCase(), ...(level != null ? [level] : [])].join("#");
 }
-/** A feature the player adds to one character: shown in Class Features ("class") or Race & Background Features ("race"). */
-export interface CustomFeature { id: string; kind: "class" | "race"; name: string; level: number; text: string }
+/**
+ * A feature the player adds to one character: shown in Class Features ("class") or Race &
+ * Background Features ("race"). With `ref` it is a feature from the rules data (its featureKey()),
+ * shown from the data while it is there; name, level and text are a copy kept in case it goes.
+ */
+export interface CustomFeature { id: string; kind: "class" | "race"; name: string; level: number; text: string; ref?: string }
+/** Race traits the sheet shows elsewhere (header, abilities, proficiencies), not as features. */
+export const RACE_TRAIT_SKIP = new Set(["Age", "Size", "Alignment", "Speed", "Languages", "Ability Score Increase"]);
+/** A feature of the rules data, for the "+ Add feature" list. `from`: its class, subclass, race or background. */
+export interface IndexedFeature { key: string; name: string; level: number | null; text: string; link: string | null; from: string; source: string }
+const featureIndexes = new WeakMap<Compendium, Record<CustomFeature["kind"], IndexedFeature[]>>();
+/** Every class and subclass feature ("class"), or race trait and background feature ("race"), in the data. */
+export function featureIndex(r: Rules, kind: CustomFeature["kind"]): IndexedFeature[] {
+  let idx = featureIndexes.get(r.data);
+  if (!idx) {
+    idx = { class: [], race: [] };
+    for (const c of r.data.classes) {
+      // the generic "<Subclass> feature" placeholders are left out, as in classFeatures()
+      for (const f of c.features) if (!f.subclassFeature) idx.class.push({ key: featureKey(c.id, f.name, f.level), name: f.name, level: f.level, text: f.text, link: f.link, from: c.name, source: f.source });
+      for (const sc of c.subclasses) for (const f of sc.features) if (f.name !== sc.name) idx.class.push({ key: featureKey(sc.id, f.name, f.level), name: f.name, level: f.level, text: f.text, link: f.link, from: `${c.name} (${sc.name})`, source: f.source });
+    }
+    for (const race of r.data.races) {
+      for (const t of race.traits) if (!RACE_TRAIT_SKIP.has(t.name)) idx.race.push({ key: featureKey(race.id, t.name), name: t.name, level: null, text: t.text, link: null, from: race.name, source: race.source });
+      for (const sub of race.subraces) for (const t of sub.traits) if (!RACE_TRAIT_SKIP.has(t.name)) idx.race.push({ key: featureKey(sub.id, t.name), name: t.name, level: null, text: t.text, link: null, from: `${race.name} (${sub.name})`, source: sub.source });
+    }
+    for (const bg of r.data.backgrounds) if (bg.feature) idx.race.push({ key: featureKey(bg.id, bg.feature.name), name: bg.feature.name, level: null, text: bg.feature.text || "*See the background note.*", link: bg.feature.link || bg.link, from: `Background: ${bg.name}`, source: bg.source });
+    featureIndexes.set(r.data, idx);
+  }
+  return idx[kind];
+}
+/** Copy of a data feature as one the player added (see CustomFeature.ref). */
+export function addedFeature(kind: CustomFeature["kind"], f: IndexedFeature): CustomFeature {
+  return { ...newCustomFeature(kind, f.level ?? 1), name: f.name, text: f.text, ref: f.key };
+}
 export function newCustomFeature(kind: CustomFeature["kind"], level = 1): CustomFeature {
   return { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, kind, name: "", level: Math.max(1, Math.min(20, level)), text: "" };
 }
