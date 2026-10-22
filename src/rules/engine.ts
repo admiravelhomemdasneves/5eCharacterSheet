@@ -153,6 +153,11 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   return out;
 }
 
+/** objects with their keys sorted, so the comparison below ignores key order */
+const sortKeys = (_k: string, v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, (v as Record<string, unknown>)[k]])) : v);
+/** Two states hold the same data as saved in the note (undefined fields don't count, as in YAML). */
+export const sameState = (a: CharState, b: CharState) => JSON.stringify(a, sortKeys) === JSON.stringify(b, sortKeys);
+
 // ------------------------------------------------------------------ manual mode
 // Everything the player types in by hand when there is no rules data. Kept apart from the
 // data-driven fields so switching modes never loses information.

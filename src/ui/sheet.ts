@@ -19,25 +19,34 @@ export class CharacterSheet extends MarkdownRenderChild {
   private s!: CharState;
   /** what the rules engine reads: the state itself, or its manual-mode view */
   private v!: CharState;
-  private saveTimer: number | null = null;
   /** owns what one render() makes (markdown children); unloaded by the next render */
   private renderScope: Component | null = null;
 
-  constructor(private plugin: CharacterSheetPlugin, el: HTMLElement, private sourcePath: string) {
+  constructor(private plugin: CharacterSheetPlugin, el: HTMLElement, readonly sourcePath: string) {
     super(el);
   }
   private get r() { return this.plugin.rules; }
   private get manual() { return this.plugin.manual; }
-  /** called by the plugin when settings or rules data change */
-  reload() { this.render(); }
+  /** called by the plugin when settings or rules data change, or the note's state was replaced
+   *  (changed outside the sheet, or by another sheet of the same note) */
+  reload() {
+    this.s = this.plugin.states.get(this.sourcePath) ?? this.s;
+    this.render();
+  }
 
   onload() {
     this.plugin.sheets.add(this);
     const file = this.file();
-    const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : null;
-    // in-memory copy wins over the metadata cache, which lags behind our own writes
-    this.s = E.normalize(this.plugin.states.get(this.sourcePath) ?? (fm?.dnd as Partial<CharState> | undefined) ?? this.plugin.freshCharacter(file?.basename ?? ""));
-    if (!this.s.name && file) this.s.name = file.basename;
+    // every sheet of a note shares the plugin's copy of its state; the metadata cache lags behind our
+    // own writes, so it is only read when there is no copy yet
+    let s = this.plugin.states.get(this.sourcePath);
+    if (!s) {
+      const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : null;
+      s = E.normalize((fm?.dnd as Partial<CharState> | undefined) ?? this.plugin.freshCharacter(file?.basename ?? ""));
+      if (!s.name && file) s.name = file.basename;
+      this.plugin.states.set(this.sourcePath, s);
+    }
+    this.s = s;
     this.render();
     if (file) void this.migrateBody(file);
   }
@@ -51,7 +60,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     });
     await this.app.vault.process(file, (text) => E.extractLegacySections(text)?.text ?? text);
   }
-  onunload() { this.plugin.sheets.delete(this); if (this.saveTimer) { window.clearTimeout(this.saveTimer); void this.flush(); } }
+  onunload() { this.plugin.sheets.delete(this); }
 
   private get app() { return this.plugin.app; }
   private file() { const f = this.app.vault.getAbstractFileByPath(this.sourcePath); return f instanceof TFile ? f : null; }
@@ -66,32 +75,10 @@ export class CharacterSheet extends MarkdownRenderChild {
       this.s.hp.current = E.currentHp(this.s, max);
     }
     this.plugin.states.set(this.sourcePath, this.s);
-    if (this.saveTimer) window.clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => { void this.flush(); }, 500);
+    this.plugin.requestSave(this.sourcePath);
     if (rerender) this.render();
-  }
-  private async flush() {
-    this.saveTimer = null;
-    const file = this.file();
-    if (!file) return;
-    const s0 = this.s, r = this.r, man = this.manual;
-    const s = man ? E.manualView(s0) : s0;
-    const sc = E.abilityScores(r, s);
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      fm.dnd = JSON.parse(JSON.stringify(s0)) as CharState;
-      // flat keys for Dataview, Initiative Tracker (players) and Fantasy Statblocks
-      fm.name = s.name || file.basename;
-      fm.player = s.player || undefined;
-      fm.race = (man ? [s0.manual.race, s0.manual.subrace] : [r.race(s)?.name, r.subrace(s)?.name]).filter(Boolean).join(" ") || undefined;
-      fm.class = (man ? s0.manual.classes.map((c) => `${c.name || "?"} ${c.level}`) : s.classes.map((e) => `${r.cls(e.id)?.name ?? "?"} ${e.level}`)).join(" / ") || undefined;
-      fm.level = E.totalLevel(s);
-      fm.hp = man ? s0.manual.maxHp : E.hpBreakdown(r, s, sc).max;
-      fm.ac = man ? s0.manual.ac : E.armorClass(r, s, sc).value;
-      fm.modifier = E.initiative(r, s, sc);
-      fm.stats = ABILITIES.map((a) => sc[a].total);
-      if (s0.image) fm.image = s0.image; else delete fm.image;
-      for (const k of Object.keys(fm)) if (fm[k] === undefined) delete fm[k];
-    });
+    // other sheets of the same note (another pane) show the change too
+    this.plugin.reloadSheets(this.sourcePath, this);
   }
 
   // ---------------------------------------------------------------- rendering
