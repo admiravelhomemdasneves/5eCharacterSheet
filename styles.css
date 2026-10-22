@@ -289,6 +289,9 @@
 .dnd-details .dnd-md { padding: var(--dnd-s2) 0 var(--dnd-s2) var(--dnd-s4); font-size: 0.9rem; }
 .dnd-feature-level { font-size: var(--dnd-label-size); color: var(--text-muted); min-width: 3em; }
 .dnd-feature-name { font-weight: 600; }
+.dnd-details .dnd-feature-notes { padding: 0 0 var(--dnd-s2) var(--dnd-s4); }
+.dnd-details .dnd-feature-notes .dnd-value { display: block; }
+.dnd-details .dnd-feature-notes .dnd-md { padding: 0; }
 
 .dnd-resources { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--dnd-s2); }
 .dnd-resource {

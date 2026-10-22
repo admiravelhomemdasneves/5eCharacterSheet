@@ -37,7 +37,7 @@ AC, initiative and speed are calculated from your equipment, class and race, and
 <p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet02.png" alt="Combat and skills" width="720"></p>
 
 ### Attacks and features
-Attacks come from your equipped weapons. Race, background and class features are filled in as you level up; expand any of them to read the full text.
+Attacks come from your equipped weapons. Race, background and class features are filled in as you level up; expand any of them to read the full text and write your own notes on it (reminders, uses, rulings, `[[links]]`). Notes stay with the feature when you level up or re-import your data.
 
 <p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet03.png" alt="Attacks and race and background features" width="720"></p>
 
