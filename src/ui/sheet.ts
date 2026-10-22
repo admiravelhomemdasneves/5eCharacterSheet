@@ -770,9 +770,9 @@ export class CharacterSheet extends MarkdownRenderChild {
     const lists = new Set(casters.map((c) => c.list).filter(Boolean) as string[]);
     const have = new Set(s.spells.map((x) => x.id));
     const maxLvl = Math.max(0, ...E.spellSlots(r, s).max.map((n, i) => (n ? i + 1 : 0)), E.spellSlots(r, s).pact?.level || 0);
-    const items = r.data.spells.filter((sp) => !have.has(sp.id) && (any || ((!lists.size || sp.classes.some((c) => lists.has(c))) && sp.level <= Math.max(maxLvl, 0))));
+    const items = r.data.spells.filter((sp) => !have.has(sp.id) && (any || ((!lists.size || casters.some((c) => E.onSpellList(c, sp))) && sp.level <= Math.max(maxLvl, 0))));
     new Picker(this.app, items, (sp) => `${sp.name} (${sp.level ? ORD[sp.level] : "Cantrip"}, ${sp.source})`, (sp) => this.change((x) => {
-      const src = casters.find((c) => c.list && sp.classes.includes(c.list))?.classId || casters[0]?.classId;
+      const src = casters.find((c) => E.onSpellList(c, sp))?.classId || casters[0]?.classId;
       x.spells.push({ id: sp.id, prepared: false, source: src });
     }), any ? "Search all spells…" : `Search ${[...lists].join("/") || "all"} spells up to ${ORD[maxLvl] || "cantrip"} level…`, (sp) => `${sp.school} · ${sp.classes.join(", ")}`).open();
   }

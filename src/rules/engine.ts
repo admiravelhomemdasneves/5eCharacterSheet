@@ -32,7 +32,9 @@ export interface Spellcasting { ability: Ability; progression: string; prepared?
 export type Speeds = Record<string, number | string>;
 export interface SubraceData { id: string; name: string; source: string; link: string | null; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Speeds | null; darkvision: number | null; skills: ProfList; languages: string[]; resist: unknown[]; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; hpPerLevel: number }
 export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Speeds; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; resist: unknown[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean }
-export interface SubclassData { id: string; name: string; shortName: string; source: string; link: string | null; features: Feature[]; spellcasting: Spellcasting | null; additionalSpells: AdditionalSpells[] | null }
+export interface SubclassData { id: string; name: string; shortName: string; source: string; link: string | null; features: Feature[]; spellcasting: Spellcasting | null; additionalSpells: AdditionalSpells[] | null;
+  /** ids of spells added to the class's spell list for this subclass only (homebrew `subclassSpells`) */
+  spells?: string[] }
 export interface ClassData { id: string; name: string; source: string; link: string | null; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number | null)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[] }
 export interface BackgroundData { id: string; name: string; source: string; link: string | null; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; heading?: string; text: string; link: string | null } | null; feats: unknown }
 export interface FeatData { id: string; name: string; source: string; link: string | null; prereq: string; ability: AbilityOption[]; text: string }
@@ -477,7 +479,9 @@ export function evalFormula(expr: string): number | null {
   const v = sum();
   return v != null && i === tokens.length ? Math.floor(v) : null;
 }
-export interface CasterInfo { key: string; name: string; ability: Ability; dc: number; attack: number; prepared: number | null; cantrips: number | null; known: number | null; list: string | null; classId: string }
+export interface CasterInfo { key: string; name: string; ability: Ability; dc: number; attack: number; prepared: number | null; cantrips: number | null; known: number | null; list: string | null; classId: string;
+  /** ids of spells on this caster's list besides the `list` class's own: its subclass's extra spells */
+  spells: string[] }
 export function casters(r: Rules, s: CharState, scores = abilityScores(r, s)): CasterInfo[] {
   const pb = proficiencyBonus(totalLevel(s));
   const out: CasterInfo[] = [];
@@ -497,10 +501,12 @@ export function casters(r: Rules, s: CharState, scores = abilityScores(r, s)): C
     }
     const cantrips = sc.cantrips?.[e.level - 1] ?? null;
     const known = sc.known?.[e.level - 1] ?? sc.knownFixed?.slice(0, e.level).reduce((a, b) => a + b, 0) ?? null;
-    out.push({ key: e.id, name: sub?.spellcasting ? `${c.name} (${sub.shortName})` : c.name, ability: sc.ability, dc: 8 + pb + m, attack: pb + m, prepared, cantrips, known: sc.prepared && sc.knownFixed ? known : (sc.prepared ? null : known), list: sc.list, classId: e.id });
+    out.push({ key: e.id, name: sub?.spellcasting ? `${c.name} (${sub.shortName})` : c.name, ability: sc.ability, dc: 8 + pb + m, attack: pb + m, prepared, cantrips, known: sc.prepared && sc.knownFixed ? known : (sc.prepared ? null : known), list: sc.list, classId: e.id, spells: sub?.spells || [] });
   }
   return out;
 }
+/** Whether a spell is on a caster's list: its class's list, or one of its subclass's extra spells. */
+export const onSpellList = (c: CasterInfo, sp: SpellData) => (!!c.list && sp.classes.includes(c.list)) || c.spells.includes(sp.id);
 // Spell slots (levels 1..9) using the single-class table or the multiclass caster table.
 export function spellSlots(r: Rules, s: CharState) {
   const entries = s.classes.map((e) => {

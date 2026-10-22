@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildCompendium, type HomebrewFile } from "../src/data/build.ts";
 import { Linker, noteInfoFromText, sourceOfTag } from "../src/data/links.ts";
+import * as E from "../src/rules/engine.ts";
 
 // A minimal 5etools data folder (one class, two spells) and homebrew files shaped like the ones in
 // TheGiddyLimit/homebrew. Names and text are made up.
@@ -171,6 +172,42 @@ test("spell class lists: a class left out of the import adds nothing", async () 
   const noWarden = await buildCompendium({ read, homebrew: [BOOK, CLASS], keep: (_kind, name) => name !== "Warden" });
   assert.deepEqual(noWarden.spells.find((s) => s.name === "Quiet Step")?.classes, []);
   assert.deepEqual(noWarden.spells.find((s) => s.name === "Ink Blot")?.classes, ["Wizard"]);
+});
+
+// subclassSpells: spells added to the class's list for one subclass only
+const SUBCLASS_SPELLS: HomebrewFile = {
+  file: "homebrew/Subclass Spells.json",
+  json: {
+    _meta: { sources: [{ json: "SS", full: "Subclass Spells" }] },
+    subclass: [
+      { name: "School of Quiet", shortName: "Quiet", source: "SS", className: "Wizard", classSource: "PHB",
+        // PHB when there is no source, any case, objects too; a wrong source falls back to the name, a missing spell is dropped
+        subclassSpells: ["QUIET STEP", "frost needle|xge", { name: "Ink Blot", source: "testbook" }, "spark bolt|nowhere", "missing spell|ss", "quiet step|phb"] },
+      { name: "School of Nothing", shortName: "Nothing", source: "SS", className: "Wizard", classSource: "PHB", subclassSpells: ["missing spell|ss"] },
+    ],
+  },
+};
+const withSubSpells = await buildCompendium({ read, homebrew: [BOOK, SUBCLASS_SPELLS] });
+const wizardSub = (name: string) => withSubSpells.classes.find((c) => c.name === "Wizard")!.subclasses.find((s) => s.shortName === name)!;
+
+test("subclassSpells: a subclass lists its extra spells by id, without changing the spells' class lists", () => {
+  assert.deepEqual(wizardSub("Quiet").spells, ["quiet-step|phb", "frost-needle|xge", "ink-blot|testbook", "spark-bolt|phb"]);
+  assert.equal(wizardSub("Nothing").spells, undefined);
+  assert.equal(wizardSub("Ink").spells, undefined);
+  assert.deepEqual(withSubSpells.spells.find((s) => s.name === "Quiet Step")?.classes, []);
+});
+
+test("subclassSpells: only a caster with that subclass gets them on its spell list", () => {
+  const r = new E.Rules(withSubSpells);
+  const wizard = (subclass: string | null) => {
+    const s = E.newCharacter("Test");
+    s.classes = [{ id: withSubSpells.classes.find((c) => c.name === "Wizard")!.id, subclass, level: 3, hpRolls: [], skills: [] }];
+    const [c] = E.casters(r, s);
+    return withSubSpells.spells.filter((sp) => E.onSpellList(c, sp)).map((sp) => sp.name).sort();
+  };
+  assert.deepEqual(wizard(wizardSub("Quiet").id), ["Frost Needle", "Ink Blot", "Ink Ward", "Quiet Step", "Spark Bolt"]);
+  assert.deepEqual(wizard(wizardSub("Ink").id), ["Ink Blot", "Ink Ward", "Spark Bolt"]);
+  assert.deepEqual(wizard(null), ["Ink Blot", "Ink Ward", "Spark Bolt"]);
 });
 
 // What a homebrew file gets wrong is left out and reported; the rest of it still imports
