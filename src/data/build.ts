@@ -20,10 +20,14 @@ import type {
 export type ReadJson = (relPath: string) => Promise<unknown>;
 /** A homebrew file in the 5etools format, already parsed; `file` is where it came from. */
 export interface HomebrewFile { file: string; json: unknown }
+/** Told about each file or entry the import leaves out, and why. */
+export type Warn = (message: string) => void;
 export interface BuildOptions {
   read: ReadJson;
   /** homebrew files whose entries are added to the official data */
   homebrew?: HomebrewFile[];
+  /** told what was left out; without it, what can't be read is left out silently */
+  warn?: Warn;
   /** keep only SRD 5.1 content (uses 5etools' `srd` flags and SRD names) */
   srdOnly?: boolean;
   /** drop 2024-edition content (XPHB/XDMG/XMM and entries marked edition "one") */
@@ -40,10 +44,10 @@ const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
  * Version of what the importer produces, stamped into imported data as `meta.importVersion`. Raise it
  * (and say what it brings in IMPORT_CHANGES) whenever an importer change needs a new import: data with
  * an older stamp makes the plugin ask the user to press "Import now" again.
- *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces
+ *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces   3 = copied entries completed (_copy, _mod)
  */
-export const IMPORT_VERSION = 2;
-export const IMPORT_CHANGES = "adds the Standard and Variant Human subraces";
+export const IMPORT_VERSION = 3;
+export const IMPORT_CHANGES = "completes entries that 5etools copies from others: the 2024 classes' subclasses get their features, variant backgrounds their own feature, and copied races and magic items their own traits and stats";
 /** Imported data made by an older importer (data from before the stamp counts as version 1). */
 export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
@@ -321,8 +325,15 @@ function indexBy<T>(list: T[], key: (x: T) => string): Map<string, T> {
 }
 
 // ---------------------------------------------------------------- load
-/** Read the collections of an official 5etools `data/` folder into flat lists, then add the homebrew ones. */
-export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = []): Promise<RawData> {
+/** an entry the importer can use: an object with a name (unnamed subraces excepted) and a source */
+const isEntry = (k: string, x: unknown) =>
+  !!x && typeof x === "object" && typeof (x as RawBase).source === "string" && (typeof (x as RawBase).name === "string" || (k === "subrace" && (x as RawBase).name == null));
+
+/**
+ * Read the collections of an official 5etools `data/` folder into flat lists, then add the homebrew ones.
+ * What a homebrew file gets wrong is left out and told to `warn`, so the rest still imports.
+ */
+export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = [], warn: Warn = () => {}): Promise<RawData> {
   const read = <T>(rel: string) => readJson(rel) as Promise<T>;
   const racesJson = await read<RacesFile>("races.json");
   const raw: RawData = {
@@ -348,14 +359,32 @@ export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = []
   }
   const books = (await read<BooksFile>("books.json")).book, adventures = (await read<AdventuresFile>("adventures.json")).adventure;
   for (const b of [...books, ...adventures]) raw.sourceNames[b.id] = b.name;
-  for (const { json } of homebrew) {
+  const files = homebrew.filter(({ file, json }) => {
+    const ok = !!json && typeof json === "object" && !Array.isArray(json);
+    if (!ok) warn(`${file}: not a 5etools homebrew file`);
+    return ok;
+  });
+  for (const { file, json } of files) {
     const hb = json as HomebrewJson;
     // book names of homebrew sources; an official source keeps its own name
-    for (const s of hb._meta?.sources || []) if (s.json) raw.sourceNames[s.json] ??= s.full || s.abbreviation || s.json;
+    const sources = Array.isArray(hb._meta?.sources) ? hb._meta.sources : [];
+    for (const s of sources) if (typeof s?.json === "string") raw.sourceNames[s.json] ??= s.full || s.abbreviation || s.json;
     for (const k of HOMEBREW_COLLECTIONS) {
       const list = hb[k];
-      if (Array.isArray(list)) (raw[k] as unknown[]).push(...(list as unknown[]));
+      if (list == null) continue;
+      if (!Array.isArray(list)) { warn(`${file}: "${k}" is not a list, left out`); continue; }
+      const good = (list as unknown[]).filter((x) => isEntry(k, x));
+      if (good.length < list.length) warn(`${file}: ${list.length - good.length} ${k} without a name or source, left out`);
+      (raw[k] as unknown[]).push(...good);
     }
+  }
+  // sources a homebrew file needs (for what the importer reads) that are neither official nor loaded
+  const known = new Set(Object.keys(raw.sourceNames).map(lc));
+  for (const { file, json } of files) {
+    const deps = (json as HomebrewJson)._meta?.dependencies || {};
+    const missing = new Set(Object.entries(deps).filter(([k]) => (HOMEBREW_COLLECTIONS as readonly string[]).includes(k))
+      .flatMap(([, ids]): unknown[] => (Array.isArray(ids) ? ids : [])).filter((id): id is string => typeof id === "string" && !known.has(lc(id))));
+    if (missing.size) warn(`${file}: uses ${[...missing].join(", ")}, which ${missing.size > 1 ? "are" : "is"} not loaded; entries from there are missing`);
   }
   resolveCopies(raw);
   return raw;
@@ -363,7 +392,12 @@ export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = []
 
 // ---------------------------------------------------------------- build
 export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
-  const raw = await loadData(o.read, o.homebrew);
+  const warn = o.warn || (() => {});
+  const raw = await loadData(o.read, o.homebrew, warn);
+  /** convert one entry; one the importer can't read (e.g. homebrew with unusual fields) is left out and reported */
+  const guard = (kind: string, e: RawBase, convert: () => void) => {
+    try { convert(); } catch (err) { warn(`${kind}: left out ${e.name} (${e.source}): ${(err as Error).message}`); }
+  };
   const is2024 = (e: RawBase) => SOURCES_2024.has(e.source) || e.edition === "one";
   // SRD: 5etools marks SRD entries with srd: true, or srd: "<SRD name>" when the SRD renames them
   const srdName = (e: RawBase): string | null => (e.srd === true ? e.name : typeof e.srd === "string" ? e.srd : null);
@@ -374,8 +408,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
 
   // races
   const races: RaceData[] = [];
-  for (const r of raw.race) {
-    if (o.rules2014Only && is2024(r)) continue;
+  for (const r of raw.race) guard("races", r, () => {
+    if (o.rules2014Only && is2024(r)) return;
     const subOut: SubraceData[] = [];
     // An unnamed subrace is the race as written: 5etools keeps e.g. the standard Human's +1 to every
     // ability there. Next to named subraces (Variant Human, the dragonmarks, which replace those +1s)
@@ -401,7 +435,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       });
     }
     const baseOk = allowed("races", r);
-    if (!baseOk && !subOut.length) continue;
+    if (!baseOk && !subOut.length) return;
     const SIZE: Record<string, string> = { T: "Tiny", S: "Small", M: "Medium", L: "Large" };
     const standard = subOut.find((x) => x.name === STANDARD_SUBRACE && subs.some((s) => !s.name && idOf(r.name, STANDARD_SUBRACE, s.source) === x.id));
     const race: RaceData = {
@@ -422,7 +456,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     };
     if (standard && subOut.length === 1) mergeSubrace(race, standard);
     races.push(race);
-  }
+  });
 
   // classes
   const classes: ClassData[] = [];
@@ -431,17 +465,12 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const subclassFeatures = indexBy(raw.subclassFeature, (x) => [x.name, x.className, x.subclassShortName, x.level, x.source].join("|"));
   // spells on the lists of imported homebrew classes: "name|source" -> class names
   const classSpells = new Map<string, string[]>();
-  for (const c of raw.class) {
-    if (!allowed("classes", c)) continue;
-    for (const ref of c.classSpells || []) {
-      const [name, source] = typeof ref === "string" ? ref.split("|") : [ref.name, ref.source];
-      if (!name) continue;
-      const k = `${lc(name)}|${lc(source || "PHB")}`;
-      classSpells.set(k, [...classSpells.get(k) || [], c.name]);
-    }
+  for (const c of raw.class) guard("classes", c, () => {
+    if (!allowed("classes", c)) return;
     const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
     const feat = (ref: RawClassFeatureRef): Feature | null => {
-      const s = typeof ref === "string" ? ref : ref.classFeature;
+      const s = typeof ref === "string" ? ref : ref?.classFeature;
+      if (typeof s !== "string") return null;
       const [name, cls, clsSrc, lvl, src] = s.split("|");
       const f = classFeatures.get([name, cls, +lvl, src || clsSrc || "PHB"].join("|"));
       if (!f || !featOk(f)) return null;
@@ -459,8 +488,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       });
     }
     const subclasses: SubclassData[] = [];
-    for (const sc of raw.subclass.filter((x) => x.className === c.name && x.classSource === c.source)) {
-      if (!allowed("classes", sc)) continue;
+    for (const sc of raw.subclass.filter((x) => x.className === c.name && x.classSource === c.source)) guard("subclasses", sc, () => {
+      if (!allowed("classes", sc)) return;
       const sfeats: Feature[] = [];
       const pushSub = (name: string, scShort: string, scSrc: string, lvl: string, src: string, clsSrc = "PHB"): RawSubclassFeature | null => {
         const f = subclassFeatures.get([name, c.name, scShort, +lvl, src || scSrc || clsSrc || "PHB"].join("|"));
@@ -469,7 +498,9 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
         return f;
       };
       for (const ref of sc.subclassFeatures || []) {
-        const [name, , clsSrc, scShort, scSrc, lvl, src] = ref.split("|");
+        const s = typeof ref === "string" ? ref : ref?.subclassFeature;
+        if (typeof s !== "string") continue;
+        const [name, , clsSrc, scShort, scSrc, lvl, src] = s.split("|");
         const f = pushSub(name, scShort, scSrc, lvl, src, clsSrc);
         // nested refs inside the first feature (e.g. "Evocation Savant" inside "School of Evocation")
         if (f) for (const m of JSON.stringify(f.entries ?? []).matchAll(/"subclassFeature":"([^"]+)"/g)) {
@@ -483,7 +514,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
         spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
         additionalSpells: sc.additionalSpells || null,
       });
-    }
+    });
     const sp = c.startingProficiencies || {};
     const profText = (a: RawProfItem) => plain(renderStr(typeof a === "string" ? a : a.full || a.proficiency || ""));
     const pact = c.casterProgression === "pact"
@@ -514,7 +545,13 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       } : null,
       subclasses,
     });
-  }
+    for (const ref of c.classSpells || []) {
+      const [name, source] = typeof ref === "string" ? ref.split("|") : [ref?.name, ref?.source];
+      if (!name) continue;
+      const k = `${lc(name)}|${lc(source || "PHB")}`;
+      classSpells.set(k, [...classSpells.get(k) || [], c.name]);
+    }
+  });
 
   // backgrounds
   const backgrounds: BackgroundData[] = [];
@@ -524,8 +561,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     for (const e of es || []) if (typeof e === "object") { if (e.name && FEATURE.test(e.name)) return { name: e.name, entries: e.entries }; const r = findFeature(e.entries); if (r) return r; }
     return null;
   };
-  for (const b of raw.background) {
-    if (!allowed("backgrounds", b)) continue;
+  for (const b of raw.background) guard("backgrounds", b, () => {
+    if (!allowed("backgrounds", b)) return;
     const fe = findFeature(b.entries);
     backgrounds.push({
       id: idOf(b.name, b.source), name: nameOf(b), source: b.source, link: null,
@@ -533,21 +570,22 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       feature: fe ? { name: fe.name.replace(FEATURE, ""), heading: fe.name, text: renderEntries(fe.entries), link: null } : null,
       feats: b.feats || null,
     });
-  }
+  });
 
   // feats
   const feats: FeatData[] = [];
-  for (const f of raw.feat) {
-    if (!allowed("feats", f)) continue;
+  for (const f of raw.feat) guard("feats", f, () => {
+    if (!allowed("feats", f)) return;
     const prereq = (f.prerequisite || []).map(prereqText).join(" or ");
     feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries) });
-  }
+  });
 
   // spells
   const SCHOOL: Record<string, string> = { A: "Abjuration", C: "Conjuration", D: "Divination", E: "Enchantment", V: "Evocation", I: "Illusion", N: "Necromancy", T: "Transmutation" };
   const spells: SpellData[] = [];
-  for (const s of raw.spell) {
-    if (!allowed("spells", s)) continue;
+  for (const s of raw.spell) guard("spells", s, () => {
+    if (!allowed("spells", s)) return;
+    if (typeof s.level !== "number") throw new Error("no spell level");
     // class lists: spells/sources.json for official spells, the spell itself or the class for homebrew
     const lists = raw.spellSources[s.source]?.[s.name] || {}, own = s.classes || {};
     const classes2 = [...new Set([
@@ -570,7 +608,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       attack: (s.spellAttack || []).length > 0, save: (s.savingThrow || [])[0] || null, damage: s.damageInflict || [],
       text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
     });
-  }
+  });
 
   // items (base + magic)
   const DMG: Record<string, string> = { B: "bludgeoning", P: "piercing", S: "slashing", N: "necrotic", R: "radiant", F: "fire", C: "cold", O: "force", L: "lightning", T: "thunder", A: "acid", I: "poison", Y: "psychic" };
@@ -594,8 +632,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       baseItem: it.baseItem ? it.baseItem.split("|")[0] : null,
     });
   };
-  raw.baseitem.forEach((i) => pushItem(i, false));
-  raw.item.forEach((i) => pushItem(i, true));
+  raw.baseitem.forEach((i) => guard("items", i, () => pushItem(i, false)));
+  raw.item.forEach((i) => guard("items", i, () => pushItem(i, true)));
   // magic armour and weapons inherit the stats of their base item
   const inherited = ["kind", "armorType", "ac", "strength", "stealth", "weaponCategory", "ranged", "dmg1", "dmg2", "dmgType", "properties", "range"] as const;
   for (const it of items) {

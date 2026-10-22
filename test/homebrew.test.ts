@@ -171,3 +171,57 @@ test("spell class lists: a class left out of the import adds nothing", async () 
   assert.deepEqual(noWarden.spells.find((s) => s.name === "Quiet Step")?.classes, []);
   assert.deepEqual(noWarden.spells.find((s) => s.name === "Ink Blot")?.classes, ["Wizard"]);
 });
+
+// What a homebrew file gets wrong is left out and reported; the rest of it still imports
+const MESSY: HomebrewFile = {
+  file: "homebrew/Messy.json",
+  json: {
+    _meta: { sources: [{ json: "MS", full: "Messy" }], dependencies: { spell: ["Nowhere"], monster: ["NoBeasts"] } },
+    race: [{ name: "Good Folk", source: "MS" }, { name: "No Source" }, "not an entry", null],
+    subrace: [{ source: "MS", raceName: "Good Folk", raceSource: "MS", ability: [{ str: 1 }] }],
+    feat: { name: "Not in a list", source: "MS" },
+    spell: [spell("Good Spell", "MS"), { name: "No Level", source: "MS", school: "V" }],
+    item: [{ name: "Good Item", source: "MS" }, { name: "Odd Type", source: "MS", type: 5 }],
+    class: [{ name: "Odd Class", source: "MS", classFeatures: [{}, 7, "Arcane Study|Wizard||1"] }],
+    subclass: [{ name: "Odd Path", shortName: "Odd", source: "MS", className: "Odd Class", classSource: "MS", subclassFeatures: [{ subclassFeature: "Odd Step|Odd Class|MS|Odd|MS|3" }, 5] }],
+    subclassFeature: [{ name: "Odd Step", source: "MS", className: "Odd Class", classSource: "MS", subclassShortName: "Odd", subclassSource: "MS", level: 3, entries: ["Text."] }],
+  },
+};
+const NOT_HOMEBREW: HomebrewFile = { file: "homebrew/List.json", json: [1, 2, 3] };
+const warnings: string[] = [];
+const messy = await buildCompendium({ read, homebrew: [MESSY, NOT_HOMEBREW], warn: (m) => warnings.push(m) });
+const warned = (re: RegExp) => assert.ok(warnings.some((w) => re.test(w)), `no warning like ${re}:\n${warnings.join("\n")}`);
+
+test("left out: a file that isn't homebrew, a collection that isn't a list, entries without name or source", () => {
+  warned(/^homebrew\/List\.json: not a 5etools homebrew file/);
+  warned(/^homebrew\/Messy\.json: "feat" is not a list/);
+  warned(/^homebrew\/Messy\.json: 3 race without a name or source/);
+  // an unnamed subrace is fine: it is the race as written
+  assert.deepEqual(messy.races.find((r) => r.name === "Good Folk")?.ability.map((a) => a.fixed), [{ str: 1 }]);
+});
+
+test("left out: entries the importer can't read, with the rest of the file imported", () => {
+  warned(/^spells: left out No Level \(MS\): no spell level/);
+  warned(/^items: left out Odd Type \(MS\)/);
+  assert.ok(messy.spells.some((s) => s.name === "Good Spell"));
+  assert.ok(messy.items.some((i) => i.name === "Good Item"));
+  assert.ok(!messy.spells.some((s) => s.name === "No Level"));
+});
+
+test("odd feature references are skipped, not fatal", () => {
+  const odd = messy.classes.find((c) => c.name === "Odd Class")!;
+  // {} and 7 are skipped; the valid reference after them still resolves
+  assert.deepEqual(odd.features.map((f) => f.name), ["Arcane Study"]);
+  assert.deepEqual(odd.subclasses[0].features.map((f) => f.name), ["Odd Step"]);
+});
+
+test("a missing dependency is reported only for what the importer reads", () => {
+  warned(/^homebrew\/Messy\.json: uses Nowhere, which is not loaded/);
+  assert.ok(!warnings.some((w) => w.includes("NoBeasts")));
+  assert.equal(warnings.length, 6, warnings.join("\n"));
+});
+
+test("without a warn callback the same files import silently", async () => {
+  const quiet = await buildCompendium({ read, homebrew: [MESSY, NOT_HOMEBREW] });
+  assert.equal(quiet.spells.length, messy.spells.length);
+});

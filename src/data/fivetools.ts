@@ -107,7 +107,7 @@ export interface RawSubclass extends RawBase {
   shortName: string;
   className: string;
   classSource: string;
-  subclassFeatures?: string[];
+  subclassFeatures?: (string | { subclassFeature?: string })[];
   casterProgression?: string;
   spellcastingAbility?: Abil;
   cantripProgression?: number[];
@@ -193,4 +193,10 @@ export interface RawData {
 /** Collections of RawData that a homebrew file can add to. */
 export const HOMEBREW_COLLECTIONS = ["race", "subrace", "class", "classFeature", "subclass", "subclassFeature", "background", "feat", "spell", "baseitem", "item"] as const;
 /** A 5etools homebrew file: `_meta.sources` names its books, the rest are collections like the official data's. */
-export type HomebrewJson = { _meta?: { sources?: { json: string; full?: string; abbreviation?: string }[] } } & Partial<Record<string, unknown>>;
+export type HomebrewJson = {
+  _meta?: {
+    sources?: { json: string; full?: string; abbreviation?: string }[];
+    /** sources this file builds on, per collection, e.g. { spell: ["llspell"] } */
+    dependencies?: Record<string, unknown>;
+  };
+} & Partial<Record<string, unknown>>;
