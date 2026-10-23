@@ -35,12 +35,14 @@ export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string |
   btn.disabled = !!o.disabled;
   btn.onclick = (e) => {
     e.preventDefault();
-    if (document.querySelector(".dnd-dropdown")) return;
-    const pop = document.body.createDiv({ cls: "dnd-dropdown menu" });
+    // the menu goes in the sheet's own window, which is not the main one for a pop-out window
+    const doc = btn.doc, win = btn.win;
+    if (doc.querySelector(".dnd-dropdown")) return;
+    const pop = doc.body.createDiv({ cls: "dnd-dropdown menu" });
     const rect = btn.getBoundingClientRect();
-    pop.setCssStyles({ left: `${Math.min(rect.left, window.innerWidth - 340)}px` });
-    const below = window.innerHeight - rect.bottom;
-    if (below < 260 && rect.top > below) pop.setCssStyles({ bottom: `${window.innerHeight - rect.top + 2}px` });
+    pop.setCssStyles({ left: `${Math.min(rect.left, win.innerWidth - 340)}px` });
+    const below = win.innerHeight - rect.bottom;
+    if (below < 260 && rect.top > below) pop.setCssStyles({ bottom: `${win.innerHeight - rect.top + 2}px` });
     else pop.setCssStyles({ top: `${rect.bottom + 2}px` });
     pop.setCssStyles({ maxHeight: `${Math.max(200, Math.min(420, below < 260 && rect.top > below ? rect.top - 10 : below - 10))}px` });
     const search = pop.createEl("input", { type: "text", placeholder: "Search…", cls: "dnd-dropdown-search" });
@@ -54,8 +56,8 @@ export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string |
       if (!hoveredItem) return;
       const pr = pop.getBoundingClientRect(), ir = hoveredItem.getBoundingClientRect();
       const w = preview.offsetWidth, h = preview.offsetHeight, gap = 8;
-      const left = window.innerWidth - pr.right - gap >= w ? pr.right + gap : Math.max(gap, pr.left - gap - w);
-      const top = Math.max(gap, Math.min(ir.top, window.innerHeight - h - gap));
+      const left = win.innerWidth - pr.right - gap >= w ? pr.right + gap : Math.max(gap, pr.left - gap - w);
+      const top = Math.max(gap, Math.min(ir.top, win.innerHeight - h - gap));
       const l = `${Math.round(left)}px`, t = `${Math.round(top)}px`;
       // only write when different, so our own style change doesn't re-trigger the observer forever
       if (preview.style.left !== l || preview.style.top !== t) preview.setCssStyles({ left: l, top: t, right: "auto", bottom: "auto" });
@@ -70,8 +72,8 @@ export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string |
         styleObserver.observe(n, { attributes: true, attributeFilter: ["style"] }); // Obsidian re-positions after loading content
       });
     });
-    bodyObserver.observe(document.body, { childList: true, subtree: true }); // only while the menu is open
-    const close = () => { bodyObserver.disconnect(); styleObserver.disconnect(); pop.remove(); o.onClose?.(); document.removeEventListener("mousedown", outside, true); };
+    bodyObserver.observe(doc.body, { childList: true, subtree: true }); // only while the menu is open
+    const close = () => { bodyObserver.disconnect(); styleObserver.disconnect(); pop.remove(); o.onClose?.(); doc.removeEventListener("mousedown", outside, true); };
     const outside = (ev: MouseEvent) => {
       const t = ev.target as HTMLElement;
       if (!pop.contains(t) && !t.closest(".popover.hover-popover")) close();
@@ -106,7 +108,7 @@ export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string |
       else if (ev.key === "ArrowUp") { ev.preventDefault(); setActive(Math.max(0, active - 1)); }
       else if (ev.key === "Enter") { ev.preventDefault(); const it = items[active] ?? items.find((x) => x.opt.value); if (it && !it.opt.disabled) pick(it.opt); }
     });
-    window.setTimeout(() => { document.addEventListener("mousedown", outside, true); search.focus(); list.querySelector(".is-selected")?.scrollIntoView({ block: "center" }); }, 0);
+    win.setTimeout(() => { doc.addEventListener("mousedown", outside, true); search.focus(); list.querySelector(".is-selected")?.scrollIntoView({ block: "center" }); }, 0);
   };
   return btn;
 }
