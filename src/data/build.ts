@@ -648,10 +648,10 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   raw.item.forEach((i) => guard("items", i, () => pushItem(i, true)));
   // magic armour and weapons inherit the stats of their base item
   const inherited = ["kind", "armorType", "ac", "strength", "stealth", "weaponCategory", "ranged", "dmg1", "dmg2", "dmgType", "properties", "range"] as const;
+  const baseItems = indexBy(items.filter((b) => !b.magic), (b) => lc(b.name));
   for (const it of items) {
     if (!it.baseItem) continue;
-    const baseName = it.baseItem;
-    const base = items.find((b) => lc(b.name) === lc(baseName) && !b.magic);
+    const base = baseItems.get(lc(it.baseItem));
     if (!base) continue;
     const target = it as unknown as Record<string, unknown>, source = base as unknown as Record<string, unknown>;
     for (const k of inherited) {
