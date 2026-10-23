@@ -8,7 +8,7 @@ import type { CharacterSheet } from "../sheet";
 
 export function abilities(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
   const s = sheet.v, sc = d.scores;
-  const editing = !!s.ui.editing.abilities;
+  const editing = !!sheet.view.editing.abilities;
   sheet.section(root, "abilities", "Ability Scores", (el) => {
     const boxes = el.createDiv({ cls: `dnd-abilities${editing ? " is-editing" : ""}` });
     for (const a of ABILITIES) {
@@ -44,7 +44,7 @@ export function abilities(sheet: CharacterSheet, root: HTMLElement, d: E.Derived
       sheet.rollable(cell, fmtMod(bonus), d20(bonus), `${ABILITY_NAMES[a]} save`);
     }
   }, (actions) => {
-    iconButton(actions, editing ? "check" : "pencil", editing ? "Done editing" : "Edit ability scores", () => sheet.change((x) => { x.ui.editing.abilities = !editing; x.ui.collapsed.abilities = false; }), editing ? "is-active" : "");
+    iconButton(actions, editing ? "check" : "pencil", editing ? "Done editing" : "Edit ability scores", () => sheet.changeView((v) => { v.editing.abilities = !editing; v.collapsed.abilities = false; }), editing ? "is-active" : "");
   });
 }
 

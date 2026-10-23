@@ -86,13 +86,38 @@ export interface CharState {
   removedFeatures: string[];
   manual: ManualData; // used when no rules data is configured (manual mode)
   /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
-  ui: { collapsed: Record<string, boolean>; editing: Record<string, boolean>; hidden: Record<string, boolean> };
+  ui: { hidden: Record<string, boolean> };
+}
+
+/**
+ * Version of the saved state (CharState.version). Raise it with a migration in normalize() that
+ * older states need, and say what it changes here:
+ *   1 = up to 1.1: ASI points on the scores, "## Biography" / "## Notes" in the note's body, an unused
+ *       source filter, and the collapsed sections and edit mode (the view) in `ui`
+ *   2 = the view is kept out of the note (see SheetView)
+ */
+export const STATE_VERSION = 2;
+/** The version a saved state was written with (states from before the stamp count as 1). */
+export const stateVersion = (s: { version?: unknown } | null | undefined) => Number(s?.version) || 1;
+
+/**
+ * How one sheet is shown, kept on this device and not in the note: which sections are collapsed and
+ * which are in edit mode, by section key.
+ */
+export interface SheetView { collapsed: Record<string, boolean>; editing: Record<string, boolean> }
+export const emptyView = (): SheetView => ({ collapsed: {}, editing: {} });
+/** The view an older state kept in its `ui`, to carry over once (null when it has none). */
+export function legacyView(s: Partial<CharState> | null | undefined): SheetView | null {
+  if (!s || stateVersion(s) >= 2) return null;
+  const ui = (s.ui ?? {}) as Partial<SheetView>;
+  const collapsed = ui.collapsed && typeof ui.collapsed === "object" ? ui.collapsed : {}, editing = ui.editing && typeof ui.editing === "object" ? ui.editing : {};
+  return Object.keys(collapsed).length || Object.keys(editing).length ? { collapsed: { ...collapsed }, editing: { ...editing } } : null;
 }
 
 const zeroAbilities = (): Record<Ability, number> => ({ str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 });
 export function newCharacter(name = ""): CharState {
   return {
-    version: 1, name, player: "", image: "", alignment: "", xp: 0,
+    version: STATE_VERSION, name, player: "", image: "", alignment: "", xp: 0,
     race: null, subrace: null, raceAbility: { option: 0, picks: [] }, raceSkills: [],
     background: null, classes: [],
     abilities: { method: "pointbuy", base: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 }, asi: zeroAbilities(), adjust: zeroAbilities() },
@@ -106,12 +131,12 @@ export function newCharacter(name = ""): CharState {
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
     allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], removedFeatures: [], manual: emptyManual(),
-    ui: { collapsed: {}, editing: {}, hidden: {} },
+    ui: { hidden: {} },
   };
 }
-// Fill in any fields missing from older/partial saved states.
+/** Fill in any fields missing from older/partial saved states, and migrate older versions (STATE_VERSION). */
 export function normalize(s: Partial<CharState> | null | undefined): CharState {
-  const d = newCharacter();
+  const d = newCharacter(), version = stateVersion(s);
   const out: CharState = { ...d, ...(s || {}) };
   const merge = <T extends object>(base: T, saved: Partial<T> | undefined): T => ({ ...base, ...(saved ?? {}) });
   out.raceAbility = merge(d.raceAbility, s?.raceAbility);
@@ -127,9 +152,6 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.abilities = merge(d.abilities, s?.abilities);
   for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);
   out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
-  out.ui.editing = out.ui.editing || {};
-  // a source filter that was never used, still in older sheets
-  delete (out.ui as { sourceFilter?: unknown }).sourceFilter;
   // sheets saved before sections could be hidden show all of them
   out.ui.hidden = out.ui.hidden || {};
   out.events = Array.isArray(out.events) ? out.events.map((e) => String(e ?? "")) : [];
@@ -144,11 +166,16 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.removedFeatures = Array.isArray(out.removedFeatures) ? out.removedFeatures.map(String) : [];
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
-  // migrate ASI points stored on the scores (v0.1) into Ability Score Improvement entries
-  const legacy: Ability[] = [];
-  for (const a of ABILITIES) for (let n = 0; n < (out.abilities.asi[a] || 0); n++) legacy.push(a);
-  for (let i = 0; i < legacy.length; i += 2) out.feats.push({ id: ASI_ID, picks: legacy.slice(i, i + 2) });
-  out.abilities.asi = zeroAbilities();
+  if (version < 2) {
+    // ASI points stored on the scores (v0.1) become Ability Score Improvement entries
+    const legacy: Ability[] = [];
+    for (const a of ABILITIES) for (let n = 0; n < (out.abilities.asi[a] || 0); n++) legacy.push(a);
+    for (let i = 0; i < legacy.length; i += 2) out.feats.push({ id: ASI_ID, picks: legacy.slice(i, i + 2) });
+    out.abilities.asi = zeroAbilities();
+    // the view (see legacyView) and a source filter that was never used leave the note
+    out.ui = { hidden: out.ui.hidden };
+  }
+  out.version = STATE_VERSION;
   out.slots.adjust = [...out.slots.adjust, ...Array<number>(9).fill(0)].slice(0, 9);
   out.slots.used = [...out.slots.used, ...Array<number>(9).fill(0)].slice(0, 9);
   return out;

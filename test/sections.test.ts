@@ -15,11 +15,18 @@ test("every section in the Sheet template exists on the sheet", () => {
 });
 
 test("hidden sections: new and older saved sheets show every section", () => {
-  assert.deepEqual(E.newCharacter().ui.hidden, {});
+  assert.deepEqual(E.newCharacter().ui, { hidden: {} });
   const old = E.normalize({ name: "Old", ui: { collapsed: { skills: true }, sourceFilter: [], editing: {} } as any });
-  assert.deepEqual(old.ui.hidden, {});
-  assert.ok(!("sourceFilter" in old.ui), "the unused source filter of older sheets is dropped");
-  assert.equal(old.ui.collapsed.skills, true);
-  const s = E.normalize({ name: "Hid", ui: { collapsed: {}, editing: {}, hidden: { spells: true } } });
-  assert.deepEqual(s.ui.hidden, { spells: true });
+  // the view and the unused source filter leave older notes
+  assert.deepEqual(old.ui, { hidden: {} });
+  const s = E.normalize({ name: "Hid", ui: { collapsed: {}, editing: {}, hidden: { spells: true } } } as any);
+  assert.deepEqual(s.ui, { hidden: { spells: true } });
+});
+
+test("the view of older notes is carried over once; newer notes don't keep one", () => {
+  const old: any = { name: "Old", ui: { collapsed: { skills: true }, editing: { abilities: true }, hidden: {} } };
+  assert.deepEqual(E.legacyView(old), { collapsed: { skills: true }, editing: { abilities: true } });
+  assert.equal(E.legacyView({ name: "Old", ui: { hidden: {} } } as any), null);
+  assert.equal(E.legacyView({ ...old, version: 2 }), null);
+  assert.equal(E.legacyView(null), null);
 });

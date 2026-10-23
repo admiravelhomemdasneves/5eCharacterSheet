@@ -1,6 +1,6 @@
 import { CachedMetadata, Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } from "obsidian";
 import * as E from "./rules/engine";
-import { CharState, Compendium, Rules, newCharacter } from "./rules/engine";
+import { CharState, Compendium, Rules, SheetView, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo, sourceOfTag } from "./data/links";
 import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
@@ -26,6 +26,11 @@ dnd:
 \`\`\`
 `;
 
+/** local storage key of the sheets' views (see CharacterSheetPlugin#view) */
+const VIEWS_KEY = "fifth-edition-character-sheet:views";
+/** App#loadLocalStorage and App#saveLocalStorage, from Obsidian 1.8.7: checked at runtime for older versions */
+type LocalStorageApp = { loadLocalStorage?: (key: string) => unknown; saveLocalStorage?: (key: string, data: unknown) => void };
+
 const EMPTY: Compendium = { meta: { sources: {} }, races: [], classes: [], backgrounds: [], feats: [], spells: [], items: [] };
 
 export default class CharacterSheetPlugin extends Plugin {
@@ -37,6 +42,8 @@ export default class CharacterSheetPlugin extends Plugin {
   /** pending saves (debounced) and saves being written, by note path */
   private saveTimers = new Map<string, number>();
   private writing = new Set<string>();
+  /** how each sheet note is shown (collapsed sections, edit mode), by note path: on this device, not in the notes */
+  private views: Record<string, SheetView> = {};
   /** the imported rules data was made by an older importer and should be imported again */
   importIsOutdated = false;
   private importNoticeShown = false;
@@ -46,6 +53,7 @@ export default class CharacterSheetPlugin extends Plugin {
 
   async onload() {
     this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<SheetSettings> | null) };
+    this.views = this.loadViews();
     this.addSettingTab(new SheetSettingTab(this.app, this));
 
     for (const lang of BLOCKS) {
@@ -198,6 +206,16 @@ export default class CharacterSheetPlugin extends Plugin {
 
   /** The file or folder at `from` is now at `to` (null: deleted); what was at or inside it follows. */
   private moved(from: string, to: string | null) {
+    // the views of the notes at or inside it follow too, also of notes not opened this session
+    let viewsMoved = false;
+    for (const [path, view] of Object.entries(this.views)) {
+      const now = renamedPath(path, from, to ?? "");
+      if (now == null) continue;
+      delete this.views[path];
+      if (to != null) this.views[now] = view;
+      viewsMoved = true;
+    }
+    if (viewsMoved) this.saveViews();
     for (const [path, s] of [...this.states]) {
       const now = renamedPath(path, from, to ?? "");
       if (now == null) continue;
@@ -222,6 +240,36 @@ export default class CharacterSheetPlugin extends Plugin {
     // write what is still waiting to be saved
     for (const [path, timer] of this.saveTimers) { window.clearTimeout(timer); void this.writeState(path); }
     this.saveTimers.clear();
+  }
+
+  // ---------------------------------------------------------------- views
+  /**
+   * How a sheet note is shown on this device. `legacy`: the view an older note kept in itself
+   * (E.legacyView), taken when this device has none for it yet.
+   */
+  view(path: string, legacy?: SheetView | null): SheetView {
+    let v = this.views[path];
+    if (!v) { v = legacy ?? E.emptyView(); this.views[path] = v; if (legacy) this.saveViews(); }
+    return v;
+  }
+  /** Keep the views after a change: in the vault's local storage, with only the sheets shown other than the default. */
+  saveViews() {
+    const kept = Object.fromEntries(Object.entries(this.views).filter(([, v]) => Object.values(v.collapsed).some(Boolean) || Object.values(v.editing).some(Boolean)));
+    // App#saveLocalStorage (Obsidian 1.8.7+) keeps it per vault; before that, the browser's, under the vault's name
+    const app = this.app as LocalStorageApp;
+    if (app.saveLocalStorage) app.saveLocalStorage(VIEWS_KEY, kept);
+    else window.localStorage.setItem(`${VIEWS_KEY}:${this.app.vault.getName()}`, JSON.stringify(kept));
+  }
+  private loadViews(): Record<string, SheetView> {
+    try {
+      const app = this.app as LocalStorageApp;
+      const saved: unknown = app.loadLocalStorage ? app.loadLocalStorage(VIEWS_KEY)
+        : JSON.parse(window.localStorage.getItem(`${VIEWS_KEY}:${this.app.vault.getName()}`) ?? "null");
+      if (!saved || typeof saved !== "object") return {};
+      return Object.fromEntries(Object.entries(saved as Record<string, Partial<SheetView>>).map(([p, v]) => [p, { collapsed: { ...v?.collapsed }, editing: { ...v?.editing } }]));
+    } catch {
+      return {};
+    }
   }
 
   // ---------------------------------------------------------------- saving sheets

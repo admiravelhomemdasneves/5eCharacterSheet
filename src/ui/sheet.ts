@@ -48,18 +48,22 @@ export class CharacterSheet extends MarkdownRenderChild {
     const file = this.file();
     // every sheet of a note shares the plugin's copy of its state; the metadata cache lags behind our
     // own writes, so it is only read when there is no copy yet
-    let s = this.plugin.states.get(this.sourcePath);
+    let s = this.plugin.states.get(this.sourcePath), migrateBody = false;
     if (!s) {
       const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : null;
-      s = E.normalize((fm?.dnd as Partial<CharState> | undefined) ?? this.plugin.freshCharacter(file?.basename ?? ""));
+      const saved = fm?.dnd as Partial<CharState> | undefined;
+      // an older note may keep its view in itself, and its biography and notes in its body
+      this.plugin.view(this.sourcePath, E.legacyView(saved));
+      migrateBody = !!saved && E.stateVersion(saved) < 2;
+      s = E.normalize(saved ?? this.plugin.freshCharacter(file?.basename ?? ""));
       if (!s.name && file) s.name = file.basename;
       this.plugin.states.set(this.sourcePath, s);
     }
     this.s = s;
     this.render();
-    if (file) void this.migrateBody(file);
+    if (file && migrateBody) void this.migrateBody(file);
   }
-  // Move the old "## Biography" / "## Notes" note sections into the Biography & Diary box (once)
+  // Move the old "## Biography" / "## Notes" note sections into the Biography & Diary box (notes from before state version 2)
   private async migrateBody(file: TFile) {
     const legacy = E.extractLegacySections(await this.app.vault.read(file));
     if (!legacy) return;
@@ -73,6 +77,15 @@ export class CharacterSheet extends MarkdownRenderChild {
 
   get app() { return this.plugin.app; }
   private file() { const f = this.app.vault.getAbstractFileByPath(this.sourcePath); return f instanceof TFile ? f : null; }
+
+  /** How this sheet is shown (collapsed sections, edit mode): on this device, not in the note. */
+  get view() { return this.plugin.view(this.sourcePath); }
+  /** Change how the sheet is shown: re-rendered, the note is not saved. */
+  changeView(mutate: (v: E.SheetView) => void) {
+    mutate(this.view);
+    this.plugin.saveViews();
+    this.render();
+  }
 
   // ---------------------------------------------------------------- persistence
   change(mutate: (s: CharState) => void, rerender = true) {
@@ -146,14 +159,14 @@ export class CharacterSheet extends MarkdownRenderChild {
     if (this.isHidden(key)) return;
     const sec = parent.createDiv({ cls: "dnd-section" });
     const head = sec.createDiv({ cls: "dnd-section-head" });
-    const collapsed = !!this.s.ui.collapsed[key];
+    const collapsed = !!this.view.collapsed[key];
     const tog = head.createSpan({ cls: "dnd-collapse", text: collapsed ? "▸" : "▾" });
     head.createEl("h3", { text: label });
     // hide button, shown while the title row is hovered (see .dnd-section-hide)
     if (SECTIONS.some((x) => x.key === key)) iconButton(head, "eye-off", "Hide this section", () => this.change((x) => { x.ui.hidden[key] = true; }), "dnd-section-hide");
     if (actions) actions(head.createDiv({ cls: "dnd-section-actions" }));
     const body = sec.createDiv({ cls: "dnd-section-body" });
-    const toggle = () => this.change((s) => { s.ui.collapsed[key] = !collapsed; });
+    const toggle = () => this.changeView((v) => { v.collapsed[key] = !collapsed; });
     tog.onclick = toggle; head.querySelector("h3")!.addEventListener("click", toggle);
     if (!collapsed) build(body);
   }

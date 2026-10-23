@@ -175,7 +175,7 @@ test("ASI taken as an entry in Feats: +1/+1 or +2, counted against class ASIs", 
 
 test("old sheets with ASI points on the scores are migrated to ASI entries", () => {
   const old = hillDwarfWizard5();
-  old.abilities.asi.int = 1; old.abilities.asi.dex = 1;
+  old.version = 1; old.abilities.asi.int = 1; old.abilities.asi.dex = 1;
   const s = E.normalize(JSON.parse(JSON.stringify(old)));
   assert.deepEqual(s.feats, [{ id: E.ASI_ID, picks: ["dex", "int"] }]);
   assert.equal(E.abilityScores(r, s).int.total, 17);
