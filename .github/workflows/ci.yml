@@ -1,0 +1,27 @@
+# Checks every push to a branch and every pull request: types, lint, tests and the build.
+# Version tags are checked by the Release workflow, which builds the release files.
+name: CI
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+permissions:
+  contents: read
+# a newer push to the same branch or pull request replaces a run still going
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
