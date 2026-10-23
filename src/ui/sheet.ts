@@ -316,9 +316,7 @@ export class CharacterSheet extends MarkdownRenderChild {
           select(edit, E.STANDARD_ARRAY.map((v) => ({ value: String(v), label: String(v) })), String(s.abilities.base[a]), (v) => this.change((x) => { x.abilities.base[a] = parseInt(v) || 8; }), "—");
         }
         // one editor for the whole score: each step goes to base or Adjust (see E.stepAbility)
-        stepper(edit, b.total, (v) => this.change((x) => {
-          for (let n = v - b.total; n !== 0; n -= Math.sign(n)) E.stepAbility(x, a, n > 0 ? 1 : -1);
-        }), { title: `${ABILITY_NAMES[a]} score` });
+        stepper(edit, b.total, (v) => this.change((x) => E.setAbilityScore(x, a, b.total, v)), { title: `${ABILITY_NAMES[a]} score` });
         const terms: [number, string][] = [[b.race, "race"], [b.asi, "ASI"], [b.feat, "feat"], [b.feature, "class"], [b.adjust, "adj."]];
         const formula = terms.filter(([n]) => n).map(([n, label]) => ` ${n > 0 ? "+" : "−"} ${Math.abs(n)} ${label}`).join("");
         box.createDiv({ cls: "dnd-breakdown", text: `${b.base} base${formula} · max ${b.max}` });
@@ -359,7 +357,7 @@ export class CharacterSheet extends MarkdownRenderChild {
         ctl.createDiv({ cls: pb.valid ? "dnd-hint" : "dnd-warn", text: `Points: ${pb.spent}/27 (${pb.remaining} left)` });
       }
       if (s.abilities.method === "roll") button(ctl, "🎲 Roll all six", () => this.change((x) => {
-        for (const a of ABILITIES) { const d = [0, 0, 0, 0].map(() => 1 + Math.floor(Math.random() * 6)).sort((p, q) => q - p); x.abilities.base[a] = d[0] + d[1] + d[2]; }
+        x.abilities.base = E.rollAbilityScores();
         new Notice(`Rolled: ${ABILITIES.map((a) => `${a.toUpperCase()} ${x.abilities.base[a]}`).join(", ")}`);
       }));
       // racial ability choice
@@ -428,15 +426,11 @@ export class CharacterSheet extends MarkdownRenderChild {
       for (let i = 0; i < 3; i++) checkbox(dsRow, s.deathSaves.fail > i, (v) => this.change((x) => { x.deathSaves.fail = v ? i + 1 : i; }));
       this.rollable(dsRow, "🎲", "1d20", "Death save");
       // last grid row: Hit Dice | Long Rest
-      const hd = man ? parseHitDice(m.hitDice) : d.hitDice;
+      const hd = man ? E.parseHitDice(m.hitDice) : d.hitDice;
       const hdTotal = Object.values(hd).reduce((a, b) => a + b, 0) || d.level;
       const hdEl = labeled(hpGrid, "Hit Dice used");
       stepper(hdEl, s.hitDiceUsed, (v) => this.change((x) => { x.hitDiceUsed = v; }), { min: 0, max: hdTotal, total: hdTotal, title: Object.entries(hd).map(([d, n]) => `${n}${d}`).join(" + ") });
-      button(labeled(hpGrid, "Rest"), "Long Rest", () => this.change((x) => {
-        x.hp.current = hp.max; x.hp.temp = 0; x.slots.used = Array<number>(9).fill(0); x.slots.pactUsed = 0;
-        x.hitDiceUsed = Math.max(0, x.hitDiceUsed - Math.max(1, Math.floor(hdTotal / 2))); x.resources = {}; x.deathSaves = { success: 0, fail: 0 };
-        if (x.exhaustion > 0) x.exhaustion -= 1;
-      }), "dnd-rest-btn");
+      button(labeled(hpGrid, "Rest"), "Long Rest", () => this.change((x) => E.longRest(x, hp.max, hdTotal)), "dnd-rest-btn");
       // roll a hit die (one button per die type when multiclassed)
       const hdRoll = hpEl.createDiv({ cls: "dnd-row dnd-hd-roll" });
       if (man) this.richText(labeled(hdRoll, "Hit Dice"), m.hitDice, (v) => this.change((x) => { x.manual.hitDice = v; }), { placeholder: "e.g. 3d8 + 2d10", singleLine: true });
@@ -876,7 +870,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       for (const c of ["cp", "sp", "ep", "gp", "pp"] as const) stepper(labeled(coins, c.toUpperCase()), s.coins[c], (v) => this.change((x) => { x.coins[c] = v; }), { min: 0 });
       const t = el.createDiv({ cls: "dnd-table-wrap" }).createEl("table", { cls: "dnd-table dnd-inv" });
       const h = t.createEl("tr"); ["Item", "Qty", "Weight", "Equipped", "Attuned", "Notes", ""].forEach((x) => h.createEl("th", { text: x }));
-      const attuned = s.inventory.filter((i) => i.attuned).length;
+      const attuned = E.attunedCount(s);
       s.inventory.forEach((inv, i) => {
         const it = r.item(inv.id);
         const tr = t.createEl("tr");
@@ -890,7 +884,7 @@ export class CharacterSheet extends MarkdownRenderChild {
         const eq = tr.createEl("td");
         if (!it || it.kind !== "gear" || it.bonusAc) checkbox(eq, inv.equipped, (v) => this.change((x) => { x.inventory[i].equipped = v; }));
         const at = tr.createEl("td");
-        if (!it || it.attunement) checkbox(at, inv.attuned, (v) => { if (v && attuned >= 3) new Notice("You can be attuned to at most 3 items."); this.change((x) => { x.inventory[i].attuned = v; }); });
+        if (!it || it.attunement) checkbox(at, inv.attuned, (v) => { if (v && attuned >= E.ATTUNEMENT_MAX) new Notice(`You can be attuned to at most ${E.ATTUNEMENT_MAX} items.`); this.change((x) => { x.inventory[i].attuned = v; }); });
         this.richText(tr.createEl("td"), inv.notes, (v) => this.change((x) => { x.inventory[i].notes = v; }, false), { placeholder: "—", singleLine: true });
         iconButton(tr.createEl("td"), "trash-2", "Remove", () => this.change((x) => { x.inventory.splice(i, 1); }));
       });
@@ -900,7 +894,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       }), "Search items…", (it) => [it.kind, it.rarity, it.weight != null ? `${it.weight} lb.` : "", it.value != null ? `${it.value / 100} gp` : ""].filter(Boolean).join(" · ")).open());
       button(add, "+ Custom item", () => this.change((x) => { x.inventory.push({ id: null, name: "", qty: 1, weight: null, equipped: false, attuned: false, notes: "" }); }));
       const wt = E.inventoryWeight(s), cap = E.carryingCapacity(d.scores);
-      el.createDiv({ cls: wt > cap ? "dnd-warn" : "dnd-hint", text: `Carried: ${Math.round(wt * 10) / 10} lb. / capacity ${cap} lb. · Attuned items: ${attuned}/3` });
+      el.createDiv({ cls: wt > cap ? "dnd-warn" : "dnd-hint", text: `Carried: ${Math.round(wt * 10) / 10} lb. / capacity ${cap} lb. · Attuned items: ${attuned}/${E.ATTUNEMENT_MAX}` });
     });
   }
 
@@ -1026,13 +1020,6 @@ export class CharacterSheet extends MarkdownRenderChild {
     if (o.autoEdit) edit(); else view();
     return box;
   }
-}
-
-/** "2d6 + 3d10" -> { d6: 2, d10: 3 } (manual-mode hit dice) */
-function parseHitDice(text: string): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const m of (text || "").matchAll(/(\d*)\s*d\s*(\d+)/gi)) out[`d${m[2]}`] = (out[`d${m[2]}`] || 0) + (parseInt(m[1]) || 1);
-  return out;
 }
 
 // textarea that grows with its content instead of scrolling

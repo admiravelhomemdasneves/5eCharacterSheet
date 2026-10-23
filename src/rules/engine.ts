@@ -328,6 +328,19 @@ export function stepAbility(s: CharState, a: Ability, delta: 1 | -1) {
     else ab.adjust[a] = adjust - 1;
   }
 }
+/** Set an ability's total score to `to` (it is `from` now) one step at a time, as the editor's + and − do. */
+export function setAbilityScore(s: CharState, a: Ability, from: number, to: number) {
+  for (let n = to - from; n !== 0; n -= Math.sign(n)) stepAbility(s, a, n > 0 ? 1 : -1);
+}
+/** The "Roll 4d6 (drop lowest)" method: each ability is the three highest of four d6. */
+export function rollAbilityScores(rand: () => number = Math.random): Record<Ability, number> {
+  const out = zeroAbilities();
+  for (const a of ABILITIES) {
+    const d = [0, 0, 0, 0].map(() => 1 + Math.floor(rand() * 6)).sort((p, q) => q - p);
+    out[a] = d[0] + d[1] + d[2];
+  }
+  return out;
+}
 export function pointBuySpent(base: Record<Ability, number>) {
   let spent = 0, valid = true;
   for (const a of ABILITIES) { const c = POINT_BUY_COST[base[a]]; if (c == null) valid = false; else spent += c; }
@@ -402,6 +415,25 @@ export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s)
 export function currentHp(s: CharState, max: number) {
   return Math.max(0, Math.min(s.hp.current ?? max, max));
 }
+/**
+ * A long rest: hit points to `maxHp` and no temporary ones, spell slots and class resources back,
+ * half the character's hit dice back (at least one; `hitDiceTotal` of them), death saves cleared and
+ * one level of exhaustion gone.
+ */
+export function longRest(s: CharState, maxHp: number, hitDiceTotal: number) {
+  s.hp.current = maxHp; s.hp.temp = 0;
+  s.slots.used = Array<number>(9).fill(0); s.slots.pactUsed = 0;
+  s.hitDiceUsed = Math.max(0, s.hitDiceUsed - Math.max(1, Math.floor(hitDiceTotal / 2)));
+  s.resources = {};
+  s.deathSaves = { success: 0, fail: 0 };
+  if (s.exhaustion > 0) s.exhaustion -= 1;
+}
+/** "2d6 + 3d10" -> { d6: 2, d10: 3 } (manual-mode hit dice) */
+export function parseHitDice(text: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const m of (text || "").matchAll(/(\d*)\s*d\s*(\d+)/gi)) out[`d${m[2]}`] = (out[`d${m[2]}`] || 0) + (parseInt(m[1]) || 1);
+  return out;
+}
 export function hitDice(r: Rules, s: CharState) {
   const by: Record<string, number> = {};
   s.classes.forEach((e) => { const hd = `d${r.cls(e.id)?.hd || 8}`; by[hd] = (by[hd] || 0) + e.level; });
@@ -450,6 +482,9 @@ export function speeds(r: Rules, s: CharState) {
 }
 export const initiative = (r: Rules, s: CharState, scores = abilityScores(r, s)) => mod(scores.dex.total) + (s.initiativeAdjust || 0) + (s.feats.some((f) => r.feat(f.id)?.name === "Alert") ? 5 : 0);
 export const darkvision = (r: Rules, s: CharState) => r.subrace(s)?.darkvision ?? r.race(s)?.darkvision ?? null;
+/** A character can be attuned to at most this many magic items at once. */
+export const ATTUNEMENT_MAX = 3;
+export const attunedCount = (s: CharState) => s.inventory.filter((i) => i.attuned).length;
 export const carryingCapacity = (scores: Record<Ability, AbilityBreakdown>) => scores.str.total * 15;
 export const inventoryWeight = (s: CharState) => s.inventory.reduce((a, i) => a + (i.weight || 0) * (i.qty || 1), 0) + Object.values(s.coins).reduce((a, n) => a + (n || 0), 0) / 50;
 
