@@ -4,7 +4,7 @@ import * as E from "../../rules/engine";
 import { fmtMod } from "../../rules/engine";
 import { button } from "../widgets";
 import { d20 } from "../dice";
-import { title } from "../format";
+import { title } from "../../text";
 import type { CharacterSheet } from "../sheet";
 
 export function skills(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {

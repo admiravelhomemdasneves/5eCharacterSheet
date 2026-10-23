@@ -1,7 +1,7 @@
 // Types for the parts of the 5etools data files that the sheet reads.
 // Only the fields used by build.ts are described; everything is optional where 5etools omits it.
 
-export type Abil = "str" | "dex" | "con" | "int" | "wis" | "cha";
+import type { Ability } from "../rules/engine.ts";
 
 // ---------------------------------------------------------------- text entries
 export type RawCell = string | number | RawEntryObject;
@@ -44,8 +44,8 @@ export type RawMod = string | {
 };
 export type RawSpeedValue = number | boolean | { number: number };
 export type RawSpeed = number | Partial<Record<"walk" | "fly" | "swim" | "climb" | "burrow", RawSpeedValue>>;
-export type RawAbility = Partial<Record<Abil, number>> & {
-  choose?: { from: Abil[]; count?: number; amount?: number; weighted?: { from: Abil[]; weights: number[] } };
+export type RawAbility = Partial<Record<Ability, number>> & {
+  choose?: { from: Ability[]; count?: number; amount?: number; weighted?: { from: Ability[]; weights: number[] } };
 };
 /** e.g. { history: true }, { any: 2 }, { choose: { from: [...], count: 2 } } */
 export type RawProf = Record<string, boolean | number | { from: string[]; count?: number }>;
@@ -84,10 +84,10 @@ export interface RawTableGroup { colLabels?: string[]; rows?: RawTableValue[][];
 export type RawClassFeatureRef = string | { classFeature: string; gainSubclassFeature?: boolean };
 export interface RawClass extends RawBase {
   hd?: { faces: number };
-  proficiency?: Abil[];
+  proficiency?: Ability[];
   startingProficiencies?: { armor?: RawProfItem[]; weapons?: RawProfItem[]; tools?: RawProfItem[]; skills?: RawSkillChoice[] };
   casterProgression?: string;
-  spellcastingAbility?: Abil;
+  spellcastingAbility?: Ability;
   preparedSpells?: string;
   cantripProgression?: number[];
   spellsKnownProgression?: number[];
@@ -109,7 +109,7 @@ export interface RawSubclass extends RawBase {
   classSource: string;
   subclassFeatures?: (string | { subclassFeature?: string })[];
   casterProgression?: string;
-  spellcastingAbility?: Abil;
+  spellcastingAbility?: Ability;
   cantripProgression?: number[];
   spellsKnownProgression?: number[];
   additionalSpells?: RawAdditionalSpells[];

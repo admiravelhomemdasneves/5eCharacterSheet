@@ -43,7 +43,7 @@ export function richText(sheet: CharacterSheet, parent: HTMLElement, initial: st
     });
     v.addEventListener("mouseover", (e) => {
       const a = (e.target as HTMLElement).closest<HTMLElement>("a.internal-link");
-      if (a) sheet.app.workspace.trigger("hover-link", { event: e, source: "preview", hoverParent: sheet, targetEl: a, linktext: a.getAttr("data-href") || a.getText(), sourcePath: sheet.sourcePath });
+      if (a) sheet.hoverLink(e, a, a.getAttr("data-href") || a.getText());
     });
   };
   const edit = () => {

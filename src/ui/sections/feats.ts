@@ -28,10 +28,8 @@ export function feats(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
       if (!f) return;
       sheet.details(row, (sm) => { sheet.link(sm, f.name, f.link, "dnd-feature-name"); if (f.prereq) sm.createSpan({ cls: "dnd-tag", text: f.prereq }); if (fe.free) sm.createSpan({ cls: "dnd-tag", text: "bonus feat" }); }, f.text);
       const opt = f.ability[0];
-      let pi = 0;
-      for (const ch of opt?.choose || []) for (let n = 0; n < ch.count; n++, pi++) {
-        const idx = pi;
-        select(row, ch.from.map((a) => ({ value: a, label: `+${ch.amount} ${ABILITY_NAMES[a]}` })), fe.picks[idx] || "", (v) => sheet.change((x) => { x.feats[i].picks[idx] = v as Ability; }), "Ability…");
+      for (const { from, amount, index } of E.pickSlots(opt?.choose || [])) {
+        select(row, from.map((a) => ({ value: a, label: `+${amount} ${ABILITY_NAMES[a]}` })), fe.picks[index] || "", (v) => sheet.change((x) => { x.feats[i].picks[index] = v as Ability; }), "Ability…");
       }
       iconButton(row, "trash-2", "Remove feat", () => sheet.change((x) => { x.feats.splice(i, 1); }));
     });

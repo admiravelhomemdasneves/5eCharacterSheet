@@ -1,6 +1,6 @@
 // Spellcasting: casters, spell slots and the spell list (or what manual mode types in).
 import * as E from "../../rules/engine";
-import { ABILITIES, type Ability, ABILITY_NAMES, fmtMod } from "../../rules/engine";
+import { ABILITIES, type Ability, ABILITY_NAMES, type CharState, fmtMod } from "../../rules/engine";
 import { button, checkbox, iconButton, labeled, Picker, select, stepper } from "../widgets";
 import { d20 } from "../dice";
 import { ORD } from "../format";
@@ -29,18 +29,8 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
     // slots
     const st = el.createDiv({ cls: "dnd-slots" });
     st.createDiv({ cls: "dnd-subtitle", text: `Spell Slots${slots.casterLevel ? ` (caster level ${slots.casterLevel})` : ""}` });
-    const grid = st.createDiv({ cls: "dnd-slot-grid" });
-    for (let i = 0; i < 9; i++) {
-      const max = slots.max[i];
-      if (!max && !s.slots.adjust[i] && !slots.max.slice(i).some((n) => n > 0)) continue;
-      const cell = grid.createDiv({ cls: "dnd-slot" });
-      cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
-      const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
-      for (let k = 0; k < max; k++) checkbox(boxes, s.slots.used[i] > k, (v) => sheet.change((x) => { x.slots.used[i] = v ? k + 1 : k; }), "Used");
-      stepper(cell, max, (v) => sheet.change((x) => { x.slots.adjust[i] += v - max; }), { min: 0, title: "Add/remove slots of this level" });
-    }
-    const addLvl = st.createDiv({ cls: "dnd-row" });
-    select(addLvl, ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") sheet.change((x) => { x.slots.adjust[parseInt(v)] += 1; }); }, "+ Add a slot of level…");
+    // the computed slots, with the player's adjustment on top
+    slotGrid(sheet, st, slots.max, (i) => !!s.slots.adjust[i], "Add/remove slots of this level", (x, i, v) => { x.slots.adjust[i] += v - slots.max[i]; }, (x, i) => { x.slots.adjust[i] += 1; });
     if (slots.pact) {
       const pc = st.createDiv({ cls: "dnd-slot dnd-pact" });
       pc.createDiv({ cls: "dnd-label", text: `Pact Magic (${ORD[slots.pact.level]} level)` });
@@ -57,13 +47,8 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
     const t = list.createDiv({ cls: "dnd-table-wrap" }).createEl("table", { cls: "dnd-table dnd-spells" });
     const h = t.createEl("tr");
     ["Prep.", "Spell", "Level", "School", "Time", "Range", "", "From", ""].forEach((x) => h.createEl("th", { text: x }));
-    let lastPrep: boolean | null = null;
-    for (const row of rows) {
+    spellRows(t, 9, rows, (row) => row.entry.prepared || !!row.granted || row.data!.level === 0, (tr, row) => {
       const sp = row.data!;
-      const prep = row.entry.prepared || !!row.granted || sp.level === 0;
-      if (lastPrep !== null && lastPrep !== prep) { const sep = t.createEl("tr", { cls: "dnd-sep" }); sep.createEl("td", { attr: { colspan: "9" }, text: "Not prepared" }); }
-      lastPrep = prep;
-      const tr = t.createEl("tr", { cls: prep ? "is-prepared" : "" });
       const pc = tr.createEl("td");
       if (row.granted) pc.createSpan({ text: "★", attr: { "aria-label": `Always prepared (${row.granted})` } });
       else if (sp.level === 0) pc.createSpan({ text: "∞", attr: { "aria-label": "Cantrip" } });
@@ -83,7 +68,7 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
       else from.setText(casters.find((c) => c.classId === row.entry.source)?.name || "");
       const del = tr.createEl("td");
       if (!row.granted) iconButton(del, "x", "Remove spell", () => sheet.change((x) => { x.spells = x.spells.filter((y) => y.id !== sp.id); }));
-    }
+    });
   });
 }
 
@@ -101,17 +86,7 @@ export function manualSpellcasting(sheet: CharacterSheet, root: HTMLElement, d: 
     // slots: only what the player adds
     const st = el.createDiv({ cls: "dnd-slots" });
     st.createDiv({ cls: "dnd-subtitle", text: "Spell Slots" });
-    const grid = st.createDiv({ cls: "dnd-slot-grid" });
-    const max = s.slots.adjust.map((n) => Math.max(0, n || 0));
-    for (let i = 0; i < 9; i++) {
-      if (!max[i] && !max.slice(i).some((n) => n > 0)) continue;
-      const cell = grid.createDiv({ cls: "dnd-slot" });
-      cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
-      const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
-      for (let k = 0; k < max[i]; k++) checkbox(boxes, s.slots.used[i] > k, (v) => sheet.change((x) => { x.slots.used[i] = v ? k + 1 : k; }), "Used");
-      stepper(cell, max[i], (v) => sheet.change((x) => { x.slots.adjust[i] = Math.max(0, v); }), { min: 0, title: "Slots of this level" });
-    }
-    select(st.createDiv({ cls: "dnd-row" }), ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") sheet.change((x) => { x.slots.adjust[parseInt(v)] = Math.max(0, x.slots.adjust[parseInt(v)] || 0) + 1; }); }, "+ Add a slot of level…");
+    slotGrid(sheet, st, s.slots.adjust.map((n) => Math.max(0, n || 0)), () => false, "Slots of this level", (x, i, v) => { x.slots.adjust[i] = Math.max(0, v); }, (x, i) => { x.slots.adjust[i] = Math.max(0, x.slots.adjust[i] || 0) + 1; });
     // spell list
     const list = el.createDiv({ cls: "dnd-spell-list" });
     const head = list.createDiv({ cls: "dnd-row" });
@@ -121,12 +96,7 @@ export function manualSpellcasting(sheet: CharacterSheet, root: HTMLElement, d: 
     const t = list.createDiv({ cls: "dnd-table-wrap" }).createEl("table", { cls: "dnd-table dnd-spells dnd-manual-spells" });
     const h = t.createEl("tr");
     ["Prep.", "Spell", "Level", ""].forEach((x) => h.createEl("th", { text: x }));
-    let lastPrep: boolean | null = null;
-    for (const { sp, i } of order) {
-      const prep = sp.prepared || sp.level === 0;
-      if (lastPrep !== null && lastPrep !== prep) { const sep = t.createEl("tr", { cls: "dnd-sep" }); sep.createEl("td", { attr: { colspan: "4" }, text: "Not prepared" }); }
-      lastPrep = prep;
-      const tr = t.createEl("tr", { cls: prep ? "is-prepared" : "" });
+    spellRows(t, 4, order, ({ sp }) => sp.prepared || sp.level === 0, (tr, { sp, i }) => {
       const pc = tr.createEl("td");
       if (sp.level === 0) pc.createSpan({ text: "∞", attr: { "aria-label": "Cantrip" } });
       else checkbox(pc, sp.prepared, (v) => sheet.change((x) => { x.manual.spells[i].prepared = v; }));
@@ -135,7 +105,7 @@ export function manualSpellcasting(sheet: CharacterSheet, root: HTMLElement, d: 
       richText(sheet, tr.createEl("td"), sp.name, (v) => sheet.change((x) => { x.manual.spells[i].name = v; }), { placeholder: "Spell name (type [[ to link a note)", singleLine: true, autoEdit });
       select(tr.createEl("td"), ORD.map((o, l) => ({ value: String(l), label: o })), String(sp.level), (v) => sheet.change((x) => { x.manual.spells[i].level = parseInt(v) || 0; }), "—");
       iconButton(tr.createEl("td"), "x", "Remove spell", () => sheet.change((x) => { x.manual.spells.splice(i, 1); }));
-    }
+    });
   });
 }
 
@@ -149,4 +119,35 @@ export function addSpell(sheet: CharacterSheet, casters: E.CasterInfo[], slots: 
     const src = casters.find((c) => E.onSpellList(c, sp))?.classId || casters[0]?.classId;
     x.spells.push({ id: sp.id, prepared: false, source: src });
   }), any ? "Search all spells…" : `Search ${[...lists].join("/") || "all"} spells up to ${ORD[maxLvl] || "cantrip"} level…`, (sp) => `${sp.school} · ${sp.classes.join(", ")}`).open();
+}
+
+/**
+ * The spell slots of each level, a box per slot (checked: used) and a stepper for how many there are,
+ * then a menu to add a slot of a level not shown. A level is shown from the lowest one with slots up
+ * to the highest (or when `shown` says so). `setMax` and `addSlot` change the state.
+ */
+function slotGrid(sheet: CharacterSheet, parent: HTMLElement, max: number[], shown: (i: number) => boolean, stepTitle: string,
+  setMax: (x: CharState, i: number, v: number) => void, addSlot: (x: CharState, i: number) => void) {
+  const s = sheet.v;
+  const grid = parent.createDiv({ cls: "dnd-slot-grid" });
+  for (let i = 0; i < 9; i++) {
+    if (!shown(i) && !max.slice(i).some((n) => n > 0)) continue;
+    const cell = grid.createDiv({ cls: "dnd-slot" });
+    cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
+    const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
+    for (let k = 0; k < max[i]; k++) checkbox(boxes, s.slots.used[i] > k, (v) => sheet.change((x) => { x.slots.used[i] = v ? k + 1 : k; }), "Used");
+    stepper(cell, max[i], (v) => sheet.change((x) => setMax(x, i, v)), { min: 0, title: stepTitle });
+  }
+  select(parent.createDiv({ cls: "dnd-row" }), ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") sheet.change((x) => addSlot(x, parseInt(v))); }, "+ Add a slot of level…");
+}
+
+/** The rows of a spell table, `cols` wide: the prepared spells come first, then a "Not prepared" row before the others. */
+function spellRows<T>(table: HTMLElement, cols: number, rows: T[], prepared: (row: T) => boolean, build: (tr: HTMLElement, row: T) => void) {
+  let lastPrep: boolean | null = null;
+  for (const row of rows) {
+    const prep = prepared(row);
+    if (lastPrep !== null && lastPrep !== prep) table.createEl("tr", { cls: "dnd-sep" }).createEl("td", { attr: { colspan: String(cols) }, text: "Not prepared" });
+    lastPrep = prep;
+    build(table.createEl("tr", { cls: prep ? "is-prepared" : "" }), row);
+  }
 }

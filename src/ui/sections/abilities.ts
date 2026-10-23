@@ -76,10 +76,8 @@ export function abilityEditor(sheet: CharacterSheet, el: HTMLElement, d: E.Deriv
       if (opts.length > 1) select(labeled(rc, "Racial bonus"), opts.map((o, i) => ({ value: String(i), label: o.label })), String(optIdx), (v) => sheet.change((x) => { x.raceAbility = { option: parseInt(v) || 0, picks: [] }; }));
       else labeled(rc, "Racial bonus").setText(opts[0].label || "—");
       const opt = opts[optIdx];
-      let pi = 0;
-      for (const ch of opt.choose) for (let n = 0; n < ch.count; n++, pi++) {
-        const idx = pi;
-        select(labeled(rc, `+${ch.amount}`), ch.from.map((a) => ({ value: a, label: ABILITY_NAMES[a], disabled: s.raceAbility.picks.includes(a) && s.raceAbility.picks[idx] !== a })), s.raceAbility.picks[idx] || "", (v) => sheet.change((x) => { x.raceAbility.picks[idx] = v as Ability; }), "Choose…");
+      for (const { from, amount, index } of E.pickSlots(opt.choose)) {
+        select(labeled(rc, `+${amount}`), from.map((a) => ({ value: a, label: ABILITY_NAMES[a], disabled: s.raceAbility.picks.includes(a) && s.raceAbility.picks[index] !== a })), s.raceAbility.picks[index] || "", (v) => sheet.change((x) => { x.raceAbility.picks[index] = v as Ability; }), "Choose…");
       }
     }
     const { slots, taken } = d.asi;

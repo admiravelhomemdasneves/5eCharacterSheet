@@ -245,11 +245,22 @@ export function raceAbilityOptions(r: Rules, s: CharState): AbilityOption[] {
   const sub = r.subrace(s), raceOpts = r.race(s)?.ability || [];
   if (!sub?.ability?.length) return raceOpts;
   if (sub.overwriteAbility || !raceOpts.length) return sub.ability;
-  return raceOpts.flatMap((ro) => sub.ability!.map((so) => {
-    const fixed = { ...ro.fixed };
-    for (const [k, v] of Object.entries(so.fixed)) fixed[k as Ability] = (fixed[k as Ability] || 0) + (v || 0);
-    return { label: [ro.label, so.label].filter(Boolean).join(", "), fixed, choose: [...ro.choose, ...so.choose] };
-  }));
+  return raceOpts.flatMap((ro) => sub.ability!.map((so) => combineAbilityOptions(ro, so)));
+}
+/** A race's ability option and one of its subrace's as one: fixed bonuses added, the subrace's choices after the race's. */
+export function combineAbilityOptions(ro: AbilityOption, so: AbilityOption): AbilityOption {
+  const fixed = { ...ro.fixed };
+  for (const [k, v] of Object.entries(so.fixed)) fixed[k as Ability] = (fixed[k as Ability] || 0) + (v || 0);
+  return { label: [ro.label, so.label].filter(Boolean).join(", "), fixed, choose: [...ro.choose, ...so.choose] };
+}
+/**
+ * The single picks an option's choices ask for, in the order they are stored in (`picks` of the race
+ * or feat): a choice of 2 abilities at +1 is two picks. `index` is the pick's place in `picks`.
+ */
+export function pickSlots(choose: AbilityOption["choose"]): { from: Ability[]; amount: number; index: number }[] {
+  const out: { from: Ability[]; amount: number; index: number }[] = [];
+  for (const ch of choose) for (let n = 0; n < ch.count; n++) out.push({ from: ch.from, amount: ch.amount, index: out.length });
+  return out;
 }
 /** `feature` = increases from class features. Scores are not capped: `max` is the ability's maximum
  *  (20, or more from features like Primal Champion) and `over` flags a total above it. */
@@ -278,9 +289,7 @@ export function abilityScores(r: Rules, s: CharState, features = classFeatures(r
   const opt = opts[Math.min(s.raceAbility.option, Math.max(0, opts.length - 1))];
   if (opt) {
     for (const [k, v] of Object.entries(opt.fixed)) raceBonus[k as Ability] += v || 0;
-    // picks are stored flat, in order of the option's choose groups
-    let i = 0;
-    for (const ch of opt.choose) for (let n = 0; n < ch.count; n++, i++) { const a = s.raceAbility.picks[i]; if (a) raceBonus[a] += ch.amount; }
+    for (const p of pickSlots(opt.choose)) { const a = s.raceAbility.picks[p.index]; if (a) raceBonus[a] += p.amount; }
   }
   const featBonus = zeroAbilities();
   const asiBonus = zeroAbilities();
@@ -291,8 +300,7 @@ export function abilityScores(r: Rules, s: CharState, features = classFeatures(r
     const o = f?.ability?.[0];
     if (!o) continue;
     for (const [k, v] of Object.entries(o.fixed)) featBonus[k as Ability] += v || 0;
-    let i = 0;
-    for (const ch of o.choose) for (let n = 0; n < ch.count; n++, i++) { const a = fe.picks[i]; if (a) featBonus[a] += ch.amount; }
+    for (const p of pickSlots(o.choose)) { const a = fe.picks[p.index]; if (a) featBonus[a] += p.amount; }
   }
   const boosts = featureAbilityBoosts(r, s, features);
   for (const a of ABILITIES) {
