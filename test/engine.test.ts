@@ -1,20 +1,22 @@
-import { test as nodeTest } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import * as E from "../src/rules/engine.ts";
-import { hasPersonal, personalData, VAULT } from "./helpers.ts";
+import { hasPersonal, personalData, srdData, VAULT } from "./helpers.ts";
 
-// These tests use the personal (non-SRD) dataset; they are skipped where it does not exist.
-const data: any = personalData() ?? { races: [], classes: [], backgrounds: [], feats: [], spells: [], items: [], meta: { sources: {} } };
-const test = (name: string, fn: () => void) => nodeTest(name, { skip: !hasPersonal && "personal dataset not available" }, fn);
+// The rules are tested on the SRD 5.1 data in the repository. The few tests that need entries the SRD
+// leaves out use the personal (non-SRD) dataset, and are skipped where it does not exist.
+const data: any = srdData();
 const r = new E.Rules(data);
+const personal: any = personalData();
+const personalTest = (name: string, fn: () => void) => test(name, { skip: !hasPersonal && "personal dataset not available" }, fn);
 const id = (list: { id: string; name: string; source: string }[], name: string, source = "PHB") => {
   const x = list.find((y) => y.name === name && y.source === source);
   assert.ok(x, `missing ${name} (${source})`);
   return x.id;
 };
-const cls = (name: string, level: number, extra: Partial<E.ClassEntry> = {}): E.ClassEntry => ({ id: id(data.classes, name), subclass: null, level, hpRolls: [], skills: [], ...extra });
+const cls = (name: string, level: number, extra: Partial<E.ClassEntry> = {}, d: any = data): E.ClassEntry => ({ id: id(d.classes, name), subclass: null, level, hpRolls: [], skills: [], ...extra });
 
 function hillDwarfWizard5() {
   const s = E.newCharacter("Test");
@@ -69,11 +71,12 @@ test("single-class half caster: paladin 3 has three 1st-level slots", () => {
   assert.deepEqual(E.spellSlots(r, s).max.slice(0, 2), [3, 0]);
 });
 
-test("eldritch knight 7 => 4/2 slots", () => {
+// the SRD has no third caster
+personalTest("eldritch knight 7 => 4/2 slots", () => {
   const s = E.newCharacter();
-  const f = data.classes.find((c: any) => c.name === "Fighter");
-  s.classes = [cls("Fighter", 7, { subclass: f.subclasses.find((x: any) => x.shortName === "Eldritch Knight").id })];
-  assert.deepEqual(E.spellSlots(r, s).max.slice(0, 3), [4, 2, 0]);
+  const f = personal.classes.find((c: any) => c.name === "Fighter");
+  s.classes = [cls("Fighter", 7, { subclass: f.subclasses.find((x: any) => x.shortName === "Eldritch Knight").id }, personal)];
+  assert.deepEqual(E.spellSlots(new E.Rules(personal), s).max.slice(0, 3), [4, 2, 0]);
 });
 
 test("warlock pact slots are separate", () => {
@@ -136,12 +139,13 @@ test("class features up to level, with subclass features replacing placeholders"
 
 test("skills: background proficiencies and expertise", () => {
   const s = hillDwarfWizard5();
-  s.background = id(data.backgrounds, "Sage");
+  s.background = id(data.backgrounds, "Acolyte");
   const sk = E.skillProficiencies(r, s);
-  assert.equal(sk.arcana, 1);
-  assert.equal(sk.history, 1);
-  s.skills.arcana = 2;
-  assert.equal(E.skillBonus(r, s, "arcana"), 3 + 2 * 3);
+  assert.equal(sk.insight, 1);
+  assert.equal(sk.religion, 1);
+  assert.equal(sk.arcana, 0);
+  s.skills.religion = 2;
+  assert.equal(E.skillBonus(r, s, "religion"), 3 + 2 * 3);
 });
 
 test("multiclass requirements", () => {
@@ -164,7 +168,7 @@ test("ASI taken as an entry in Feats: +1/+1 or +2, counted against class ASIs", 
   assert.equal(E.abilityScores(r, s).int.total, 18);
   assert.equal(E.asiSlots(r, s), 1);
   assert.equal(E.asiTaken(s), 1);
-  s.feats.push({ id: id(data.feats, "Alert"), picks: [], free: true });
+  s.feats.push({ id: id(data.feats, "Grappler"), picks: [], free: true });
   assert.equal(E.asiTaken(s), 1); // bonus (racial) feats don't use an ASI
   assert.ok(!E.pendingChoices(r, s).some((p) => /Ability Score Improvement/.test(p)));
 });
@@ -178,8 +182,9 @@ test("old sheets with ASI points on the scores are migrated to ASI entries", () 
   assert.equal(E.abilityScores(r, s).dex.total, 15);
 });
 
-test("every generated link points to an existing compendium note", () => {
+personalTest("every generated link points to an existing compendium note", () => {
   const vault = VAULT;
+  const data = personal;
   const missing: string[] = [];
   const check = (l: string | null) => { if (!l) return; const p = path.join(vault, l.split("#")[0] + ".md"); if (!fs.existsSync(p)) missing.push(l); };
   for (const k of ["races", "classes", "backgrounds", "feats", "spells", "items"]) for (const x of data[k]) check(x.link);

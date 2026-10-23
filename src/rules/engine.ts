@@ -186,17 +186,48 @@ export function manualCaster(s: CharState, scores: Record<Ability, AbilityBreakd
 }
 
 // ------------------------------------------------------------------ lookups
+/** first entry for each key, like `list.find` on that key */
+function indexBy<T>(list: T[], key: (x: T) => string): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const x of list) { const k = key(x); if (!m.has(k)) m.set(k, x); }
+  return m;
+}
+const byId = <T extends { id: string }>(list: T[]) => indexBy(list, (x) => x.id);
+/** The rules data and lookups into it, indexed once: the data must not change after this is made. */
 export class Rules {
-  data: Compendium;
-  constructor(data: Compendium) { this.data = data; }
-  race(s: CharState) { return this.data.races.find((r) => r.id === s.race) || null; }
+  readonly data: Compendium;
+  private races: Map<string, RaceData>;
+  private backgrounds: Map<string, BackgroundData>;
+  private classes: Map<string, ClassData>;
+  private spells: Map<string, SpellData>;
+  private items: Map<string, ItemData>;
+  private feats: Map<string, FeatData>;
+  private spellsByName: Map<string, SpellData>;
+  private spellsByNameSource: Map<string, SpellData>;
+  constructor(data: Compendium) {
+    this.data = data;
+    this.races = byId(data.races);
+    this.backgrounds = byId(data.backgrounds);
+    this.classes = byId(data.classes);
+    this.spells = byId(data.spells);
+    this.items = byId(data.items);
+    this.feats = byId(data.feats);
+    this.spellsByName = indexBy(data.spells, (x) => x.name.toLowerCase());
+    this.spellsByNameSource = indexBy(data.spells, (x) => `${x.name.toLowerCase()}|${x.source.toLowerCase()}`);
+  }
+  race(s: CharState) { return (s.race && this.races.get(s.race)) || null; }
   subrace(s: CharState) { return this.race(s)?.subraces.find((r) => r.id === s.subrace) || null; }
-  background(s: CharState) { return this.data.backgrounds.find((b) => b.id === s.background) || null; }
-  cls(id: string) { return this.data.classes.find((c) => c.id === id) || null; }
+  background(s: CharState) { return (s.background && this.backgrounds.get(s.background)) || null; }
+  cls(id: string) { return this.classes.get(id) || null; }
   subclass(e: ClassEntry) { return this.cls(e.id)?.subclasses.find((x) => x.id === e.subclass) || null; }
-  spell(id: string) { return this.data.spells.find((x) => x.id === id) || null; }
-  item(id: string | null) { return id ? this.data.items.find((x) => x.id === id) || null : null; }
-  feat(id: string) { return this.data.feats.find((x) => x.id === id) || null; }
+  spell(id: string) { return this.spells.get(id) || null; }
+  item(id: string | null) { return (id && this.items.get(id)) || null; }
+  feat(id: string) { return this.feats.get(id) || null; }
+  /** a spell by name (any case), from `source` when given and there is one from there */
+  spellNamed(name: string, source?: string) {
+    const n = name.toLowerCase();
+    return (source && this.spellsByNameSource.get(`${n}|${source.toLowerCase()}`)) || this.spellsByName.get(n) || null;
+  }
 }
 
 // Pseudo-feat id used for an Ability Score Improvement chosen instead of a feat
@@ -605,8 +636,7 @@ export function grantedSpells(r: Rules, s: CharState): { id: string; why: string
   const out: { id: string; why: string }[] = [];
   const find = (raw: string) => {
     const [name, src] = String(raw).replace(/#c$/, "").split("|");
-    return r.data.spells.find((x) => x.name.toLowerCase() === name.toLowerCase() && (!src || x.source.toLowerCase() === src.toLowerCase()))
-      || r.data.spells.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    return r.spellNamed(name, src);
   };
   const take = (block: Record<string, unknown> | undefined, upTo: number, why: string) => {
     if (!block) return;

@@ -30,14 +30,14 @@ test("SRD sheet works without a compendium (no links)", () => {
   const data = new Linker(null, []).attach(srdData());
   const rr = new E.Rules(data);
   const s = E.newCharacter("Srd");
-  const dwarf = data.races.find((x: any) => x.name === "Dwarf");
-  s.race = dwarf.id; s.subrace = dwarf.subraces.find((x: any) => x.name === "Hill").id;
+  const dwarf = data.races.find((x: any) => x.name === "Dwarf")!;
+  s.race = dwarf.id; s.subrace = dwarf.subraces.find((x: any) => x.name === "Hill")!.id;
   s.abilities.method = "manual";
   s.abilities.base = { str: 8, dex: 14, con: 13, int: 16, wis: 12, cha: 10 };
-  s.classes = [{ id: data.classes.find((c: any) => c.name === "Wizard").id, subclass: null, level: 5, hpRolls: [], skills: [] }];
+  s.classes = [{ id: data.classes.find((c: any) => c.name === "Wizard")!.id, subclass: null, level: 5, hpRolls: [], skills: [] }];
   assert.equal(E.hpBreakdown(rr, s).max, 37);
   assert.deepEqual(E.spellSlots(rr, s).max.slice(0, 3), [4, 3, 2]);
-  assert.equal(data.races.find((x: any) => x.name === "Dwarf").link, null);
+  assert.equal(dwarf.link, null);
   assert.equal(new Linker(null, []).text("a ⟦spells|Fireball|phb|fireball⟧ b ⟦rule:conditions|Blinded||blinded⟧"), "a fireball b blinded");
 });
 
