@@ -69,15 +69,13 @@ export class CharacterSheet extends MarkdownRenderChild {
   // ---------------------------------------------------------------- persistence
   private change(mutate: (s: CharState) => void, rerender = true) {
     mutate(this.s);
+    // current HP is not used by derive(), so the render below can use it after the HP check
+    const d = this.derive();
     // a lower maximum (level down, CON down, manual edit) must not leave current HP above it
-    if (this.s.hp.current != null) {
-      const view = this.manual ? E.manualView(this.s) : this.s;
-      const max = this.manual ? this.s.manual.maxHp : E.hpBreakdown(this.r, view).max;
-      this.s.hp.current = E.currentHp(this.s, max);
-    }
+    if (this.s.hp.current != null) this.s.hp.current = E.currentHp(this.s, this.manual ? this.s.manual.maxHp : d.hp.max);
     this.plugin.states.set(this.sourcePath, this.s);
     this.plugin.requestSave(this.sourcePath);
-    if (rerender) this.render();
+    if (rerender) this.render(d);
     // other sheets of the same note (another pane) show the change too
     this.plugin.reloadSheets(this.sourcePath, this);
   }
@@ -90,35 +88,38 @@ export class CharacterSheet extends MarkdownRenderChild {
     root.toggleClass("dnd-theme-obsidian", st.theme === "obsidian");
     root.setCssProps({ "--dnd-accent": st.theme === "custom" ? st.customAccent : "" });
   }
-  render() {
+  /** What the rules engine reads (the state, or its manual-mode view) and everything worked out from it. */
+  private derive() {
+    this.v = this.manual ? E.manualView(this.s) : this.s;
+    return E.derive(this.r, this.v);
+  }
+  /** `d`: this state's derive(), when the caller already has it */
+  render(d = this.derive()) {
     const root = this.containerEl;
     root.empty();
     if (this.renderScope) this.removeChild(this.renderScope);
     this.renderScope = this.addChild(new Component());
     root.addClass("dnd-sheet");
     this.applyTheme(root);
-    this.v = this.manual ? E.manualView(this.s) : this.s;
-    const s = this.v, r = this.r;
-    const sc = E.abilityScores(r, s);
     this.hiddenSectionsMenu(root);
-    this.header(root, sc);
-    const pending = this.manual ? [] : E.pendingChoices(r, s);
+    this.header(root, d);
+    const pending = this.manual ? [] : d.pending;
     if (pending.length) this.section(root, "creation", `Character Creation — ${pending.length} pending`, (el) => {
       const ul = el.createEl("ul", { cls: "dnd-pending" });
       pending.forEach((p) => ul.createEl("li", { text: p }));
     });
-    this.abilities(root, sc);
+    this.abilities(root, d);
     // Combat and Skills share a row; a hidden one leaves no empty column (see .dnd-combat-row)
     const grid = root.createDiv({ cls: "dnd-grid-2 dnd-combat-row" });
-    if (!this.isHidden("combat")) this.combat(grid.createDiv(), sc);
-    if (!this.isHidden("skills")) this.skills(grid.createDiv(), sc);
+    if (!this.isHidden("combat")) this.combat(grid.createDiv(), d);
+    if (!this.isHidden("skills")) this.skills(grid.createDiv(), d);
     if (!grid.childElementCount) grid.remove();
-    this.attacks(root, sc);
+    this.attacks(root, d);
     this.raceFeatures(root);
-    this.classFeaturesSection(root);
-    this.feats(root);
-    this.spellcasting(root, sc);
-    this.inventory(root, sc);
+    this.classFeaturesSection(root, d);
+    this.feats(root, d);
+    this.spellcasting(root, d);
+    this.inventory(root, d);
     this.proficiencies(root);
     this.personality(root);
     this.biography(root);
@@ -185,8 +186,8 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
 
   // ---------------------------------------------------------------- header
-  private header(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
-    const s = this.v, r = this.r;
+  private header(root: HTMLElement, d: E.Derived) {
+    const s = this.v, r = this.r, sc = d.scores;
     const head = root.createDiv({ cls: "dnd-header" });
     // the remove button sits outside the round portrait so the circle does not clip it
     const pwrap = head.createDiv({ cls: "dnd-portrait-wrap" });
@@ -207,8 +208,8 @@ export class CharacterSheet extends MarkdownRenderChild {
     const row1 = info.createDiv({ cls: "dnd-row dnd-fill" });
     textInput(labeled(row1, "Player"), s.player, (v) => this.change((x) => { x.player = v; }), "Player name");
     select(labeled(row1, "Alignment"), E.ALIGNMENTS.map((a) => ({ value: a, label: a })), s.alignment, (v) => this.change((x) => { x.alignment = v; }));
-    const lvl = E.totalLevel(s);
-    if (this.manual) { this.manualHeader(info, lvl); return; }
+    const lvl = d.level;
+    if (this.manual) { this.manualHeader(info, d); return; }
 
     const row2 = info.createDiv({ cls: "dnd-row dnd-fill" });
     const raceEl = labeled(row2, "Race");
@@ -230,7 +231,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     // summary sits between race/background and the classes
     const sumRow = info.createDiv({ cls: "dnd-summary" });
     sumRow.createSpan({ text: `Level ${lvl || "—"}` });
-    sumRow.createSpan({ text: `Proficiency Bonus ${fmtMod(E.proficiencyBonus(lvl))}` });
+    sumRow.createSpan({ text: `Proficiency Bonus ${fmtMod(d.pb)}` });
     const sizes = race?.size.join("/") || "";
     if (sizes) sumRow.createSpan({ text: sizes });
 
@@ -259,12 +260,13 @@ export class CharacterSheet extends MarkdownRenderChild {
     });
     this.pick(add, addOpts, "", (v) => { if (v) this.change((st) => { st.classes.push({ id: v, subclass: null, level: 1, hpRolls: [], skills: [] }); }); }, s.classes.length ? "+ Add class (multiclass)…" : "Choose class…", false, "dnd-add-class");
     if (s.classes.length > 1) {
-      const bad = s.classes.map((e) => r.cls(e.id)).filter((c) => c && !E.multiclassRequirementsMet(r, c, sc).ok);
-      if (bad.length) add.createDiv({ cls: "dnd-warn", text: `Multiclass requirements not met: ${bad.map((c) => `${c!.name} (${E.multiclassRequirementsMet(r, c!, sc).text})`).join(", ")}` });
+      const unmet = s.classes.flatMap((e) => { const c = r.cls(e.id), req = c && E.multiclassRequirementsMet(r, c, sc); return c && req && !req.ok ? [`${c.name} (${req.text})`] : []; });
+      if (unmet.length) add.createDiv({ cls: "dnd-warn", text: `Multiclass requirements not met: ${unmet.join(", ")}` });
     }
   }
   // Manual mode: race, background and classes are typed in (no rules data)
-  private manualHeader(info: HTMLElement, lvl: number) {
+  private manualHeader(info: HTMLElement, d: E.Derived) {
+    const lvl = d.level;
     const m = this.s.manual;
     const row2 = info.createDiv({ cls: "dnd-row dnd-fill" });
     for (const [k, label] of [["race", "Race"], ["subrace", "Subrace"], ["background", "Background"]] as const) {
@@ -272,7 +274,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     }
     const sumRow = info.createDiv({ cls: "dnd-summary" });
     sumRow.createSpan({ text: `Level ${lvl || "—"}` });
-    sumRow.createSpan({ text: `Proficiency Bonus ${fmtMod(E.proficiencyBonus(lvl))}` });
+    sumRow.createSpan({ text: `Proficiency Bonus ${fmtMod(d.pb)}` });
     const classes = info.createDiv({ cls: "dnd-classes" });
     m.classes.forEach((c, i) => {
       const row = classes.createDiv({ cls: "dnd-row dnd-fill dnd-class-row" });
@@ -297,8 +299,8 @@ export class CharacterSheet extends MarkdownRenderChild {
   private sourceName(src: string) { return this.r.data.meta.sources[src] || src; }
 
   // ---------------------------------------------------------------- abilities & saves
-  private abilities(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
-    const s = this.v, r = this.r;
+  private abilities(root: HTMLElement, d: E.Derived) {
+    const s = this.v, sc = d.scores;
     const editing = !!s.ui.editing.abilities;
     this.section(root, "abilities", "Ability Scores", (el) => {
       const boxes = el.createDiv({ cls: `dnd-abilities${editing ? " is-editing" : ""}` });
@@ -322,13 +324,12 @@ export class CharacterSheet extends MarkdownRenderChild {
         box.createDiv({ cls: "dnd-breakdown", text: `${b.base} base${formula} · max ${b.max}` });
         if (b.over) box.createDiv({ cls: "dnd-warn", text: `Above the maximum of ${b.max}` });
       }
-      if (editing) this.abilityEditor(el);
+      if (editing) this.abilityEditor(el, d);
 
       // saving throws
       const saves = el.createDiv({ cls: "dnd-saves" });
       saves.createDiv({ cls: "dnd-subtitle", text: "Saving Throws" });
-      const prof = E.saveProficiencies(r, s);
-      const pb = E.proficiencyBonus(E.totalLevel(s));
+      const prof = d.saves, pb = d.pb;
       const row = saves.createDiv({ cls: "dnd-save-row" });
       for (const a of ABILITIES) {
         const cell = row.createDiv({ cls: "dnd-save" });
@@ -342,7 +343,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     });
   }
   // Generation method, point buy and racial bonus choices: only shown in edit mode
-  private abilityEditor(el: HTMLElement) {
+  private abilityEditor(el: HTMLElement, d: E.Derived) {
     const s = this.v, r = this.r;
     {
       const ctl = el.createDiv({ cls: "dnd-row" });
@@ -375,19 +376,19 @@ export class CharacterSheet extends MarkdownRenderChild {
           select(labeled(rc, `+${ch.amount}`), ch.from.map((a) => ({ value: a, label: ABILITY_NAMES[a], disabled: s.raceAbility.picks.includes(a) && s.raceAbility.picks[idx] !== a })), s.raceAbility.picks[idx] || "", (v) => this.change((x) => { x.raceAbility.picks[idx] = v as Ability; }), "Choose…");
         }
       }
-      const free = E.asiSlots(r, s) - E.asiTaken(s);
-      if (E.asiSlots(r, s)) el.createDiv({ cls: free < 0 ? "dnd-warn" : "dnd-hint", text: `Ability Score Improvements: ${E.asiTaken(s)}/${E.asiSlots(r, s)} used — add them (or feats) in the Feats section.` });
+      const { slots, taken } = d.asi;
+      if (slots) el.createDiv({ cls: taken > slots ? "dnd-warn" : "dnd-hint", text: `Ability Score Improvements: ${taken}/${slots} used — add them (or feats) in the Feats section.` });
     }
   }
 
   // ---------------------------------------------------------------- combat
-  private combat(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
-    const s = this.v, r = this.r;
+  private combat(root: HTMLElement, d: E.Derived) {
+    const s = this.v, sc = d.scores;
     const man = this.manual, m = this.s.manual;
     this.section(root, "combat", "Combat", (el) => {
       // manual mode: AC, max HP and speed are typed in instead of computed
-      const hp = man ? { max: m.maxHp } : E.hpBreakdown(r, s, sc);
-      const ac = man ? { value: m.ac, how: "", stealthDisadvantage: false } : E.armorClass(r, s, sc);
+      const hp = man ? { max: m.maxHp } : d.hp;
+      const ac = man ? { value: m.ac, how: "", stealthDisadvantage: false } : d.ac;
       const cur = E.currentHp(s, hp.max);
       const stats = el.createDiv({ cls: "dnd-combat-stats" });
       const acBox = stats.createDiv({ cls: "dnd-stat" });
@@ -396,12 +397,12 @@ export class CharacterSheet extends MarkdownRenderChild {
       acBox.createDiv({ cls: "dnd-breakdown", text: ac.how + (ac.stealthDisadvantage ? " · Stealth disadv." : "") });
       if (man) stepper(acBox, m.ac, (v) => this.change((x) => { x.manual.ac = v; }), { min: 0, title: "Armor Class" });
       else stepper(acBox, s.ac.adjust, (v) => this.change((x) => { x.ac.adjust = v; }), { title: "AC adjustment" });
-      const ini = E.initiative(r, s, sc);
+      const ini = d.initiative;
       const iBox = stats.createDiv({ cls: "dnd-stat" });
       iBox.createDiv({ cls: "dnd-stat-label", text: "Initiative" });
       this.rollable(iBox, fmtMod(ini), d20(ini), "Initiative", "dnd-stat-value");
       stepper(iBox, s.initiativeAdjust, (v) => this.change((x) => { x.initiativeAdjust = v; }), { title: "Initiative adjustment" });
-      const sp: Record<string, number> = man ? { walk: m.speed } : E.speeds(r, s);
+      const sp: Record<string, number> = man ? { walk: m.speed } : d.speeds;
       const spBox = stats.createDiv({ cls: "dnd-stat dnd-stat-wide" });
       spBox.createDiv({ cls: "dnd-stat-label", text: "Speed" });
       spBox.createDiv({ cls: "dnd-stat-value", text: `${sp.walk} ft.` });
@@ -427,8 +428,8 @@ export class CharacterSheet extends MarkdownRenderChild {
       for (let i = 0; i < 3; i++) checkbox(dsRow, s.deathSaves.fail > i, (v) => this.change((x) => { x.deathSaves.fail = v ? i + 1 : i; }));
       this.rollable(dsRow, "🎲", "1d20", "Death save");
       // last grid row: Hit Dice | Long Rest
-      const hd = man ? parseHitDice(m.hitDice) : E.hitDice(r, s);
-      const hdTotal = Object.values(hd).reduce((a, b) => a + b, 0) || E.totalLevel(s);
+      const hd = man ? parseHitDice(m.hitDice) : d.hitDice;
+      const hdTotal = Object.values(hd).reduce((a, b) => a + b, 0) || d.level;
       const hdEl = labeled(hpGrid, "Hit Dice used");
       stepper(hdEl, s.hitDiceUsed, (v) => this.change((x) => { x.hitDiceUsed = v; }), { min: 0, max: hdTotal, total: hdTotal, title: Object.entries(hd).map(([d, n]) => `${n}${d}`).join(" + ") });
       button(labeled(hpGrid, "Rest"), "Long Rest", () => this.change((x) => {
@@ -439,7 +440,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       // roll a hit die (one button per die type when multiclassed)
       const hdRoll = hpEl.createDiv({ cls: "dnd-row dnd-hd-roll" });
       if (man) this.richText(labeled(hdRoll, "Hit Dice"), m.hitDice, (v) => this.change((x) => { x.manual.hitDice = v; }), { placeholder: "e.g. 3d8 + 2d10", singleLine: true });
-      for (const [d, n] of Object.entries(hd)) this.rollable(hdRoll, `🎲 Roll ${d}`, `1${d}${fmtMod(mod(sc.con.total))}`, `Hit die (${d})`).setAttr("aria-label", `Roll a hit die: 1${d}${fmtMod(mod(sc.con.total))} (${n}${d} total)`);
+      for (const [die, n] of Object.entries(hd)) this.rollable(hdRoll, `🎲 Roll ${die}`, `1${die}${fmtMod(mod(sc.con.total))}`, `Hit die (${die})`).setAttr("aria-label", `Roll a hit die: 1${die}${fmtMod(mod(sc.con.total))} (${n}${die} total)`);
 
       const conds = el.createDiv({ cls: "dnd-chips" });
       for (const c of E.CONDITIONS) {
@@ -448,25 +449,23 @@ export class CharacterSheet extends MarkdownRenderChild {
         chip.onclick = () => this.change((x) => { x.conditions = on ? x.conditions.filter((y) => y !== c) : [...x.conditions, c]; });
       }
       const senses = el.createDiv({ cls: "dnd-hint" });
-      const dv = E.darkvision(r, s);
-      const pb = E.proficiencyBonus(E.totalLevel(s));
-      senses.setText([dv ? `Darkvision ${dv} ft.` : "", `Passive Perception ${10 + E.skillBonus(r, s, "perception", sc)}`, `Passive Investigation ${10 + E.skillBonus(r, s, "investigation", sc)}`, `Passive Insight ${10 + E.skillBonus(r, s, "insight", sc)}`, `PB ${fmtMod(pb)}`].filter(Boolean).join(" · "));
+      const dv = d.darkvision;
+      senses.setText([dv ? `Darkvision ${dv} ft.` : "", `Passive Perception ${10 + d.skills.perception}`, `Passive Investigation ${10 + d.skills.investigation}`, `Passive Insight ${10 + d.skills.insight}`, `PB ${fmtMod(d.pb)}`].filter(Boolean).join(" · "));
     });
   }
 
   // ---------------------------------------------------------------- skills
-  private skills(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
+  private skills(root: HTMLElement, d: E.Derived) {
     const s = this.v, r = this.r;
     this.section(root, "skills", "Skills", (el) => {
-      const prof = E.skillProficiencies(r, s);
-      const auto = E.autoSkillSources(r, s);
+      const prof = d.skillProf, auto = d.skillSources;
       const list = el.createDiv({ cls: "dnd-skill-list" });
       for (const [k, a] of Object.entries(E.SKILLS)) {
         const row = list.createDiv({ cls: "dnd-skill" });
         const lvl = prof[k];
         const dot = row.createSpan({ cls: `dnd-prof dnd-prof-${lvl}`, text: ["○", "●", "◉"][lvl], attr: { "aria-label": ["Not proficient", "Proficient", "Expertise"][lvl] + " — click to change" } });
         dot.onclick = () => this.change((x) => { x.skills[k] = (((lvl + 1) % 3) as E.ProfLevel); });
-        const bonus = E.skillBonus(r, s, k, sc);
+        const bonus = d.skills[k];
         this.rollable(row, fmtMod(bonus), d20(bonus), title(k), "dnd-skill-bonus");
         this.link(row, title(k), this.plugin.linker.rule("skills", title(k)), "dnd-skill-name");
         row.createSpan({ cls: "dnd-skill-abil", text: a.toUpperCase() });
@@ -516,8 +515,8 @@ export class CharacterSheet extends MarkdownRenderChild {
     };
   }
 
-  private attacks(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
-    const atk = E.attacks(this.r, this.s, sc);
+  private attacks(root: HTMLElement, d: E.Derived) {
+    const atk = d.attacks;
     this.section(root, "attacks", "Attacks", (el) => {
       if (!atk.length) {
         // shown even when empty (Sheet template); manual mode has no item data to list weapons from
@@ -563,17 +562,17 @@ export class CharacterSheet extends MarkdownRenderChild {
       this.customFeatures(el, "race", ctx);
     });
   }
-  private classFeaturesSection(root: HTMLElement) {
+  private classFeaturesSection(root: HTMLElement, d: E.Derived) {
     if (this.manual) {
       this.section(root, "class-features", "Class Features", (el) => this.bulletList(el, "class-features", (x) => x.manual.classFeatures, "Feature (e.g. **Second Wind** — 1d10 + level, short rest)…", "+ Add feature"));
       return;
     }
-    const s = this.v, r = this.r;
+    const s = this.v;
     this.section(root, "class-features", "Class Features", (el) => {
-      const groups = E.classFeatures(r, s);
+      const groups = d.features;
       const ctx: FeatureCtx = { own: new Set(), hidden: [] };
       if (!groups.length) el.createDiv({ cls: "dnd-hint", text: "Choose a class to see its features." });
-      const res = E.classResources(r, s);
+      const res = d.resources;
       if (res.length) {
         const rr = el.createDiv({ cls: "dnd-resources" });
         for (const x of res) {
@@ -688,13 +687,13 @@ export class CharacterSheet extends MarkdownRenderChild {
       this.change((x) => { x.customFeatures.push(f); });
     }, "dnd-small");
   }
-  private feats(root: HTMLElement) {
+  private feats(root: HTMLElement, d: E.Derived) {
     if (this.manual) {
       this.section(root, "feats", "Feats", (el) => this.bulletList(el, "feats", (x) => x.manual.feats, "Feat…", "+ Add feat"));
       return;
     }
     const s = this.v, r = this.r;
-    const slots = E.asiSlots(r, s), taken = E.asiTaken(s);
+    const { slots, taken } = d.asi;
     this.section(root, "feats", `Feats & Ability Score Improvements${slots || taken ? ` (${taken}/${slots})` : ""}`, (el) => {
       if (taken > slots) el.createDiv({ cls: "dnd-warn", text: `${taken} Ability Score Improvement(s)/feat(s) used, but your class levels grant ${slots || "none yet"}. Remove the extra ones.` });
       else if (slots) el.createDiv({ cls: "dnd-hint", text: `Your class levels grant ${slots} Ability Score Improvement(s). Each can be +2 to one ability, +1 to two, or a feat.` });
@@ -726,12 +725,10 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
 
   // ---------------------------------------------------------------- spellcasting
-  private spellcasting(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
-    if (this.manual) { this.manualSpellcasting(root, sc); return; }
-    const s = this.v, r = this.r;
-    const casters = E.casters(r, s, sc);
-    const slots = E.spellSlots(r, s);
-    const granted = E.grantedSpells(r, s);
+  private spellcasting(root: HTMLElement, d: E.Derived) {
+    if (this.manual) { this.manualSpellcasting(root, d); return; }
+    const s = this.v;
+    const { casters, slots, granted } = d;
     this.section(root, "spells", "Spellcasting", (el) => {
       // shown even for characters without spellcasting (Sheet template); hide it from its title
       if (!casters.length && !s.spells.length && !granted.length && !slots.pact) el.createDiv({ cls: "dnd-hint", text: "No spellcasting yet: it appears with a spellcasting class or subclass. You can still add spell slots or spells below." });
@@ -739,17 +736,14 @@ export class CharacterSheet extends MarkdownRenderChild {
       for (const c of casters) {
         const box = cs.createDiv({ cls: "dnd-caster" });
         box.createDiv({ cls: "dnd-subtitle", text: c.name });
-        const own = s.spells.filter((x) => x.source === c.classId);
-        const nPrep = own.filter((x) => x.prepared && (r.spell(x.id)?.level || 0) > 0).length;
-        const nCan = own.filter((x) => r.spell(x.id)?.level === 0).length;
-        const nKnown = own.filter((x) => (r.spell(x.id)?.level || 0) > 0).length;
+        const n = d.spellCounts.get(c.classId) ?? { cantrips: 0, levelled: 0, prepared: 0 };
         const line = box.createDiv({ cls: "dnd-row" });
         labeled(line, "Ability").setText(ABILITY_NAMES[c.ability]);
         labeled(line, "Spell Save DC").setText(String(c.dc));
         this.rollable(labeled(line, "Spell Attack"), fmtMod(c.attack), d20(c.attack), `${c.name} spell attack`);
-        if (c.prepared != null) labeled(line, "Prepared").setText(`${nPrep} / ${c.prepared}`);
-        if (c.cantrips) labeled(line, "Cantrips").setText(`${nCan} / ${c.cantrips}`);
-        if (c.known) labeled(line, c.prepared != null ? "Spellbook" : "Spells Known").setText(`${nKnown} / ${c.known}${c.prepared != null ? "+" : ""}`);
+        if (c.prepared != null) labeled(line, "Prepared").setText(`${n.prepared} / ${c.prepared}`);
+        if (c.cantrips) labeled(line, "Cantrips").setText(`${n.cantrips} / ${c.cantrips}`);
+        if (c.known) labeled(line, c.prepared != null ? "Spellbook" : "Spells Known").setText(`${n.levelled} / ${c.known}${c.prepared != null ? "+" : ""}`);
       }
       // slots
       const st = el.createDiv({ cls: "dnd-slots" });
@@ -776,9 +770,9 @@ export class CharacterSheet extends MarkdownRenderChild {
       const list = el.createDiv({ cls: "dnd-spell-list" });
       const head = list.createDiv({ cls: "dnd-row" });
       head.createDiv({ cls: "dnd-subtitle", text: "Spells" });
-      button(head, "+ Add spell", () => this.addSpell(casters, false));
-      button(head, "+ Any spell", () => this.addSpell(casters, true), "dnd-small");
-      const rows = E.sortedSpells(r, s);
+      button(head, "+ Add spell", () => this.addSpell(casters, slots, false));
+      button(head, "+ Any spell", () => this.addSpell(casters, slots, true), "dnd-small");
+      const rows = d.spells;
       const t = list.createDiv({ cls: "dnd-table-wrap" }).createEl("table", { cls: "dnd-table dnd-spells" });
       const h = t.createEl("tr");
       ["Prep.", "Spell", "Level", "School", "Time", "Range", "", "From", ""].forEach((x) => h.createEl("th", { text: x }));
@@ -812,12 +806,12 @@ export class CharacterSheet extends MarkdownRenderChild {
     });
   }
   // Manual mode: spellcasting ability, slots and a typed spell list (prepared ones first)
-  private manualSpellcasting(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
+  private manualSpellcasting(root: HTMLElement, d: E.Derived) {
     const s = this.v, m = this.s.manual;
     this.section(root, "spells", "Spellcasting", (el) => {
       const line = el.createDiv({ cls: "dnd-row" });
       select(labeled(line, "Spellcasting Ability"), ABILITIES.map((a) => ({ value: a, label: ABILITY_NAMES[a] })), m.spellAbility, (v) => this.change((x) => { x.manual.spellAbility = (v || null) as Ability | null; }), "None");
-      const c = E.manualCaster(this.s, sc);
+      const c = E.manualCaster(this.s, d.scores);
       if (c) {
         labeled(line, "Spell Save DC").setText(String(c.dc));
         this.rollable(labeled(line, "Spell Attack"), fmtMod(c.attack), d20(c.attack), "Spell attack");
@@ -862,11 +856,11 @@ export class CharacterSheet extends MarkdownRenderChild {
       }
     });
   }
-  private addSpell(casters: E.CasterInfo[], any: boolean) {
+  private addSpell(casters: E.CasterInfo[], slots: E.Derived["slots"], any: boolean) {
     const s = this.v, r = this.r;
     const lists = new Set(casters.map((c) => c.list).filter(Boolean) as string[]);
     const have = new Set(s.spells.map((x) => x.id));
-    const maxLvl = Math.max(0, ...E.spellSlots(r, s).max.map((n, i) => (n ? i + 1 : 0)), E.spellSlots(r, s).pact?.level || 0);
+    const maxLvl = Math.max(0, ...slots.max.map((n, i) => (n ? i + 1 : 0)), slots.pact?.level || 0);
     const items = r.data.spells.filter((sp) => !have.has(sp.id) && (any || ((!lists.size || casters.some((c) => E.onSpellList(c, sp))) && sp.level <= Math.max(maxLvl, 0))));
     new Picker(this.app, items, (sp) => `${sp.name} (${sp.level ? ORD[sp.level] : "Cantrip"}, ${sp.source})`, (sp) => this.change((x) => {
       const src = casters.find((c) => E.onSpellList(c, sp))?.classId || casters[0]?.classId;
@@ -875,7 +869,7 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
 
   // ---------------------------------------------------------------- inventory
-  private inventory(root: HTMLElement, sc: Record<Ability, E.AbilityBreakdown>) {
+  private inventory(root: HTMLElement, d: E.Derived) {
     const s = this.v, r = this.r;
     this.section(root, "inventory", "Inventory & Coins", (el) => {
       const coins = el.createDiv({ cls: "dnd-grid-5 dnd-coins" });
@@ -905,7 +899,7 @@ export class CharacterSheet extends MarkdownRenderChild {
         x.inventory.push({ id: it.id, name: it.name, qty: 1, weight: it.weight, equipped: it.kind !== "gear", attuned: false, notes: "" });
       }), "Search items…", (it) => [it.kind, it.rarity, it.weight != null ? `${it.weight} lb.` : "", it.value != null ? `${it.value / 100} gp` : ""].filter(Boolean).join(" · ")).open());
       button(add, "+ Custom item", () => this.change((x) => { x.inventory.push({ id: null, name: "", qty: 1, weight: null, equipped: false, attuned: false, notes: "" }); }));
-      const wt = E.inventoryWeight(s), cap = E.carryingCapacity(sc);
+      const wt = E.inventoryWeight(s), cap = E.carryingCapacity(d.scores);
       el.createDiv({ cls: wt > cap ? "dnd-warn" : "dnd-hint", text: `Carried: ${Math.round(wt * 10) / 10} lb. / capacity ${cap} lb. · Attuned items: ${attuned}/3` });
     });
   }
