@@ -258,9 +258,9 @@ export const ABILITY_MAX = 20;
 // e.g. Primal Champion: "Your Strength and Constitution scores increase by 4. Your maximum for those scores is now 24."
 const SCORE_BOOST = /your ([a-z ,]+?) scores? increases? by (\d+)\.\s*your maximum for (?:those|that|these) scores? is now (\d+)/i;
 /** Ability increases and higher maximums granted by the character's class and subclass features. */
-export function featureAbilityBoosts(r: Rules, s: CharState) {
+export function featureAbilityBoosts(r: Rules, s: CharState, features = classFeatures(r, s)) {
   const bonus = zeroAbilities(), max = zeroAbilities();
-  for (const c of classFeatures(r, s)) for (const f of c.features) {
+  for (const c of features) for (const f of c.features) {
     const m = SCORE_BOOST.exec(f.text || "");
     if (!m) continue;
     for (const a of ABILITIES) if (m[1].toLowerCase().includes(ABILITY_NAMES[a].toLowerCase())) {
@@ -270,7 +270,8 @@ export function featureAbilityBoosts(r: Rules, s: CharState) {
   }
   return { bonus, max };
 }
-export function abilityScores(r: Rules, s: CharState): Record<Ability, AbilityBreakdown> {
+/** `features`: the character's classFeatures(), when already known */
+export function abilityScores(r: Rules, s: CharState, features = classFeatures(r, s)): Record<Ability, AbilityBreakdown> {
   const out = {} as Record<Ability, AbilityBreakdown>;
   const raceBonus = zeroAbilities();
   const opts = raceAbilityOptions(r, s);
@@ -293,7 +294,7 @@ export function abilityScores(r: Rules, s: CharState): Record<Ability, AbilityBr
     let i = 0;
     for (const ch of o.choose) for (let n = 0; n < ch.count; n++, i++) { const a = fe.picks[i]; if (a) featBonus[a] += ch.amount; }
   }
-  const boosts = featureAbilityBoosts(r, s);
+  const boosts = featureAbilityBoosts(r, s, features);
   for (const a of ABILITIES) {
     const base = s.abilities.base[a] ?? 10, asi = (s.abilities.asi[a] || 0) + asiBonus[a], adjust = s.abilities.adjust[a] || 0;
     const max = Math.max(ABILITY_MAX, boosts.max[a]), feature = boosts.bonus[a];
@@ -365,14 +366,13 @@ export function autoSkillSources(r: Rules, s: CharState): Record<string, string[
   s.classes.forEach((e) => e.skills.forEach((k) => add(k, r.cls(e.id)?.name || "Class")));
   return src;
 }
-export function skillProficiencies(r: Rules, s: CharState): Record<string, ProfLevel> {
-  const auto = autoSkillSources(r, s);
+export function skillProficiencies(r: Rules, s: CharState, auto = autoSkillSources(r, s)): Record<string, ProfLevel> {
   const out: Record<string, ProfLevel> = {};
   for (const k of Object.keys(SKILLS)) out[k] = s.skills[k] ?? (auto[k] ? 1 : 0);
   return out;
 }
-export function skillBonus(r: Rules, s: CharState, skill: string, scores = abilityScores(r, s)) {
-  const lvl = skillProficiencies(r, s)[skill] || 0;
+export function skillBonus(r: Rules, s: CharState, skill: string, scores = abilityScores(r, s), prof = skillProficiencies(r, s)) {
+  const lvl = prof[skill] || 0;
   const pb = proficiencyBonus(totalLevel(s));
   // Jack of All Trades (Bard 2+): half proficiency to non-proficient checks
   const jack = lvl === 0 && s.classes.some((e) => r.cls(e.id)?.name === "Bard" && e.level >= 2) ? Math.floor(pb / 2) : 0;
@@ -658,8 +658,8 @@ export function grantedSpells(r: Rules, s: CharState): { id: string; why: string
   return out.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
 }
 // Spell list sorted: prepared (and granted) first, then by level and name
-export function sortedSpells(r: Rules, s: CharState) {
-  const granted = new Map(grantedSpells(r, s).map((g) => [g.id, g.why]));
+export function sortedSpells(r: Rules, s: CharState, grantedList = grantedSpells(r, s)) {
+  const granted = new Map(grantedList.map((g) => [g.id, g.why]));
   const rows = s.spells.map((e) => ({ entry: e, data: r.spell(e.id), granted: granted.get(e.id) || null }));
   for (const [id, why] of granted) if (!s.spells.some((e) => e.id === id)) rows.push({ entry: { id, prepared: true }, data: r.spell(id), granted: why });
   const isPrep = (x: (typeof rows)[number]) => x.entry.prepared || !!x.granted || x.data?.level === 0;
@@ -692,7 +692,17 @@ export function attacks(r: Rules, s: CharState, scores = abilityScores(r, s)) {
 }
 
 // ------------------------------------------------------------------ creation checklist
-export function pendingChoices(r: Rules, s: CharState): string[] {
+/** The spells a caster's class has chosen: cantrips, levelled spells, and the prepared ones among those. */
+export function casterSpellCounts(r: Rules, s: CharState, classId: string) {
+  const own = s.spells.filter((x) => x.source === classId).map((x) => ({ prepared: x.prepared, level: r.spell(x.id)?.level }));
+  return {
+    cantrips: own.filter((x) => x.level === 0).length,
+    levelled: own.filter((x) => (x.level || 0) > 0).length,
+    prepared: own.filter((x) => x.prepared && (x.level || 0) > 0).length,
+  };
+}
+/** `known`: values already worked out for the character (see derive()) */
+export function pendingChoices(r: Rules, s: CharState, known: { asiSlots: number; casters: CasterInfo[] } = { asiSlots: asiSlots(r, s), casters: casters(r, s) }): string[] {
   const out: string[] = [];
   const race = r.race(s);
   if (!s.name) out.push("Give the character a name");
@@ -715,21 +725,50 @@ export function pendingChoices(r: Rules, s: CharState): string[] {
   });
   if (!s.background) out.push("Choose a background");
   if (s.abilities.method === "pointbuy") { const pbs = pointBuySpent(s.abilities.base); if (!pbs.valid) out.push("Point buy is over 27 points or out of range (8–15)"); else if (pbs.remaining > 0) out.push(`${pbs.remaining} point-buy point(s) unspent`); }
-  const free = asiSlots(r, s) - asiTaken(s);
+  const free = known.asiSlots - asiTaken(s);
   if (free > 0) out.push(`${free} Ability Score Improvement(s) available — add an ASI or a feat in Feats`);
   if (free < 0) out.push(`${-free} Ability Score Improvement(s) or feat(s) more than your class levels grant — remove them in Feats`);
   s.feats.filter((f) => f.id === ASI_ID && f.picks.filter(Boolean).length < 2).forEach(() => out.push("Choose the abilities for your Ability Score Improvement"));
-  const scores = abilityScores(r, s);
-  for (const ci of casters(r, s, scores)) {
-    const cls = s.spells.filter((x) => x.source === ci.classId);
-    const nCantrips = cls.filter((x) => r.spell(x.id)?.level === 0).length;
-    if (ci.cantrips && nCantrips < ci.cantrips) out.push(`${ci.name}: choose ${ci.cantrips - nCantrips} more cantrip(s)`);
-    const nLevelled = cls.filter((x) => (r.spell(x.id)?.level || 0) > 0).length;
-    if (ci.known && nLevelled < ci.known) out.push(`${ci.name}: learn ${ci.known - nLevelled} more spell(s)`);
-    if (ci.prepared) { const nPrep = cls.filter((x) => x.prepared && (r.spell(x.id)?.level || 0) > 0).length; if (nPrep < ci.prepared) out.push(`${ci.name}: prepare ${ci.prepared - nPrep} more spell(s)`); }
+  for (const ci of known.casters) {
+    const n = casterSpellCounts(r, s, ci.classId);
+    if (ci.cantrips && n.cantrips < ci.cantrips) out.push(`${ci.name}: choose ${ci.cantrips - n.cantrips} more cantrip(s)`);
+    if (ci.known && n.levelled < ci.known) out.push(`${ci.name}: learn ${ci.known - n.levelled} more spell(s)`);
+    if (ci.prepared && n.prepared < ci.prepared) out.push(`${ci.name}: prepare ${ci.prepared - n.prepared} more spell(s)`);
   }
   return out;
 }
+
+// ------------------------------------------------------------------ everything a sheet shows
+/**
+ * Every value a sheet shows, worked out once for a state: each calculation runs once, and those that
+ * need another (scores, proficiencies, casters, granted spells) are given it instead of redoing it.
+ */
+export function derive(r: Rules, s: CharState) {
+  const features = classFeatures(r, s);
+  const scores = abilityScores(r, s, features);
+  const level = totalLevel(s);
+  const skillSources = autoSkillSources(r, s);
+  const skillProf = skillProficiencies(r, s, skillSources);
+  const casterList = casters(r, s, scores);
+  const granted = grantedSpells(r, s);
+  const asi = { slots: asiSlots(r, s), taken: asiTaken(s) };
+  return {
+    scores, level, pb: proficiencyBonus(level),
+    saves: saveProficiencies(r, s),
+    skillSources, skillProf,
+    skills: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, skillBonus(r, s, k, scores, skillProf)])) as Record<string, number>,
+    hp: hpBreakdown(r, s, scores), ac: armorClass(r, s, scores), initiative: initiative(r, s, scores),
+    speeds: speeds(r, s), hitDice: hitDice(r, s), darkvision: darkvision(r, s),
+    features, resources: classResources(r, s), asi,
+    casters: casterList,
+    /** casterSpellCounts() of each caster, by class id */
+    spellCounts: new Map(casterList.map((c) => [c.classId, casterSpellCounts(r, s, c.classId)])),
+    slots: spellSlots(r, s), granted, spells: sortedSpells(r, s, granted),
+    attacks: attacks(r, s, scores),
+    pending: pendingChoices(r, s, { asiSlots: asi.slots, casters: casterList }),
+  };
+}
+export type Derived = ReturnType<typeof derive>;
 
 // ------------------------------------------------------------------ note body migration
 // Older notes kept "## Biography" and "## Notes" as markdown sections under the sheet. They now live
