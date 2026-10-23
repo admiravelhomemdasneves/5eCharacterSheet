@@ -84,13 +84,27 @@ function withLinks(text: string, ...links: Link[]) {
     links.forEach(([label, href], i) => { if (text || i) f.createSpan({ text: i ? " · " : " " }); f.createEl("a", { text: label, href }); });
   });
 }
-/** The settings pages; before Obsidian 1.13 they are tabs */
-const PAGES = [["general", "General"], ["template", "Sheet template"], ["rules", "Rules data"], ["compendium", "Compendium"]] as const;
-type Page = (typeof PAGES)[number][0];
-
 const SOURCE_OPTIONS: Record<SheetSettings["dataSource"], string> = { none: "None (manual mode)", srd: "SRD 5.1 (included)", imported: "Imported from 5etools" };
 const THEME_OPTIONS: Record<SheetSettings["theme"], string> = { plugin: "Original", obsidian: "Obsidian theme", custom: "Custom" };
 const attribution = (srdData as { meta: { attribution?: string } }).meta.attribution || "";
+
+/**
+ * The parts of the declarative settings (Obsidian 1.13) that the settings for older versions are
+ * built from: getSettingDefinitions() returns plain objects of this shape, read here without the
+ * 1.13 types. `value`: a definition's value, or a function giving it (`visible`, `status`).
+ */
+type Value<T> = T | (() => T);
+interface Def {
+  type?: "page" | "group" | "list"; name?: string; heading?: string; desc?: string | DocumentFragment;
+  visible?: Value<boolean>; status?: Value<"warning" | null>; items?: Def[];
+  control?: { type: string; key: string; options?: Record<string, string>; placeholder?: string; rows?: number };
+  render?: (setting: Setting, group: never) => void; action?: (el: HTMLElement, index: number) => void;
+}
+const valueOf = <T>(v: Value<T> | undefined) => (typeof v === "function" ? (v as () => T)() : v);
+const shown = (d: Def) => valueOf(d.visible) !== false;
+/** which items of a page are shown, to tell when a change shows or hides some */
+const visibleKeys = (items: Def[]): unknown[] => items.map((d) => (shown(d) ? (d.items ? visibleKeys(d.items) : 1) : 0));
+const text = (v: unknown) => (typeof v === "string" ? v : "");
 
 export class SheetSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: CharacterSheetPlugin) { super(app, plugin); }
@@ -146,6 +160,7 @@ export class SheetSettingTab extends PluginSettingTab {
               setting.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => {
                 await this.plugin.importFiveTools();
                 setting.setDesc(this.importStatus());
+                this.redraw();
               }));
             },
           },
@@ -181,12 +196,12 @@ export class SheetSettingTab extends PluginSettingTab {
   /** "Detect": scan the vault, then show what was found; the tab is redrawn with the choices made */
   private async openDetect() {
     const found = await this.plugin.detectFiveTools();
-    // Obsidian 1.13+ redraws the declarative settings with update(); older versions use display()
-    const redraw = () => {
-      const tab = this as { update?: () => void };
-      if (tab.update) tab.update(); else this.build();
-    };
-    new DetectModal(this.plugin, found, redraw).open();
+    new DetectModal(this.plugin, found, () => this.redraw()).open();
+  }
+  /** Show the settings again after a change made outside them: update() from Obsidian 1.13, else build(). */
+  private redraw() {
+    const tab = this as { update?: () => void };
+    if (tab.update) tab.update(); else this.build();
   }
 
   /** Sheet template: only affects sheets created from now on */
@@ -196,88 +211,67 @@ export class SheetSettingTab extends PluginSettingTab {
     await this.plugin.saveData(st);
   }
 
-  // Obsidian before 1.13: the same settings built by hand, one page at a time under a row of tabs
-  private page: Page = "general";
+  // ---------------------------------------------------------------- Obsidian before 1.13
+  // The same settings, built from getSettingDefinitions(): one page at a time under a row of tabs.
+  private page = 0;
   display() { this.build(); }
   private build() {
     const { containerEl } = this;
     containerEl.empty();
+    const pages = (this.getSettingDefinitions() as unknown as Def[]).filter((d) => d.type === "page" && shown(d));
+    this.page = Math.min(this.page, pages.length - 1);
     const tabs = containerEl.createDiv({ cls: "dnd-settings-tabs" });
-    for (const [key, label] of PAGES) {
-      const b = tabs.createEl("button", { text: label, cls: key === this.page ? "is-active" : "" });
-      if (key === "rules" && this.importNeedsAttention()) b.addClass("mod-warning");
-      b.onclick = () => { this.page = key; this.build(); };
-    }
+    pages.forEach((p, i) => {
+      const b = tabs.createEl("button", { text: p.name, cls: i === this.page ? "is-active" : "" });
+      if (valueOf(p.status) === "warning") b.addClass("mod-warning");
+      b.onclick = () => { this.page = i; this.build(); };
+    });
+    const page = pages[this.page], items = page.items ?? [];
     const el = containerEl.createDiv();
-    if (this.page === "general") this.generalPage(el);
-    else if (this.page === "template") this.templatePage(el);
-    else if (this.page === "rules") this.rulesPage(el);
-    else this.compendiumPage(el);
+    if (page.desc) el.createEl("p", { cls: "setting-item-description" }).append(page.desc);
+    // a change that shows or hides settings (the custom colour, the import steps) builds the page again
+    const before = JSON.stringify(visibleKeys(items));
+    this.buildItems(el, items, () => { if (JSON.stringify(visibleKeys(items)) !== before) this.build(); });
   }
-  private generalPage(containerEl: HTMLElement) {
-    const st = this.plugin.settings;
-    containerEl.createEl("p", { cls: "setting-item-description", text: T.general });
-    new Setting(containerEl).setName("Characters").setHeading();
-    new Setting(containerEl).setName(T.charactersFolder[0]).setDesc(T.charactersFolder[1])
-      .addText((t) => t.setPlaceholder("Last used folder").setValue(st.charactersFolder).onChange(async (v) => { st.charactersFolder = v; await this.plugin.saveData(st); }));
-
-    new Setting(containerEl).setName("Theme").setHeading();
-    const saveTheme = async () => { await this.plugin.saveData(st); this.plugin.refreshSheets(); };
-    new Setting(containerEl).setName(T.theme[0]).setDesc(T.theme[1])
-      .addDropdown((d) => d.addOptions(THEME_OPTIONS).setValue(st.theme)
-        .onChange(async (v) => { st.theme = v as SheetSettings["theme"]; await saveTheme(); customFields(); }));
-    // the colour picker is only shown for the Custom theme, so it is rebuilt when the choice changes
-    const customEl = containerEl.createDiv();
-    const customFields = () => {
-      customEl.empty();
-      if (st.theme !== "custom") return;
-      new Setting(customEl).setName(T.accent[0]).setDesc(T.accent[1])
-        .addColorPicker((c) => c.setValue(st.customAccent).onChange(async (v) => { st.customAccent = v; await saveTheme(); }));
-    };
-    customFields();
-    new Setting(containerEl).setName(T.more).setDesc(withLinks("", L.general));
-  }
-  private templatePage(containerEl: HTMLElement) {
-    const st = this.plugin.settings;
-    containerEl.createEl("p", { cls: "setting-item-description", text: T.template });
-    for (const sec of SECTIONS) {
-      new Setting(containerEl).setName(sec.label)
-        .addToggle((t) => t.setValue(!st.hiddenSections.includes(sec.key)).onChange((v) => this.setSectionShown(sec.key, v)));
+  /** The groups and settings of a page; `changed` runs after a control saves its value. Pages inside pages are not used. */
+  private buildItems(el: HTMLElement, items: Def[], changed: () => void) {
+    for (const d of items) {
+      if (!shown(d)) continue;
+      if (d.type === "group" || d.type === "list") {
+        if (d.heading) new Setting(el).setName(d.heading).setHeading();
+        this.buildItems(el, d.items ?? [], changed);
+      } else if (!d.type) this.buildSetting(el, d, changed);
     }
   }
-  private rulesPage(containerEl: HTMLElement) {
-    const st = this.plugin.settings;
-    containerEl.createEl("p", { cls: "setting-item-description", text: T.rules });
-    new Setting(containerEl).setName(T.dataSource[0]).setDesc(withLinks(T.dataSource[1], L.rules))
-      .addDropdown((d) => d.addOptions(SOURCE_OPTIONS).setValue(st.dataSource)
-        // the import steps are shown for imported data only
-        .onChange(async (v) => { st.dataSource = v as SheetSettings["dataSource"]; await this.plugin.saveSettings(); this.build(); }));
-    new Setting(containerEl).setName(T.license[0]).setDesc(attribution);
-    if (st.dataSource !== "imported") return;
-
-    new Setting(containerEl).setName(T.step1[0]).setHeading();
-    new Setting(containerEl).setName(T.step1[1]).setDesc(withLinks(T.step1[2], L.guide));
-    new Setting(containerEl).setName(T.step2[0]).setHeading();
-    new Setting(containerEl).setName(T.step2[1]).setDesc(T.step2[2]);
-    new Setting(containerEl).setName(T.detect[0]).setDesc(T.detect[1]).addButton((b) => b.setButtonText("Detect").onClick(() => this.openDetect()));
-    new Setting(containerEl).setName(T.fivetoolsPath[0]).setDesc(T.fivetoolsPath[1])
-      .addText((t) => t.setPlaceholder(".5etools/data").setValue(st.fivetoolsPath).onChange(async (v) => { st.fivetoolsPath = v; await this.plugin.saveData(st); }));
-    new Setting(containerEl).setName(T.homebrew[0]).setDesc(withLinks(T.homebrew[1], L.homebrew, L.homebrewRepo))
-      .addTextArea((t) => { t.setPlaceholder(HOMEBREW_PLACEHOLDER).setValue(st.homebrewFiles.join("\n")).onChange(async (v) => { st.homebrewFiles = pathLines(v); await this.plugin.saveData(st); }); t.inputEl.rows = 4; });
-    new Setting(containerEl).setName(T.step3).setHeading();
-    new Setting(containerEl).setName(T.rules2014[0]).setDesc(T.rules2014[1])
-      .addToggle((t) => t.setValue(st.importRules2014).onChange(async (v) => { st.importRules2014 = v; await this.plugin.saveData(st); }));
-    new Setting(containerEl).setName(T.onlyNotes[0]).setDesc(T.onlyNotes[1])
-      .addToggle((t) => t.setValue(st.importOnlyWithNotes).onChange(async (v) => { st.importOnlyWithNotes = v; await this.plugin.saveData(st); }));
-    const imp = new Setting(containerEl).setName(T.importNow[0]).setDesc(this.importStatus());
-    imp.addButton((b) => b.setButtonText("Import now").setCta().onClick(async () => { await this.plugin.importFiveTools(); this.build(); }));
+  private buildSetting(el: HTMLElement, d: Def, changed: () => void) {
+    const setting = new Setting(el).setName(d.name ?? "");
+    if (d.desc) setting.setDesc(d.desc);
+    if (d.control) this.buildControl(setting, d.control, changed);
+    else if (d.render) d.render(setting, undefined as never);
+    else if (d.action) {
+      const action = d.action;
+      setting.settingEl.addClass("mod-clickable");
+      setting.settingEl.onclick = () => action(setting.settingEl, 0);
+    }
   }
-  private compendiumPage(containerEl: HTMLElement) {
-    const st = this.plugin.settings;
-    containerEl.createEl("p", { cls: "setting-item-description", text: T.compendiumPage });
-    new Setting(containerEl).setName(T.compendium[0]).setDesc(withLinks(T.compendium[1], L.compendium))
-      .addText((t) => t.setPlaceholder("Compendium").setValue(st.compendiumFolder).onChange(async (v) => { st.compendiumFolder = v; await this.plugin.saveData(st); }))
-      .addButton((b) => b.setButtonText("Apply").onClick(async () => { await this.plugin.saveSettings(); }));
-    new Setting(containerEl).setName("Making a compendium").setDesc(withLinks(T.makeCompendium, L.convert, L.convertCli, L.convertUi));
+  /** A control showing getControlValue(key) and saving with setControlValue(key); text is saved when the field is left. */
+  private buildControl(setting: Setting, c: NonNullable<Def["control"]>, changed: () => void) {
+    const value = this.getControlValue(c.key);
+    const save = async (v: unknown) => { await this.setControlValue(c.key, v); changed(); };
+    switch (c.type) {
+      case "toggle": setting.addToggle((x) => x.setValue(!!value).onChange(save)); break;
+      case "dropdown": setting.addDropdown((x) => x.addOptions(c.options ?? {}).setValue(text(value)).onChange(save)); break;
+      case "color": setting.addColorPicker((x) => x.setValue(text(value)).onChange(save)); break;
+      case "textarea": setting.addTextArea((x) => {
+        x.setPlaceholder(c.placeholder ?? "").setValue(text(value));
+        if (c.rows) x.inputEl.rows = c.rows;
+        x.inputEl.addEventListener("change", () => void save(x.getValue()));
+      }); break;
+      // text, folder and file paths, and any other kind of value, as text
+      default: setting.addText((x) => {
+        x.setPlaceholder(c.placeholder ?? "").setValue(text(value));
+        x.inputEl.addEventListener("change", () => void save(x.getValue()));
+      });
+    }
   }
 }
