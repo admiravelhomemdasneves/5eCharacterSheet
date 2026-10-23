@@ -7,8 +7,9 @@ import { SECTIONS } from "../src/sections.ts";
 import { ROOT } from "./helpers.ts";
 
 test("every section in the Sheet template exists on the sheet", () => {
-  const sheet = fs.readFileSync(path.join(ROOT, "src", "ui", "sheet.ts"), "utf8");
-  const keys = new Set([...sheet.matchAll(/this\.section\(\s*root,\s*"([a-z-]+)"/g)].map((m) => m[1]));
+  const dir = path.join(ROOT, "src", "ui", "sections");
+  const code = [path.join(ROOT, "src", "ui", "sheet.ts"), ...fs.readdirSync(dir).map((f) => path.join(dir, f))].map((f) => fs.readFileSync(f, "utf8")).join("\n");
+  const keys = new Set([...code.matchAll(/(?:this|sheet)\.section\(\s*root,\s*"([a-z-]+)"/g)].map((m) => m[1]));
   for (const s of SECTIONS) assert.ok(keys.has(s.key), `no section "${s.key}" on the sheet`);
   assert.equal(new Set(SECTIONS.map((s) => s.key)).size, SECTIONS.length, "duplicate section keys");
 });
