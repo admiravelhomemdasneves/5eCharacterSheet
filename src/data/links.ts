@@ -3,6 +3,7 @@
 // plugin, file system in Node scripts), so this works the same everywhere.
 import { TOKEN } from "./build.ts";
 import type { Compendium } from "../rules/engine.ts";
+import { lc } from "../text.ts";
 
 export interface NoteInfo {
   path: string;   // vault path without ".md", e.g. "Compendium/compendium/spells/fireball"
@@ -10,7 +11,6 @@ export interface NoteInfo {
   source: string; // source code from the ttrpg tag ".../compendium/src/5e/<source>", e.g. "phb"
 }
 
-const lc = (s: string | number | null | undefined) => String(s ?? "").toLowerCase();
 /**
  * A 5etools source id as ttrpg-convert-cli writes it in its source tags: lowercased and otherwise
  * unchanged, so homebrew ids keep their other characters ("LLAR:E" -> "llar:e"). Used on both

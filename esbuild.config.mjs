@@ -4,6 +4,7 @@
 import esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
+import { personalPaths } from "./scripts/local.ts";
 
 const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
 await esbuild.build({
@@ -20,8 +21,7 @@ await esbuild.build({
 for (const f of ["manifest.json", "styles.css"]) fs.copyFileSync(f, path.join("dist", f));
 
 if (process.argv.includes("--install")) {
-  const local = fs.existsSync("local.config.json") ? JSON.parse(fs.readFileSync("local.config.json", "utf8")) : {};
-  const vault = process.env.VAULT || local.vault;
+  const { vault } = personalPaths();
   if (!vault) throw new Error("Set VAULT (or create local.config.json with { \"vault\" }) to install into a vault.");
   const dest = path.join(vault, ".obsidian", "plugins", process.env.PLUGIN_DIR || manifest.id);
   fs.mkdirSync(dest, { recursive: true });

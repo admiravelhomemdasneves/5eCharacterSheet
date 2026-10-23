@@ -162,8 +162,12 @@ export class CharacterSheet extends MarkdownRenderChild {
     if (!target) return parent.createSpan({ text, cls });
     const a = parent.createEl("a", { text, cls: `internal-link ${cls}`, href: target, attr: { "data-href": target } });
     a.addEventListener("click", (e) => { e.preventDefault(); void this.app.workspace.openLinkText(target, this.sourcePath, e.ctrlKey || e.metaKey); });
-    a.addEventListener("mouseover", (e) => this.app.workspace.trigger("hover-link", { event: e, source: "preview", hoverParent: this, targetEl: a, linktext: target, sourcePath: this.sourcePath }));
+    a.addEventListener("mouseover", (e) => this.hoverLink(e, a, target));
     return a;
+  }
+  /** Obsidian's page preview of `linktext` while `targetEl` is hovered */
+  hoverLink(event: MouseEvent, targetEl: HTMLElement, linktext: string) {
+    this.app.workspace.trigger("hover-link", { event, source: "preview", hoverParent: this, targetEl, linktext, sourcePath: this.sourcePath });
   }
   md(parent: HTMLElement, text: string) {
     const el = parent.createDiv({ cls: "dnd-md" });
@@ -206,7 +210,7 @@ export class CharacterSheet extends MarkdownRenderChild {
   pick(parent: HTMLElement, opts: RichOpt[], value: string | null, onChange: (v: string) => void, placeholder: string, disabled = false, cls = "") {
     return richSelect(parent, opts, value, onChange, {
       placeholder, disabled, cls,
-      hover: (ev, target, link) => this.app.workspace.trigger("hover-link", { event: ev, source: "preview", hoverParent: this, targetEl: target, linktext: link, sourcePath: this.sourcePath }),
+      hover: (ev, target, link) => this.hoverLink(ev, target, link),
       // close any preview still open when the menu closes (e.g. after picking an option)
       onClose: () => (this as { hoverPopover?: { hide?: () => void } | null }).hoverPopover?.hide?.(),
     });

@@ -6,11 +6,13 @@
 // and entity links are attached at runtime by Linker (src/data/links.ts), depending on whether
 // and where the user keeps a compendium of notes.
 import type {
-  Abil, AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
+  AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
   HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawMod, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
   RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
 import { HOMEBREW_COLLECTIONS } from "./fivetools.ts";
+import { ABILITIES, combineAbilityOptions } from "../rules/engine.ts";
+import { lc, title } from "../text.ts";
 import type {
   AbilityOption, BackgroundData, ClassData, Compendium, FeatData, Feature, ItemData, ProfList, RaceData,
   SpellData, Speeds, SubclassData, SubraceData,
@@ -36,9 +38,6 @@ export interface BuildOptions {
   keep?: (kind: string, name: string, source: string) => boolean;
 }
 
-const lc = (s: string | number | null | undefined) => String(s ?? "").toLowerCase();
-const ABILS: Abil[] = ["str", "dex", "con", "int", "wis", "cha"];
-const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
 /**
  * Version of what the importer produces, stamped into imported data as `meta.importVersion`. Raise it
@@ -156,14 +155,14 @@ function speedOf(sp: RawSpeed | undefined): Speeds {
 function abilityOf(ab: RawAbility[] | undefined, lineage?: string | boolean): AbilityOption[] {
   if (lineage) {
     return [
-      { label: "+2 / +1", fixed: {}, choose: [{ from: ABILS, count: 1, amount: 2 }, { from: ABILS, count: 1, amount: 1, distinct: true }] },
-      { label: "+1 / +1 / +1", fixed: {}, choose: [{ from: ABILS, count: 3, amount: 1 }] },
+      { label: "+2 / +1", fixed: {}, choose: [{ from: ABILITIES, count: 1, amount: 2 }, { from: ABILITIES, count: 1, amount: 1, distinct: true }] },
+      { label: "+1 / +1 / +1", fixed: {}, choose: [{ from: ABILITIES, count: 3, amount: 1 }] },
     ];
   }
   if (!ab) return [];
   return ab.map((a) => {
     const opt: AbilityOption = { label: "", fixed: {}, choose: [] };
-    for (const k of ABILS) if (typeof a[k] === "number") opt.fixed[k] = a[k];
+    for (const k of ABILITIES) if (typeof a[k] === "number") opt.fixed[k] = a[k];
     if (a.choose) {
       const w = a.choose.weighted;
       if (w) (w.weights || []).forEach((amt) => opt.choose.push({ from: w.from, count: 1, amount: amt, distinct: true }));
@@ -287,17 +286,12 @@ function resolveCopies(raw: RawData) {
 /** Fold a race's only subrace into the race itself (e.g. the SRD Human, whose +1s are on its unnamed subrace). */
 function mergeSubrace(race: RaceData, sub: SubraceData) {
   if (sub.ability?.length) {
-    race.ability = sub.overwriteAbility || !race.ability.length ? sub.ability : race.ability.map((ro) => {
-      const so = sub.ability![0], fixed = { ...ro.fixed };
-      for (const [k, v] of Object.entries(so.fixed)) fixed[k as Abil] = (fixed[k as Abil] || 0) + (v || 0);
-      return { label: [ro.label, so.label].filter(Boolean).join(", "), fixed, choose: [...ro.choose, ...so.choose] };
-    });
+    race.ability = sub.overwriteAbility || !race.ability.length ? sub.ability : race.ability.map((ro) => combineAbilityOptions(ro, sub.ability![0]));
   }
   if (sub.speed) race.speed = { ...race.speed, ...sub.speed };
   if (sub.darkvision != null) race.darkvision = sub.darkvision;
   race.skills = { fixed: [...race.skills.fixed, ...sub.skills.fixed], choose: [...race.skills.choose, ...sub.skills.choose] };
   race.languages = [...race.languages, ...sub.languages];
-  race.resist = [...race.resist, ...sub.resist];
   race.traits = [...race.traits, ...sub.traits];
   race.spells = race.spells || sub.spells;
   race.subraces = [];
@@ -434,7 +428,6 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
         darkvision: s.darkvision ?? null,
         skills: profList(s.skillProficiencies),
         languages: langText(s.languageProficiencies),
-        resist: s.resist || [],
         traits: traitsOf(s.entries),
         spells: s.additionalSpells || null,
         hpPerLevel: /hit point maximum increases by 1/i.test(JSON.stringify(s.entries || "")) ? 1 : 0,
@@ -453,7 +446,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       skills: profList(r.skillProficiencies), tools: profList(r.toolProficiencies),
       weapons: profList(r.weaponProficiencies), armor: profList(r.armorProficiencies),
       languages: langText(r.languageProficiencies),
-      resist: r.resist || [], feats: r.feats || null,
+      feats: r.feats || null,
       traits: traitsOf(r.entries),
       spells: r.additionalSpells || null,
       subraces: subOut,
@@ -616,7 +609,6 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       components: [s.components?.v && "V", s.components?.s && "S", m && `M (${typeof m === "string" ? m : m.text})`].filter(Boolean).join(", "),
       duration: dur ? (dur.type === "timed" && dur.duration ? `${dur.concentration ? "Concentration, up to " : ""}${dur.duration.amount} ${dur.duration.type}${dur.duration.amount > 1 ? "s" : ""}` : title(dur.type)) : "",
       concentration: !!dur?.concentration, ritual: !!s.meta?.ritual, classes: classes2,
-      attack: (s.spellAttack || []).length > 0, save: (s.savingThrow || [])[0] || null, damage: s.damageInflict || [],
       text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
     });
   });

@@ -1,7 +1,7 @@
 // Proficiencies & Languages, Personality & Appearance, and Biography & Diary.
 import * as E from "../../rules/engine";
 import { labeled } from "../widgets";
-import { title } from "../format";
+import { title } from "../../text";
 import { bulletList, richText } from "../richtext";
 import type { CharacterSheet } from "../sheet";
 
