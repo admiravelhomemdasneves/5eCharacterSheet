@@ -6,6 +6,7 @@ import { Linker, NoteInfo, sourceOfTag } from "./data/links";
 import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
 import { SKIP_FOLDERS, detect } from "./data/detect";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
+import { renamedPath } from "./files";
 import srdData from "../data/srd-5.1.json";
 
 // Code block names: "character-sheet-5e" for new notes, "dnd-character" kept for older ones
@@ -55,17 +56,10 @@ export default class CharacterSheetPlugin extends Plugin {
     this.addCommand({ id: "new-character", name: "New character", callback: () => new NewCharacterModal(this).open() });
     this.addRibbonIcon("scroll-text", "New character sheet", () => new NewCharacterModal(this).open());
 
-    // keep the in-memory cache in sync when a sheet note is renamed or deleted
-    this.registerEvent(this.app.vault.on("rename", (f, old) => {
-      const s = this.states.get(old);
-      if (!s) return;
-      this.states.delete(old); this.states.set(f.path, s);
-      if (this.saveTimers.has(old)) { window.clearTimeout(this.saveTimers.get(old)); this.saveTimers.delete(old); this.requestSave(f.path); }
-    }));
-    this.registerEvent(this.app.vault.on("delete", (f) => {
-      this.states.delete(f.path);
-      window.clearTimeout(this.saveTimers.get(f.path)); this.saveTimers.delete(f.path);
-    }));
+    // keep the states, pending saves and open sheets in step when a sheet note, or a folder it is in,
+    // is renamed, moved or deleted
+    this.registerEvent(this.app.vault.on("rename", (f, old) => this.moved(old, f.path)));
+    this.registerEvent(this.app.vault.on("delete", (f) => this.moved(f.path, null)));
     // the note was changed outside the sheet (properties, sync, another plugin): show that
     this.registerEvent(this.app.metadataCache.on("changed", (f, _data, cache) => this.externalChange(f, cache)));
 
@@ -201,6 +195,28 @@ export default class CharacterSheetPlugin extends Plugin {
   refreshSheets() { this.sheets.forEach((s) => s.reload()); }
   /** Re-render the open sheets of one note, except `except` (the sheet that made the change). */
   reloadSheets(path: string, except?: CharacterSheet) { this.sheets.forEach((s) => { if (s !== except && s.sourcePath === path) s.reload(); }); }
+
+  /** The file or folder at `from` is now at `to` (null: deleted); what was at or inside it follows. */
+  private moved(from: string, to: string | null) {
+    for (const [path, s] of [...this.states]) {
+      const now = renamedPath(path, from, to ?? "");
+      if (now == null) continue;
+      this.states.delete(path);
+      if (to != null) this.states.set(now, s);
+      // a pending save is written at the new path, or dropped with the note
+      if (this.saveTimers.has(path)) {
+        window.clearTimeout(this.saveTimers.get(path)); this.saveTimers.delete(path);
+        if (to != null) this.requestSave(now);
+      }
+    }
+    if (to == null) return;
+    // open sheets save to, and resolve links from, the note's new path, and show the state kept for it
+    // (a sheet Obsidian made for the new path before this ran may have read its own)
+    for (const s of this.sheets) {
+      const now = renamedPath(s.sourcePath, from, to);
+      if (now != null) { s.sourcePath = now; s.reload(); }
+    }
+  }
 
   onunload() {
     // write what is still waiting to be saved

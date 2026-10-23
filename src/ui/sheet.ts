@@ -22,7 +22,8 @@ export class CharacterSheet extends MarkdownRenderChild {
   /** owns what one render() makes (markdown children); unloaded by the next render */
   private renderScope: Component | null = null;
 
-  constructor(private plugin: CharacterSheetPlugin, el: HTMLElement, readonly sourcePath: string) {
+  /** `sourcePath`: the note's path, kept up to date by the plugin when the note is renamed or moved */
+  constructor(private plugin: CharacterSheetPlugin, el: HTMLElement, public sourcePath: string) {
     super(el);
   }
   private get r() { return this.plugin.rules; }
