@@ -9,3 +9,16 @@ export function renamedPath(path: string, from: string, to: string): string | nu
   return path.startsWith(`${from}/`) ? to + path.slice(from.length) : null;
 }
 
+/** characters Obsidian does not allow in file names */
+const FORBIDDEN = /[\\/:*?"<>|]/g;
+/**
+ * Why a character name can't be used as its note's file name, or null when it can: no characters
+ * Obsidian forbids, not only dots, no space or dot at the end (Windows drops them).
+ */
+export function fileNameProblem(name: string): string | null {
+  const bad = [...new Set(name.match(FORBIDDEN) ?? [])];
+  if (bad.length) return `A name can't contain ${bad.join(" ")}`;
+  if (/^\.+$/.test(name)) return "A name can't be only dots";
+  if (/[. ]$/.test(name)) return "A name can't end with a dot or a space";
+  return null;
+}

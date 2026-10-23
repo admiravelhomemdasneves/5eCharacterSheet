@@ -6,7 +6,7 @@ import { Linker, NoteInfo, sourceOfTag } from "./data/links";
 import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
 import { SKIP_FOLDERS, detect } from "./data/detect";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
-import { renamedPath } from "./files";
+import { fileNameProblem, renamedPath } from "./files";
 import srdData from "../data/srd-5.1.json";
 
 // Code block names: "character-sheet-5e" for new notes, "dnd-character" kept for older ones
@@ -314,8 +314,18 @@ class NewCharacterModal extends Modal {
     new Setting(contentEl).setName("Folder").setDesc("Where the character note is created (empty = vault root)").addText((t) => t.setPlaceholder("/").setValue(folder).onChange((v) => (folder = v)));
     new Setting(contentEl).addButton((b) => b.setButtonText("Create").setCta().onClick(async () => {
       if (!name.trim()) { new Notice("Give the character a name."); return; }
+      // the name is the note's file name; the folder may have subfolders, each checked the same way
+      const nameProblem = fileNameProblem(name.trim());
+      if (nameProblem) { new Notice(`${nameProblem}, as it is the note's file name.`); return; }
+      const folderProblem = folder.trim().split("/").filter(Boolean).map(fileNameProblem).find(Boolean);
+      if (folderProblem) { new Notice(`Folder: ${folderProblem.replace(/^A name/, "a folder name")}.`); return; }
       this.close();
-      await this.plugin.createCharacter(name.trim(), folder.trim());
+      try {
+        await this.plugin.createCharacter(name.trim(), folder.trim());
+      } catch (e) {
+        console.error("5e Character Sheet: could not create the character", e);
+        new Notice(`Could not create the character: ${(e as Error).message}`);
+      }
     }));
   }
   onClose() { this.contentEl.empty(); }
