@@ -7,7 +7,7 @@ import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summariz
 import { SKIP_FOLDERS, detect } from "./data/detect";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import { fileNameProblem, renamedPath } from "./files";
-import srdData from "../data/srd-5.1.json";
+import { loadSrd } from "./data/srd";
 
 // Code block names: "character-sheet-5e" for new notes, "dnd-character" kept for older ones
 export const BLOCKS = ["character-sheet-5e", "dnd-character"];
@@ -79,7 +79,7 @@ export default class CharacterSheetPlugin extends Plugin {
   async reloadData() {
     let data: Compendium = EMPTY;
     try {
-      if (this.settings.dataSource === "srd") data = structuredClone(srdData as unknown as Compendium);
+      if (this.settings.dataSource === "srd") data = loadSrd();
       else if (this.settings.dataSource === "imported") {
         const file = normalizePath(`${this.manifest.dir}/data/imported.json`);
         if (await this.app.vault.adapter.exists(file)) data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;

@@ -1,5 +1,5 @@
 // Bundles the plugin into dist/ (main.js, manifest.json, styles.css — what a release ships).
-// The SRD data is bundled inside main.js. With --install it is also copied into a vault
+// The SRD data is bundled inside main.js, as text: src/data/srd.ts parses it only when it is used. With --install it is also copied into a vault
 // (VAULT env var or "vault" in local.config.json), together with the personal imported data if built.
 import esbuild from "esbuild";
 import fs from "node:fs";
@@ -15,6 +15,12 @@ await esbuild.build({
   platform: "browser",
   external: ["obsidian", "electron", "@codemirror/*", "@lezer/*"],
   loader: { ".json": "json" },
+  plugins: [{
+    name: "srd-as-text",
+    setup(build) {
+      build.onLoad({ filter: /[\\/]data[\\/]srd-5\.1\.json$/ }, (args) => ({ contents: fs.readFileSync(args.path, "utf8"), loader: "text" }));
+    },
+  }],
   outfile: "dist/main.js",
   logLevel: "info",
 });

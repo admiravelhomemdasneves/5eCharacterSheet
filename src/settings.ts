@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting, SettingDefinitionItem } from "obsidian";
 import type CharacterSheetPlugin from "./main";
-import srdData from "../data/srd-5.1.json";
+import { SRD_ATTRIBUTION } from "./data/srd";
 import { SECTIONS } from "./sections";
 import { IMPORT_CHANGES } from "./data/build";
 import { DetectModal } from "./ui/detect";
@@ -86,7 +86,7 @@ function withLinks(text: string, ...links: Link[]) {
 }
 const SOURCE_OPTIONS: Record<SheetSettings["dataSource"], string> = { none: "None (manual mode)", srd: "SRD 5.1 (included)", imported: "Imported from 5etools" };
 const THEME_OPTIONS: Record<SheetSettings["theme"], string> = { plugin: "Original", obsidian: "Obsidian theme", custom: "Custom" };
-const attribution = (srdData as { meta: { attribution?: string } }).meta.attribution || "";
+const attribution = SRD_ATTRIBUTION;
 
 /**
  * The parts of the declarative settings (Obsidian 1.13) that the settings for older versions are
