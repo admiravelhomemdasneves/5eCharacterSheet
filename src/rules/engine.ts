@@ -15,7 +15,6 @@ export const ALIGNMENTS = ["Lawful Good", "Neutral Good", "Chaotic Good", "Lawfu
 export const CONDITIONS = ["Blinded", "Charmed", "Deafened", "Frightened", "Grappled", "Incapacitated", "Invisible", "Paralyzed", "Petrified", "Poisoned", "Prone", "Restrained", "Stunned", "Unconscious"];
 export const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
 export const POINT_BUY_COST: Record<number, number> = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
-export const XP_THRESHOLDS = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
 // Full-caster slot table, index = caster level (1..20), value = slots for spell levels 1..9
 export const FULL_CASTER_SLOTS: number[][] = [
   [], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2],
@@ -30,15 +29,15 @@ export interface Feature { name: string; level: number; source: string; text: st
 export interface Spellcasting { ability: Ability; progression: string; prepared?: string | null; cantrips?: number[] | null; known?: number[] | null; knownFixed?: number[] | null; list: string | null }
 /** speeds in feet; "walk" means "equal to your walking speed" */
 export type Speeds = Record<string, number | string>;
-export interface SubraceData { id: string; name: string; source: string; link: string | null; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Speeds | null; darkvision: number | null; skills: ProfList; languages: string[]; resist: unknown[]; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; hpPerLevel: number }
-export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Speeds; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; resist: unknown[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean }
+export interface SubraceData { id: string; name: string; source: string; link: string | null; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Speeds | null; darkvision: number | null; skills: ProfList; languages: string[]; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; hpPerLevel: number }
+export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Speeds; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean }
 export interface SubclassData { id: string; name: string; shortName: string; source: string; link: string | null; features: Feature[]; spellcasting: Spellcasting | null; additionalSpells: AdditionalSpells[] | null;
   /** ids of spells added to the class's spell list for this subclass only (homebrew `subclassSpells`) */
   spells?: string[] }
 export interface ClassData { id: string; name: string; source: string; link: string | null; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number | null)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[] }
 export interface BackgroundData { id: string; name: string; source: string; link: string | null; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; heading?: string; text: string; link: string | null } | null; feats: unknown }
 export interface FeatData { id: string; name: string; source: string; link: string | null; prereq: string; ability: AbilityOption[]; text: string }
-export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; attack: boolean; save: string | null; damage: string[]; text: string }
+export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; text: string }
 export interface ItemData { id: string; name: string; source: string; link: string | null; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number; baseItem: string | null }
 export type AdditionalSpells = { ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
 export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string; importVersion?: number }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[] }
@@ -87,7 +86,7 @@ export interface CharState {
   removedFeatures: string[];
   manual: ManualData; // used when no rules data is configured (manual mode)
   /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
-  ui: { collapsed: Record<string, boolean>; sourceFilter: string[]; editing: Record<string, boolean>; hidden: Record<string, boolean> };
+  ui: { collapsed: Record<string, boolean>; editing: Record<string, boolean>; hidden: Record<string, boolean> };
 }
 
 const zeroAbilities = (): Record<Ability, number> => ({ str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 });
@@ -107,7 +106,7 @@ export function newCharacter(name = ""): CharState {
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
     allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], removedFeatures: [], manual: emptyManual(),
-    ui: { collapsed: {}, sourceFilter: [], editing: {}, hidden: {} },
+    ui: { collapsed: {}, editing: {}, hidden: {} },
   };
 }
 // Fill in any fields missing from older/partial saved states.
@@ -129,6 +128,8 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   for (const k of ["base", "asi", "adjust"] as const) out.abilities[k] = merge(d.abilities[k], s?.abilities?.[k]);
   out.classes = (out.classes || []).map((c) => ({ ...c, subclass: c.subclass ?? null, hpRolls: c.hpRolls ?? [], skills: c.skills ?? [], level: Math.max(1, Math.min(20, c.level || 1)) }));
   out.ui.editing = out.ui.editing || {};
+  // a source filter that was never used, still in older sheets
+  delete (out.ui as { sourceFilter?: unknown }).sourceFilter;
   // sheets saved before sections could be hidden show all of them
   out.ui.hidden = out.ui.hidden || {};
   out.events = Array.isArray(out.events) ? out.events.map((e) => String(e ?? "")) : [];
@@ -236,7 +237,6 @@ export const mod = (score: number) => Math.floor((score - 10) / 2);
 export const fmtMod = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 export const totalLevel = (s: CharState) => s.classes.reduce((a, c) => a + (c.level || 0), 0) || 0;
 export const proficiencyBonus = (level: number) => Math.ceil(Math.max(1, level) / 4) + 1;
-export const levelForXp = (xp: number) => { let l = 1; XP_THRESHOLDS.forEach((t, i) => { if (xp >= t) l = i + 1; }); return l; };
 
 // Racial ability options: the subrace's replace the race's when it overwrites them, otherwise each race
 // option is combined with each subrace option (fixed bonuses added, choices appended after the race's,

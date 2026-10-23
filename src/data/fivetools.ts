@@ -137,9 +137,6 @@ export interface RawSpell extends RawBase {
   components?: { v?: boolean; s?: boolean; m?: string | { text: string } };
   duration?: { type: string; concentration?: boolean; duration?: { amount: number; type: string } }[];
   meta?: { ritual?: boolean };
-  spellAttack?: string[];
-  savingThrow?: string[];
-  damageInflict?: string[];
   entriesHigherLevel?: RawEntry[];
   /** homebrew: class lists on the spell itself (official spells have them in spells/sources.json) */
   classes?: { fromClassList?: { name: string }[]; fromClassListVariant?: { name: string }[] };

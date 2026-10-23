@@ -25,7 +25,7 @@ export function select(parent: HTMLElement, opts: Opt[], value: string | null, o
 // compendium note are rendered as elements that can trigger Obsidian's page preview on hover.
 export interface RichOpt extends Opt { link?: string | null }
 export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string | null, onChange: (v: string) => void, o: {
-  placeholder?: string; cls?: string; disabled?: boolean; allowEmpty?: boolean;
+  placeholder?: string; cls?: string; disabled?: boolean;
   hover?: (ev: MouseEvent, target: HTMLElement, link: string) => void;
   onClose?: () => void;
 } = {}) {
@@ -86,7 +86,7 @@ export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string |
     };
     const draw = (q: string) => {
       list.empty(); items = []; active = -1;
-      const all: RichOpt[] = o.allowEmpty !== false ? [{ value: "", label: o.placeholder ?? "—" }, ...opts] : opts;
+      const all: RichOpt[] = [{ value: "", label: o.placeholder ?? "—" }, ...opts];
       const ql = q.toLowerCase();
       let group: string | undefined = "\u0000";
       for (const opt of all) {
@@ -136,12 +136,6 @@ export function stepper(parent: HTMLElement, value: number, onChange: (v: number
 
 export function textInput(parent: HTMLElement, value: string, onChange: (v: string) => void, placeholder = "", cls = "") {
   const el = parent.createEl("input", { type: "text", value: value || "", placeholder, cls: `dnd-text ${cls}` });
-  el.addEventListener("change", () => onChange(el.value));
-  return el;
-}
-export function textArea(parent: HTMLElement, value: string, onChange: (v: string) => void, placeholder = "") {
-  const el = parent.createEl("textarea", { placeholder, cls: "dnd-textarea" });
-  el.value = value || "";
   el.addEventListener("change", () => onChange(el.value));
   return el;
 }

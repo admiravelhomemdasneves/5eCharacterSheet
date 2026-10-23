@@ -297,7 +297,6 @@ function mergeSubrace(race: RaceData, sub: SubraceData) {
   if (sub.darkvision != null) race.darkvision = sub.darkvision;
   race.skills = { fixed: [...race.skills.fixed, ...sub.skills.fixed], choose: [...race.skills.choose, ...sub.skills.choose] };
   race.languages = [...race.languages, ...sub.languages];
-  race.resist = [...race.resist, ...sub.resist];
   race.traits = [...race.traits, ...sub.traits];
   race.spells = race.spells || sub.spells;
   race.subraces = [];
@@ -434,7 +433,6 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
         darkvision: s.darkvision ?? null,
         skills: profList(s.skillProficiencies),
         languages: langText(s.languageProficiencies),
-        resist: s.resist || [],
         traits: traitsOf(s.entries),
         spells: s.additionalSpells || null,
         hpPerLevel: /hit point maximum increases by 1/i.test(JSON.stringify(s.entries || "")) ? 1 : 0,
@@ -453,7 +451,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       skills: profList(r.skillProficiencies), tools: profList(r.toolProficiencies),
       weapons: profList(r.weaponProficiencies), armor: profList(r.armorProficiencies),
       languages: langText(r.languageProficiencies),
-      resist: r.resist || [], feats: r.feats || null,
+      feats: r.feats || null,
       traits: traitsOf(r.entries),
       spells: r.additionalSpells || null,
       subraces: subOut,
@@ -616,7 +614,6 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       components: [s.components?.v && "V", s.components?.s && "S", m && `M (${typeof m === "string" ? m : m.text})`].filter(Boolean).join(", "),
       duration: dur ? (dur.type === "timed" && dur.duration ? `${dur.concentration ? "Concentration, up to " : ""}${dur.duration.amount} ${dur.duration.type}${dur.duration.amount > 1 ? "s" : ""}` : title(dur.type)) : "",
       concentration: !!dur?.concentration, ritual: !!s.meta?.ritual, classes: classes2,
-      attack: (s.spellAttack || []).length > 0, save: (s.savingThrow || [])[0] || null, damage: s.damageInflict || [],
       text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
     });
   });

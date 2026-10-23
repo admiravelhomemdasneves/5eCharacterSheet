@@ -18,7 +18,8 @@ test("hidden sections: new and older saved sheets show every section", () => {
   assert.deepEqual(E.newCharacter().ui.hidden, {});
   const old = E.normalize({ name: "Old", ui: { collapsed: { skills: true }, sourceFilter: [], editing: {} } as any });
   assert.deepEqual(old.ui.hidden, {});
+  assert.ok(!("sourceFilter" in old.ui), "the unused source filter of older sheets is dropped");
   assert.equal(old.ui.collapsed.skills, true);
-  const s = E.normalize({ name: "Hid", ui: { collapsed: {}, sourceFilter: [], editing: {}, hidden: { spells: true } } });
+  const s = E.normalize({ name: "Hid", ui: { collapsed: {}, editing: {}, hidden: { spells: true } } });
   assert.deepEqual(s.ui.hidden, { spells: true });
 });

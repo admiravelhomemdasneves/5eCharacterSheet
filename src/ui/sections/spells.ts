@@ -32,7 +32,7 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
     const grid = st.createDiv({ cls: "dnd-slot-grid" });
     for (let i = 0; i < 9; i++) {
       const max = slots.max[i];
-      if (!max && !s.slots.adjust[i] && !(i < 9 && slots.max.slice(i).some((n) => n > 0))) continue;
+      if (!max && !s.slots.adjust[i] && !slots.max.slice(i).some((n) => n > 0)) continue;
       const cell = grid.createDiv({ cls: "dnd-slot" });
       cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
       const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
