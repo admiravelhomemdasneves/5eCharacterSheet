@@ -395,6 +395,40 @@ export function asiTaken(s: CharState) {
   return s.feats.filter((f) => !f.free).length + Math.ceil(legacy / 2);
 }
 
+// ------------------------------------------------------------------ feature rules
+// Class and subclass features with a rule the sheet works out, found by the feature's name rather than
+// by its class, so a homebrew class with the same feature gets it too; the numbers come from the
+// feature's text where it gives them. Feats with a rule are found by their name.
+type FeatureGroups = ReturnType<typeof classFeatures>;
+const featuresNamed = (groups: FeatureGroups, name: string) => groups.flatMap((g) => g.features.filter((f) => f.name === name).map((f) => ({ g, f })));
+const ABILITY_BY_NAME = Object.fromEntries(ABILITIES.map((a) => [ABILITY_NAMES[a].toLowerCase(), a])) as Record<string, Ability>;
+/** Jack of All Trades: half the proficiency bonus to checks without it */
+const jackOfAllTrades = (groups: FeatureGroups) => featuresNamed(groups, "Jack of All Trades").length > 0;
+/**
+ * Armour class without armour from features: "your AC equals 13 + your Dexterity modifier" (Draconic
+ * Resilience), "... + your Dexterity modifier + your Wisdom modifier" (Unarmored Defense); one that
+ * says "not wielding a shield" doesn't count with a shield.
+ */
+const UNARMORED_AC = /(?:AC|Armor Class) equals (\d+) \+ your Dexterity modifier(?: \+ your (\w+) modifier)?/i;
+function unarmoredDefenses(groups: FeatureGroups) {
+  return ["Unarmored Defense", "Draconic Resilience"].flatMap((name) => featuresNamed(groups, name)).flatMap(({ f }) => {
+    const m = UNARMORED_AC.exec(f.text || "");
+    if (!m) return [];
+    return [{ name: f.name, base: parseInt(m[1]), plus: m[2] ? ABILITY_BY_NAME[m[2].toLowerCase()] ?? null : null, noShield: /not wielding a shield/i.test(f.text) }];
+  });
+}
+/** Hit points from features that add 1 per level of their class (Draconic Resilience) */
+const HP_PER_CLASS_LEVEL = /hit point maximum increases by 1 and increases by 1 again whenever you gain a level in this class/i;
+const featureHpPerLevel = (groups: FeatureGroups) => groups.filter((g) => g.features.some((f) => HP_PER_CLASS_LEVEL.test(f.text || ""))).reduce((a, g) => a + g.level, 0);
+/** Walking speed from Fast Movement ("your speed increases by 10 feet") */
+const fastMovement = (groups: FeatureGroups) => featuresNamed(groups, "Fast Movement").reduce((a, { f }) => a + (parseInt(/speed increases by (\d+) feet/i.exec(f.text || "")?.[1] ?? "") || 10), 0);
+/** Feats with a rule: Tough (+2 hit points per level) and Alert (a bonus to initiative, +5) */
+const hasFeat = (r: Rules, s: CharState, name: string) => s.feats.some((f) => r.feat(f.id)?.name === name);
+const alertBonus = (r: Rules, s: CharState) => {
+  const f = s.feats.map((x) => r.feat(x.id)).find((x) => x?.name === "Alert");
+  return f ? parseInt(/\+(\d+) bonus to initiative/i.exec(f.text || "")?.[1] ?? "") || 5 : 0;
+};
+
 // ------------------------------------------------------------------ proficiencies
 export function saveProficiencies(r: Rules, s: CharState): Record<Ability, ProfLevel> {
   const out = {} as Record<Ability, ProfLevel>;
@@ -419,16 +453,17 @@ export function skillProficiencies(r: Rules, s: CharState, auto = autoSkillSourc
   for (const k of Object.keys(SKILLS)) out[k] = s.skills[k] ?? (auto[k] ? 1 : 0);
   return out;
 }
-export function skillBonus(r: Rules, s: CharState, skill: string, scores = abilityScores(r, s), prof = skillProficiencies(r, s)) {
+/** `features`: the character's classFeatures(), when already known */
+export function skillBonus(r: Rules, s: CharState, skill: string, scores = abilityScores(r, s), prof = skillProficiencies(r, s), features = classFeatures(r, s)) {
   const lvl = prof[skill] || 0;
   const pb = proficiencyBonus(totalLevel(s));
-  // Jack of All Trades (Bard 2+): half proficiency to non-proficient checks
-  const jack = lvl === 0 && s.classes.some((e) => r.cls(e.id)?.name === "Bard" && e.level >= 2) ? Math.floor(pb / 2) : 0;
+  // Jack of All Trades: half proficiency to non-proficient checks
+  const jack = lvl === 0 && jackOfAllTrades(features) ? Math.floor(pb / 2) : 0;
   return mod(scores[SKILLS[skill]].total) + lvl * pb + jack;
 }
 
 // ------------------------------------------------------------------ hit points
-export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s)) {
+export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s), features = classFeatures(r, s)) {
   const con = mod(scores.con.total);
   const level = totalLevel(s);
   let dice = 0;
@@ -441,8 +476,9 @@ export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s)
     }
   });
   const racial = (r.subrace(s)?.hpPerLevel || 0) * level;
-  const tough = s.feats.some((f) => r.feat(f.id)?.name === "Tough") ? 2 * level : 0;
-  const draconic = s.classes.some((e) => r.subclass(e)?.shortName === "Draconic") ? s.classes.filter((e) => r.subclass(e)?.shortName === "Draconic").reduce((a, e) => a + e.level, 0) : 0;
+  const tough = hasFeat(r, s, "Tough") ? 2 * level : 0;
+  // Draconic Resilience, and any feature that adds 1 hit point per level of its class
+  const draconic = featureHpPerLevel(features);
   const computed = Math.max(level, dice + con * level + racial + tough + draconic) + (s.hp.adjust || 0);
   return { dice, con: con * level, racial, tough, draconic, adjust: s.hp.adjust || 0, max: s.hp.override ?? computed };
 }
@@ -476,12 +512,11 @@ export function hitDice(r: Rules, s: CharState) {
 }
 
 // ------------------------------------------------------------------ armor class
-export function armorClass(r: Rules, s: CharState, scores = abilityScores(r, s)) {
+export function armorClass(r: Rules, s: CharState, scores = abilityScores(r, s), features = classFeatures(r, s)) {
   const dex = mod(scores.dex.total);
   const equipped = s.inventory.filter((i) => i.equipped).map((i) => ({ e: i, it: r.item(i.id) }));
   const armor = equipped.find((x) => x.it?.kind === "armor" && x.it.armorType !== "shield");
   const shield = equipped.find((x) => x.it?.armorType === "shield");
-  const names = s.classes.map((e) => r.cls(e.id)?.name);
   let base: number, how: string;
   if (armor?.it) {
     const a = armor.it.ac || 10;
@@ -490,9 +525,10 @@ export function armorClass(r: Rules, s: CharState, scores = abilityScores(r, s))
     else { base = a; how = armor.it.name; }
   } else {
     const options: [number, string][] = [[10 + dex, "Unarmored (10 + DEX)"]];
-    if (names.includes("Barbarian")) options.push([10 + dex + mod(scores.con.total), "Unarmored Defense (10 + DEX + CON)"]);
-    if (names.includes("Monk") && !shield) options.push([10 + dex + mod(scores.wis.total), "Unarmored Defense (10 + DEX + WIS)"]);
-    if (s.classes.some((e) => r.subclass(e)?.shortName === "Draconic")) options.push([13 + dex, "Draconic Resilience (13 + DEX)"]);
+    for (const u of unarmoredDefenses(features)) {
+      if (u.noShield && shield) continue;
+      options.push([u.base + dex + (u.plus ? mod(scores[u.plus].total) : 0), `${u.name} (${u.base} + DEX${u.plus ? ` + ${u.plus.toUpperCase()}` : ""})`]);
+    }
     options.sort((a, b) => b[0] - a[0]);
     [base, how] = options[0];
   }
@@ -503,19 +539,23 @@ export function armorClass(r: Rules, s: CharState, scores = abilityScores(r, s))
 }
 
 // ------------------------------------------------------------------ speed, initiative, senses, carrying
-export function speeds(r: Rules, s: CharState) {
+export function speeds(r: Rules, s: CharState, features = classFeatures(r, s)) {
   const raw: Speeds = { ...(r.race(s)?.speed || { walk: 30 }), ...(r.subrace(s)?.speed || {}) };
   const walk = typeof raw.walk === "number" && raw.walk ? raw.walk : 30;
   const out: Record<string, number> = {};
   // a string value means "equal to your walking speed"
   for (const [k, v] of Object.entries(raw)) out[k] = typeof v === "number" ? v : walk;
   out.walk = walk + (s.speedAdjust || 0);
-  const monk = s.classes.find((e) => r.cls(e.id)?.name === "Monk");
-  if (monk) { const col = r.cls(monk.id)!.tableCols.find((c) => c.label === "Unarmored Movement"); const v = parseInt(String(col?.rows[monk.level - 1] ?? 0)); if (v) out.walk += v; }
-  if (s.classes.some((e) => r.cls(e.id)?.name === "Barbarian" && e.level >= 5)) out.walk += 10;
+  // Unarmored Movement: the class table's column of that name, at the class's level
+  for (const e of s.classes) {
+    const col = r.cls(e.id)?.tableCols.find((c) => c.label === "Unarmored Movement");
+    const v = parseInt(String(col?.rows[e.level - 1] ?? 0));
+    if (v) out.walk += v;
+  }
+  out.walk += fastMovement(features);
   return out;
 }
-export const initiative = (r: Rules, s: CharState, scores = abilityScores(r, s)) => mod(scores.dex.total) + (s.initiativeAdjust || 0) + (s.feats.some((f) => r.feat(f.id)?.name === "Alert") ? 5 : 0);
+export const initiative = (r: Rules, s: CharState, scores = abilityScores(r, s)) => mod(scores.dex.total) + (s.initiativeAdjust || 0) + alertBonus(r, s);
 export const darkvision = (r: Rules, s: CharState) => r.subrace(s)?.darkvision ?? r.race(s)?.darkvision ?? null;
 /** A character can be attuned to at most this many magic items at once. */
 export const ATTUNEMENT_MAX = 3;
@@ -663,7 +703,7 @@ export function casters(r: Rules, s: CharState, scores = abilityScores(r, s)): C
     const sub = r.subclass(e);
     const sc = c?.spellcasting || sub?.spellcasting;
     if (!c || !sc) continue;
-    if (sc.progression === "1/2" && c.name !== "Artificer" && e.level < 2) continue;
+    if (sc.progression === "1/2" && e.level < 2) continue;
     if (sc.progression === "1/3" && e.level < 3) continue;
     const m = mod(scores[sc.ability].total);
     let prepared: number | null = null;
@@ -688,9 +728,9 @@ export function spellSlots(r: Rules, s: CharState) {
   }).filter((x) => x.prog && x.prog !== "pact");
   let casterLevel = 0;
   const single = entries.length === 1;
-  for (const { e, c, prog } of entries) {
+  for (const { e, prog } of entries) {
     if (prog === "full") casterLevel += e.level;
-    else if (prog === "artificer" || c?.name === "Artificer") casterLevel += Math.ceil(e.level / 2);
+    else if (prog === "artificer") casterLevel += Math.ceil(e.level / 2);
     else if (prog === "1/2") casterLevel += single ? (e.level >= 2 ? Math.ceil(e.level / 2) : 0) : Math.floor(e.level / 2);
     else if (prog === "1/3") casterLevel += single ? (e.level >= 3 ? Math.ceil(e.level / 3) : 0) : Math.floor(e.level / 3);
   }
@@ -826,9 +866,9 @@ export function derive(r: Rules, s: CharState) {
     scores, level, pb: proficiencyBonus(level),
     saves: saveProficiencies(r, s),
     skillSources, skillProf,
-    skills: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, skillBonus(r, s, k, scores, skillProf)])) as Record<string, number>,
-    hp: hpBreakdown(r, s, scores), ac: armorClass(r, s, scores), initiative: initiative(r, s, scores),
-    speeds: speeds(r, s), hitDice: hitDice(r, s), darkvision: darkvision(r, s),
+    skills: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, skillBonus(r, s, k, scores, skillProf, features)])) as Record<string, number>,
+    hp: hpBreakdown(r, s, scores, features), ac: armorClass(r, s, scores, features), initiative: initiative(r, s, scores),
+    speeds: speeds(r, s, features), hitDice: hitDice(r, s), darkvision: darkvision(r, s),
     features, resources: classResources(r, s), asi,
     casters: casterList,
     /** casterSpellCounts() of each caster, by class id */

@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildCompendium, summarize } from "../src/data/build.ts";
 import { Linker } from "../src/data/links.ts";
+import { SRD_ATTRIBUTION } from "../src/data/srd.ts";
 import { ROOT, compendiumNotes, personalPaths } from "./local.ts";
 
 const DATA = process.env.FIVETOOLS_DATA || path.join(ROOT, "vendor", "5etools-data");
@@ -16,7 +17,7 @@ const mode = process.argv[2] || "srd";
 
 if (mode === "srd") {
   const data = await buildCompendium({ read, srdOnly: true, rules2014Only: true });
-  const out = { ...data, meta: { ...data.meta, attribution: SRD_ATTRIBUTION() } };
+  const out = { ...data, meta: { ...data.meta, attribution: SRD_ATTRIBUTION } };
   fs.mkdirSync(path.join(ROOT, "data"), { recursive: true });
   fs.writeFileSync(path.join(ROOT, "data", "srd-5.1.json"), JSON.stringify(out));
   console.log("SRD:", summarize(data));
@@ -30,8 +31,4 @@ if (mode === "srd") {
   const data = await buildCompendium({ read, keep: (kind, name, source) => linker.has(kind, name, source) });
   fs.writeFileSync(path.join(ROOT, "data", "imported.json"), JSON.stringify(data));
   console.log(`Imported (${notes.length} compendium notes):`, summarize(data));
-}
-
-function SRD_ATTRIBUTION() {
-  return "This work includes material taken from the System Reference Document 5.1 (\"SRD 5.1\") by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.";
 }
