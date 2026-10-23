@@ -37,7 +37,7 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
       cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
       const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
       for (let k = 0; k < max; k++) checkbox(boxes, s.slots.used[i] > k, (v) => sheet.change((x) => { x.slots.used[i] = v ? k + 1 : k; }), "Used");
-      stepper(cell, max, (v) => sheet.change((x) => { x.slots.adjust[i] += v - max; }), { min: 0, title: "Add/remove slots of sheet level" });
+      stepper(cell, max, (v) => sheet.change((x) => { x.slots.adjust[i] += v - max; }), { min: 0, title: "Add/remove slots of this level" });
     }
     const addLvl = st.createDiv({ cls: "dnd-row" });
     select(addLvl, ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") sheet.change((x) => { x.slots.adjust[parseInt(v)] += 1; }); }, "+ Add a slot of level…");
@@ -109,7 +109,7 @@ export function manualSpellcasting(sheet: CharacterSheet, root: HTMLElement, d: 
       cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
       const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
       for (let k = 0; k < max[i]; k++) checkbox(boxes, s.slots.used[i] > k, (v) => sheet.change((x) => { x.slots.used[i] = v ? k + 1 : k; }), "Used");
-      stepper(cell, max[i], (v) => sheet.change((x) => { x.slots.adjust[i] = Math.max(0, v); }), { min: 0, title: "Slots of sheet level" });
+      stepper(cell, max[i], (v) => sheet.change((x) => { x.slots.adjust[i] = Math.max(0, v); }), { min: 0, title: "Slots of this level" });
     }
     select(st.createDiv({ cls: "dnd-row" }), ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") sheet.change((x) => { x.slots.adjust[parseInt(v)] = Math.max(0, x.slots.adjust[parseInt(v)] || 0) + 1; }); }, "+ Add a slot of level…");
     // spell list

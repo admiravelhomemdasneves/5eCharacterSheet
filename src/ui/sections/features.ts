@@ -95,8 +95,8 @@ export function dataFeature(sheet: CharacterSheet, el: HTMLElement, key: string,
 /** Hide (by `hideKey`, listed under the section) and remove buttons, together at the end of the feature's summary. */
 export function featureButtons(sheet: CharacterSheet, d: HTMLElement, hideKey: string, remove: () => void) {
   const btns = d.querySelector("summary")!.createSpan({ cls: "dnd-feature-btns" });
-  iconButton(btns, "eye-off", "Hide sheet feature", () => sheet.change((x) => { x.hiddenFeatures.push(hideKey); }), "dnd-feature-btn");
-  iconButton(btns, "trash-2", "Remove sheet feature", remove, "dnd-feature-btn");
+  iconButton(btns, "eye-off", "Hide this feature", () => sheet.change((x) => { x.hiddenFeatures.push(hideKey); }), "dnd-feature-btn");
+  iconButton(btns, "trash-2", "Remove this feature", remove, "dnd-feature-btn");
 }
 
 /**
@@ -144,7 +144,7 @@ export function customFeatures(sheet: CharacterSheet, el: HTMLElement, kind: E.C
     const row = el.createDiv({ cls: "dnd-hidden-features" });
     row.createSpan({ cls: "dnd-label", text: "Hidden" });
     for (const h of ctx.hidden) {
-      const chip = row.createSpan({ cls: "dnd-chip", text: h.name, attr: { "aria-label": "Show sheet feature again" } });
+      const chip = row.createSpan({ cls: "dnd-chip", text: h.name, attr: { "aria-label": "Show this feature again" } });
       chip.onclick = () => sheet.change((x) => { x.hiddenFeatures = x.hiddenFeatures.filter((k) => k !== h.key); });
     }
   }
