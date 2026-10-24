@@ -93,6 +93,19 @@ test("slot adjustments add or remove slots per level", () => {
   assert.deepEqual(E.spellSlots(r, s).max.slice(0, 4), [3, 3, 2, 1]);
 });
 
+test("slots by the rules next to the sheet's: every level either has, and where they differ", () => {
+  const s = hillDwarfWizard5();
+  assert.deepEqual(E.slotsByRules(E.spellSlots(r, s)), [
+    { level: 1, rules: 4, sheet: 4, differs: false }, { level: 2, rules: 3, sheet: 3, differs: false }, { level: 3, rules: 2, sheet: 2, differs: false },
+  ]);
+  // 2nd level stepped down to 0 (it leaves the grid, not this list) and a 4th-level slot added
+  s.slots.adjust[1] = -3; s.slots.adjust[3] = 1;
+  assert.deepEqual(E.slotsByRules(E.spellSlots(r, s)).filter((l) => l.differs), [
+    { level: 2, rules: 3, sheet: 0, differs: true }, { level: 4, rules: 0, sheet: 1, differs: true },
+  ]);
+  assert.deepEqual(E.slotsByRules(E.spellSlots(r, E.newCharacter())), []);
+});
+
 test("point buy: 15/15/15/8/8/8 = 27 points", () => {
   assert.deepEqual(E.pointBuySpent({ str: 15, dex: 15, con: 15, int: 8, wis: 8, cha: 8 }), { spent: 27, remaining: 0, valid: true });
   assert.equal(E.pointBuySpent({ str: 16, dex: 8, con: 8, int: 8, wis: 8, cha: 8 }).valid, false);

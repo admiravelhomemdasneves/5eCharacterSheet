@@ -94,6 +94,9 @@
 
 .dnd-hint { color: var(--text-muted); font-size: 0.8rem; }
 .dnd-warn { color: var(--text-error); font-size: 0.8rem; }
+/* the slots the rules give, above the slot grid; a level where the sheet has other slots is marked */
+.dnd-slot-rules .dnd-slot-rules-label { font-weight: 600; }
+.dnd-slot-rules .dnd-slot-off { color: var(--text-error); }
 .dnd-breakdown { font-size: 0.72rem; color: var(--text-muted); line-height: 1.3; }
 .dnd-tag {
   display: inline-block; font-size: 0.68rem; line-height: 1.6; padding: 0 var(--dnd-s2); margin-left: var(--dnd-s2);
