@@ -288,7 +288,7 @@ export default class CharacterSheetPlugin extends Plugin {
     this.writing.add(path);
     try {
       await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-        fm.dnd = JSON.parse(JSON.stringify(s0)) as CharState;
+        fm.dnd = E.savedState(s0);
         // flat keys for Dataview, Initiative Tracker (players) and Fantasy Statblocks
         fm.name = s.name || file.basename;
         fm.player = s.player || undefined;

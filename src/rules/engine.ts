@@ -134,6 +134,15 @@ export function newCharacter(name = ""): CharState {
     ui: { hidden: {} },
   };
 }
+/**
+ * A state as the note keeps it (`dnd` in its frontmatter): plain JSON, with the manual hit dice as
+ * their text ("5d10 + 2d8"), the form older versions of the plugin read. normalize() reads it back.
+ */
+export function savedState(s: CharState): Record<string, unknown> {
+  const out = JSON.parse(JSON.stringify(s)) as Record<string, unknown> & { manual: Record<string, unknown> };
+  out.manual.hitDice = hitDiceText(s.manual.hitDice);
+  return out;
+}
 /** Fill in any fields missing from older/partial saved states, and migrate older versions (STATE_VERSION). */
 export function normalize(s: Partial<CharState> | null | undefined): CharState {
   const d = newCharacter(), version = stateVersion(s);
@@ -173,9 +182,10 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
     for (const a of ABILITIES) for (let n = 0; n < (out.abilities.asi[a] || 0); n++) legacy.push(a);
     for (let i = 0; i < legacy.length; i += 2) out.feats.push({ id: ASI_ID, picks: legacy.slice(i, i + 2) });
     out.abilities.asi = zeroAbilities();
-    // the view (see legacyView) and a source filter that was never used leave the note
-    out.ui = { hidden: out.ui.hidden };
   }
+  // the view (see legacyView) and a source filter that was never used are not kept in the note; older
+  // versions of the plugin, on another device, may write them back
+  out.ui = { hidden: out.ui.hidden };
   out.version = STATE_VERSION;
   out.slots.adjust = [...out.slots.adjust, ...Array<number>(9).fill(0)].slice(0, 9);
   out.slots.used = [...out.slots.used, ...Array<number>(9).fill(0)].slice(0, 9);
@@ -505,15 +515,17 @@ export function longRest(s: CharState, maxHp: number, hitDiceTotal: number) {
   if (s.exhaustion > 0) s.exhaustion -= 1;
 }
 /**
- * Manual hit dice from what a saved state holds: the list, or the text older sheets typed
- * ("3d8 + 2d10", converted with parseHitDice). Counts are whole numbers of at least 1.
+ * Manual hit dice from what a saved state holds: the text the note keeps ("3d8 + 2d10", see
+ * savedState; "d10" is one die), read term by term, or a list. Counts are whole numbers of at least 1.
  */
 export function manualHitDiceOf(saved: unknown): ManualHitDice[] {
-  if (typeof saved === "string") return Object.entries(parseHitDice(saved)).map(([die, count]) => ({ count, sides: parseInt(die.slice(1)) }));
+  if (typeof saved === "string") return [...saved.matchAll(/(\d*)\s*d\s*(\d+)/gi)].map((m) => ({ count: Math.max(1, parseInt(m[1]) || 1), sides: parseInt(m[2]) }));
   if (!Array.isArray(saved)) return [];
   return saved.filter((x): x is Partial<ManualHitDice> => !!x && typeof x === "object")
     .map((x) => ({ count: Math.max(1, Math.round(Number(x.count)) || 1), sides: Math.max(1, Math.round(Number(x.sides)) || 8) }));
 }
+/** Manual hit dice as the note keeps them: [{ 5, 10 }, { 2, 8 }] -> "5d10 + 2d8" (none: "") */
+export const hitDiceText = (list: ManualHitDice[]) => list.map((h) => `${h.count}d${h.sides}`).join(" + ");
 /** Manual hit dice by die, as hitDice() gives them: [{ 3, 8 }, { 2, 10 }] -> { d8: 3, d10: 2 } */
 export function manualHitDice(m: ManualData): Record<string, number> {
   const out: Record<string, number> = {};
