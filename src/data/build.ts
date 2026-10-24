@@ -47,7 +47,8 @@ const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
  *   4 = homebrew subclass spell lists (subclassSpells)
  */
 export const IMPORT_VERSION = 4;
-export const IMPORT_CHANGES = "adds the extra spells of homebrew subclasses to the spell lists of characters with that subclass";
+/** What an import with this importer brings to data imported before it (shown when it is out of date). */
+export const IMPORT_CHANGES = "completes the entries 5etools copies from others, and adds the extra spells of homebrew subclasses to their spell lists";
 /** Imported data made by an older importer (data from before the stamp counts as version 1). */
 export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
