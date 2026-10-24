@@ -30,7 +30,7 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
     const st = el.createDiv({ cls: "dnd-slots" });
     st.createDiv({ cls: "dnd-subtitle", text: `Spell Slots${slots.casterLevel ? ` (caster level ${slots.casterLevel})` : ""}` });
     // the computed slots, with the player's adjustment on top
-    slotGrid(sheet, st, slots.max, (i) => !!s.slots.adjust[i], "Add/remove slots of this level", (x, i, v) => { x.slots.adjust[i] += v - slots.max[i]; }, (x, i) => { x.slots.adjust[i] += 1; });
+    slotGrid(sheet, st, slots.max, "Add/remove slots of this level", (x, i, v) => { x.slots.adjust[i] += v - slots.max[i]; });
     if (slots.pact) {
       const pc = st.createDiv({ cls: "dnd-slot dnd-pact" });
       pc.createDiv({ cls: "dnd-label", text: `Pact Magic (${ORD[slots.pact.level]} level)` });
@@ -86,7 +86,7 @@ export function manualSpellcasting(sheet: CharacterSheet, root: HTMLElement, d: 
     // slots: only what the player adds
     const st = el.createDiv({ cls: "dnd-slots" });
     st.createDiv({ cls: "dnd-subtitle", text: "Spell Slots" });
-    slotGrid(sheet, st, s.slots.adjust.map((n) => Math.max(0, n || 0)), () => false, "Slots of this level", (x, i, v) => { x.slots.adjust[i] = Math.max(0, v); }, (x, i) => { x.slots.adjust[i] = Math.max(0, x.slots.adjust[i] || 0) + 1; });
+    slotGrid(sheet, st, s.slots.adjust.map((n) => Math.max(0, n || 0)), "Slots of this level", (x, i, v) => { x.slots.adjust[i] = Math.max(0, v); });
     // spell list
     const list = el.createDiv({ cls: "dnd-spell-list" });
     const head = list.createDiv({ cls: "dnd-row" });
@@ -122,23 +122,23 @@ export function addSpell(sheet: CharacterSheet, casters: E.CasterInfo[], slots: 
 }
 
 /**
- * The spell slots of each level, a box per slot (checked: used) and a stepper for how many there are,
- * then a menu to add a slot of a level not shown. A level is shown from the lowest one with slots up
- * to the highest (or when `shown` says so). `setMax` and `addSlot` change the state.
+ * The spell slots of each level that has any, a box per slot (checked: used) and a stepper for how many
+ * there are, then a menu to add a slot of any level (one with none comes back that way). `max`: the
+ * slots of each level; `setMax` makes a level's `v`. The used slots never exceed a level's new number.
  */
-function slotGrid(sheet: CharacterSheet, parent: HTMLElement, max: number[], shown: (i: number) => boolean, stepTitle: string,
-  setMax: (x: CharState, i: number, v: number) => void, addSlot: (x: CharState, i: number) => void) {
+function slotGrid(sheet: CharacterSheet, parent: HTMLElement, max: number[], stepTitle: string, setMax: (x: CharState, i: number, v: number) => void) {
   const s = sheet.v;
+  const set = (i: number, v: number) => sheet.change((x) => { setMax(x, i, v); x.slots.used[i] = Math.min(x.slots.used[i] || 0, Math.max(0, v)); });
   const grid = parent.createDiv({ cls: "dnd-slot-grid" });
   for (let i = 0; i < 9; i++) {
-    if (!shown(i) && !max.slice(i).some((n) => n > 0)) continue;
+    if (!max[i]) continue;
     const cell = grid.createDiv({ cls: "dnd-slot" });
     cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
     const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
     for (let k = 0; k < max[i]; k++) checkbox(boxes, s.slots.used[i] > k, (v) => sheet.change((x) => { x.slots.used[i] = v ? k + 1 : k; }), "Used");
-    stepper(cell, max[i], (v) => sheet.change((x) => setMax(x, i, v)), { min: 0, title: stepTitle });
+    stepper(cell, max[i], (v) => set(i, v), { min: 0, title: stepTitle });
   }
-  select(parent.createDiv({ cls: "dnd-row" }), ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") sheet.change((x) => addSlot(x, parseInt(v))); }, "+ Add a slot of level…");
+  select(parent.createDiv({ cls: "dnd-row" }), ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") set(parseInt(v), max[parseInt(v)] + 1); }, "+ Add a slot of level…");
 }
 
 /** The rows of a spell table, `cols` wide: the prepared spells come first, then a "Not prepared" row before the others. */
