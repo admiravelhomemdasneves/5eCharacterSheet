@@ -1,4 +1,5 @@
 // Spellcasting: casters, spell slots and the spell list (or what manual mode types in).
+import { setIcon } from "obsidian";
 import * as E from "../../rules/engine";
 import { ABILITIES, type Ability, ABILITY_NAMES, type CharState, fmtMod } from "../../rules/engine";
 import { button, checkbox, iconButton, labeled, Picker, select, stepper } from "../widgets";
@@ -28,9 +29,9 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
     }
     // slots
     const st = el.createDiv({ cls: "dnd-slots" });
-    st.createDiv({ cls: "dnd-subtitle", text: `Spell Slots${slots.casterLevel ? ` (caster level ${slots.casterLevel})` : ""}` });
+    slotRules(sheet, st.createDiv({ cls: "dnd-subtitle", text: `Spell Slots${slots.casterLevel ? ` (caster level ${slots.casterLevel})` : ""}` }), slots);
     // the computed slots, with the player's adjustment on top
-    slotGrid(sheet, st, slots.max, (i) => !!s.slots.adjust[i], "Add/remove slots of this level", (x, i, v) => { x.slots.adjust[i] += v - slots.max[i]; }, (x, i) => { x.slots.adjust[i] += 1; });
+    slotGrid(sheet, st, slots.max, "Add/remove slots of this level", (x, i, v) => { x.slots.adjust[i] += v - slots.max[i]; });
     if (slots.pact) {
       const pc = st.createDiv({ cls: "dnd-slot dnd-pact" });
       pc.createDiv({ cls: "dnd-label", text: `Pact Magic (${ORD[slots.pact.level]} level)` });
@@ -86,7 +87,7 @@ export function manualSpellcasting(sheet: CharacterSheet, root: HTMLElement, d: 
     // slots: only what the player adds
     const st = el.createDiv({ cls: "dnd-slots" });
     st.createDiv({ cls: "dnd-subtitle", text: "Spell Slots" });
-    slotGrid(sheet, st, s.slots.adjust.map((n) => Math.max(0, n || 0)), () => false, "Slots of this level", (x, i, v) => { x.slots.adjust[i] = Math.max(0, v); }, (x, i) => { x.slots.adjust[i] = Math.max(0, x.slots.adjust[i] || 0) + 1; });
+    slotGrid(sheet, st, s.slots.adjust.map((n) => Math.max(0, n || 0)), "Slots of this level", (x, i, v) => { x.slots.adjust[i] = Math.max(0, v); });
     // spell list
     const list = el.createDiv({ cls: "dnd-spell-list" });
     const head = list.createDiv({ cls: "dnd-row" });
@@ -122,23 +123,57 @@ export function addSpell(sheet: CharacterSheet, casters: E.CasterInfo[], slots: 
 }
 
 /**
- * The spell slots of each level, a box per slot (checked: used) and a stepper for how many there are,
- * then a menu to add a slot of a level not shown. A level is shown from the lowest one with slots up
- * to the highest (or when `shown` says so). `setMax` and `addSlot` change the state.
+ * An info button after the "Spell Slots" title, with a popup (on hover, or focus for keyboard and touch)
+ * of the slots the rules give the character, by level, and the Warlock's pact slots. A level where the
+ * sheet has other slots is marked (one stepped down to 0 is only there), the button too, and "Reset"
+ * brings the sheet back to the rules. Not shown for characters without slots from their classes.
  */
-function slotGrid(sheet: CharacterSheet, parent: HTMLElement, max: number[], shown: (i: number) => boolean, stepTitle: string,
-  setMax: (x: CharState, i: number, v: number) => void, addSlot: (x: CharState, i: number) => void) {
+function slotRules(sheet: CharacterSheet, title: HTMLElement, slots: E.Derived["slots"]) {
+  const levels = E.slotsByRules(slots);
+  if (!levels.some((l) => l.rules) && !slots.pact) return;
+  const differs = levels.some((l) => l.differs);
+  const info = title.createSpan({ cls: `dnd-slot-info${differs ? " is-off" : ""}`, attr: { tabindex: "0", role: "button", "aria-haspopup": "true" } });
+  setIcon(info.createSpan({ cls: "dnd-slot-info-icon" }), "info");
+  // inside the button, so the pointer can move onto it (to press Reset) without closing it
+  const line = info.createDiv({ cls: "dnd-slot-rules", attr: { role: "tooltip" } });
+  line.createSpan({ cls: "dnd-slot-rules-label", text: "By the rules: " });
+  const parts = levels.filter((l) => l.rules || l.differs).map((l) => ({ text: `${ORD[l.level]} ${l.rules}${l.differs ? ` (you have ${l.sheet})` : ""}`, off: l.differs }));
+  if (slots.pact) parts.push({ text: `Pact Magic ${slots.pact.slots} × ${ORD[slots.pact.level]}`, off: false });
+  parts.forEach((p, i) => {
+    if (i) line.appendText(" · ");
+    line.createSpan({ text: p.text, cls: p.off ? "dnd-slot-off" : "" });
+  });
+  if (!differs) return;
+  line.appendText(" · ");
+  const reset = line.createEl("a", { text: "Reset", href: "#", attr: { "aria-label": "Set the spell slots to what the rules give" } });
+  reset.onclick = (e) => {
+    e.preventDefault();
+    sheet.change((x) => {
+      x.slots.adjust = Array<number>(9).fill(0);
+      // no more slots used than a level now has
+      x.slots.used = x.slots.used.map((u, i) => Math.min(u || 0, slots.base[i]));
+    });
+  };
+}
+
+/**
+ * The spell slots of each level that has any, a box per slot (checked: used) and a stepper for how many
+ * there are, then a menu to add a slot of any level (one with none comes back that way). `max`: the
+ * slots of each level; `setMax` makes a level's `v`. The used slots never exceed a level's new number.
+ */
+function slotGrid(sheet: CharacterSheet, parent: HTMLElement, max: number[], stepTitle: string, setMax: (x: CharState, i: number, v: number) => void) {
   const s = sheet.v;
+  const set = (i: number, v: number) => sheet.change((x) => { setMax(x, i, v); x.slots.used[i] = Math.min(x.slots.used[i] || 0, Math.max(0, v)); });
   const grid = parent.createDiv({ cls: "dnd-slot-grid" });
   for (let i = 0; i < 9; i++) {
-    if (!shown(i) && !max.slice(i).some((n) => n > 0)) continue;
+    if (!max[i]) continue;
     const cell = grid.createDiv({ cls: "dnd-slot" });
     cell.createDiv({ cls: "dnd-label", text: ORD[i + 1] });
     const boxes = cell.createDiv({ cls: "dnd-slot-boxes" });
     for (let k = 0; k < max[i]; k++) checkbox(boxes, s.slots.used[i] > k, (v) => sheet.change((x) => { x.slots.used[i] = v ? k + 1 : k; }), "Used");
-    stepper(cell, max[i], (v) => sheet.change((x) => setMax(x, i, v)), { min: 0, title: stepTitle });
+    stepper(cell, max[i], (v) => set(i, v), { min: 0, title: stepTitle });
   }
-  select(parent.createDiv({ cls: "dnd-row" }), ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") sheet.change((x) => addSlot(x, parseInt(v))); }, "+ Add a slot of level…");
+  select(parent.createDiv({ cls: "dnd-row" }), ORD.slice(1).map((o, i) => ({ value: String(i), label: `${o} level` })), "", (v) => { if (v !== "") set(parseInt(v), max[parseInt(v)] + 1); }, "+ Add a slot of level…");
 }
 
 /** The rows of a spell table, `cols` wide: the prepared spells come first, then a "Not prepared" row before the others. */

@@ -741,6 +741,13 @@ export function spellSlots(r: Rules, s: CharState) {
   for (const e of s.classes) { const c = r.cls(e.id); if (c?.pactSlots) pact = c.pactSlots[e.level - 1] || null; }
   return { casterLevel, base, max, pact };
 }
+/**
+ * The slots of each level the rules give (the class tables) next to the sheet's (with the player's
+ * adjustments), for every level either has; \`differs\`: the sheet doesn't have what the rules give.
+ */
+export function slotsByRules(slots: ReturnType<typeof spellSlots>) {
+  return slots.base.flatMap((rules, i) => (rules || slots.max[i] ? [{ level: i + 1, rules, sheet: slots.max[i], differs: rules !== slots.max[i] }] : []));
+}
 // Spells granted automatically (domain/oath/circle "prepared" lists, racial known spells)
 export function grantedSpells(r: Rules, s: CharState): { id: string; why: string }[] {
   const out: { id: string; why: string }[] = [];
