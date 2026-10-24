@@ -49,6 +49,20 @@ test("setting a score is the same as pressing + or − that many times", () => {
   assert.deepEqual([a.abilities.base.str, a.abilities.adjust.str], [8, -1]);
 });
 
+test("manual hit dice: a list of count and size, converted from the text older sheets typed", () => {
+  assert.deepEqual(E.manualHitDiceOf("3d8 + 2d10"), [{ count: 3, sides: 8 }, { count: 2, sides: 10 }]);
+  assert.deepEqual(E.manualHitDiceOf("1d10"), [{ count: 1, sides: 10 }]);
+  assert.deepEqual(E.manualHitDiceOf(""), []);
+  assert.deepEqual(E.manualHitDiceOf(undefined), []);
+  assert.deepEqual(E.manualHitDiceOf([{ count: 5, sides: 10 }, { count: 0, sides: "8" }, null, "x"]), [{ count: 5, sides: 10 }, { count: 1, sides: 8 }]);
+  // a sheet saved with the text gets the list
+  const old = E.normalize({ name: "Old", manual: { hitDice: "5d10" } as any });
+  assert.deepEqual(old.manual.hitDice, [{ count: 5, sides: 10 }]);
+  assert.deepEqual(E.normalize({ name: "New" }).manual.hitDice, []);
+  // by die, as with rules data; the same size twice adds up
+  assert.deepEqual(E.manualHitDice({ ...E.emptyManual(), hitDice: [{ count: 3, sides: 8 }, { count: 2, sides: 10 }, { count: 1, sides: 8 }] }), { d8: 4, d10: 2 });
+});
+
 test("manual hit dice text and attunement count", () => {
   assert.deepEqual(E.parseHitDice("3d8 + 2d10"), { d8: 3, d10: 2 });
   assert.deepEqual(E.parseHitDice("d12, 2 d 8, 1d8"), { d12: 1, d8: 3 });

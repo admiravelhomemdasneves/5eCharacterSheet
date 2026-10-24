@@ -165,6 +165,7 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.hiddenFeatures = Array.isArray(out.hiddenFeatures) ? out.hiddenFeatures.map(String) : [];
   out.removedFeatures = Array.isArray(out.removedFeatures) ? out.removedFeatures.map(String) : [];
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
+  out.manual.hitDice = manualHitDiceOf(s?.manual?.hitDice);
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
   if (version < 2) {
     // ASI points stored on the scores (v0.1) become Ability Score Improvement entries
@@ -191,13 +192,17 @@ export const sameState = (a: CharState, b: CharState) => JSON.stringify(a, sortK
 // data-driven fields so switching modes never loses information.
 export interface ManualClass { name: string; subclass: string; level: number }
 export interface ManualSpell { name: string; level: number; prepared: boolean }
+/** Hit dice the player sets in manual mode: `count` dice of `sides` sides (several for a multiclass). With none set, the character has as many as their level. */
+export interface ManualHitDice { count: number; sides: number }
+/** The die sizes offered for manual hit dice. */
+export const HIT_DIE_SIDES = [4, 6, 8, 10, 12, 20];
 export interface ManualData {
   race: string; subrace: string; background: string; classes: ManualClass[];
-  ac: number; maxHp: number; speed: number; hitDice: string; spellAbility: Ability | null;
+  ac: number; maxHp: number; speed: number; hitDice: ManualHitDice[]; spellAbility: Ability | null;
   raceFeatures: string[]; classFeatures: string[]; feats: string[]; spells: ManualSpell[];
 }
 export function emptyManual(): ManualData {
-  return { race: "", subrace: "", background: "", classes: [], ac: 10, maxHp: 1, speed: 30, hitDice: "", spellAbility: null, raceFeatures: [], classFeatures: [], feats: [], spells: [] };
+  return { race: "", subrace: "", background: "", classes: [], ac: 10, maxHp: 1, speed: 30, hitDice: [], spellAbility: null, raceFeatures: [], classFeatures: [], feats: [], spells: [] };
 }
 /** The state the rules engine sees in manual mode: manual class levels, no data-driven choices. */
 export function manualView(s: CharState): CharState {
@@ -499,7 +504,23 @@ export function longRest(s: CharState, maxHp: number, hitDiceTotal: number) {
   s.deathSaves = { success: 0, fail: 0 };
   if (s.exhaustion > 0) s.exhaustion -= 1;
 }
-/** "2d6 + 3d10" -> { d6: 2, d10: 3 } (manual-mode hit dice) */
+/**
+ * Manual hit dice from what a saved state holds: the list, or the text older sheets typed
+ * ("3d8 + 2d10", converted with parseHitDice). Counts are whole numbers of at least 1.
+ */
+export function manualHitDiceOf(saved: unknown): ManualHitDice[] {
+  if (typeof saved === "string") return Object.entries(parseHitDice(saved)).map(([die, count]) => ({ count, sides: parseInt(die.slice(1)) }));
+  if (!Array.isArray(saved)) return [];
+  return saved.filter((x): x is Partial<ManualHitDice> => !!x && typeof x === "object")
+    .map((x) => ({ count: Math.max(1, Math.round(Number(x.count)) || 1), sides: Math.max(1, Math.round(Number(x.sides)) || 8) }));
+}
+/** Manual hit dice by die, as hitDice() gives them: [{ 3, 8 }, { 2, 10 }] -> { d8: 3, d10: 2 } */
+export function manualHitDice(m: ManualData): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const h of m.hitDice) out[`d${h.sides}`] = (out[`d${h.sides}`] || 0) + h.count;
+  return out;
+}
+/** "2d6 + 3d10" -> { d6: 2, d10: 3 } (the hit dice text of older manual-mode sheets) */
 export function parseHitDice(text: string): Record<string, number> {
   const out: Record<string, number> = {};
   for (const m of (text || "").matchAll(/(\d*)\s*d\s*(\d+)/gi)) out[`d${m[2]}`] = (out[`d${m[2]}`] || 0) + (parseInt(m[1]) || 1);

@@ -1,9 +1,8 @@
 // Combat: armour class, initiative, speed, hit points, rests, conditions and senses.
 import * as E from "../../rules/engine";
 import { fmtMod, mod } from "../../rules/engine";
-import { button, checkbox, labeled, stepper } from "../widgets";
+import { button, checkbox, iconButton, labeled, select, stepper } from "../widgets";
 import { d20 } from "../dice";
-import { richText } from "../richtext";
 import type { CharacterSheet } from "../sheet";
 
 export function combat(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
@@ -52,14 +51,17 @@ export function combat(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
     for (let i = 0; i < 3; i++) checkbox(dsRow, s.deathSaves.fail > i, (v) => sheet.change((x) => { x.deathSaves.fail = v ? i + 1 : i; }));
     sheet.rollable(dsRow, "🎲", "1d20", "Death save");
     // last grid row: Hit Dice | Long Rest
-    const hd = man ? E.parseHitDice(m.hitDice) : d.hitDice;
-    const hdTotal = Object.values(hd).reduce((a, b) => a + b, 0) || d.level;
+    const hd = man ? E.manualHitDice(m) : d.hitDice;
+    const hdTotal = hitDiceTotal(hd, d.level);
     const hdEl = labeled(hpGrid, "Hit Dice used");
     stepper(hdEl, s.hitDiceUsed, (v) => sheet.change((x) => { x.hitDiceUsed = v; }), { min: 0, max: hdTotal, total: hdTotal, title: Object.entries(hd).map(([d, n]) => `${n}${d}`).join(" + ") });
+    // manual mode: the hit dice are set in an edit mode, as the ability scores are
+    const editing = man && !!sheet.view.editing["hit-dice"];
+    if (man) iconButton(hdEl, editing ? "check" : "pencil", editing ? "Done editing" : "Edit hit dice", () => sheet.changeView((v) => { v.editing["hit-dice"] = !editing; }), `dnd-hd-edit${editing ? " is-active" : ""}`);
     button(labeled(hpGrid, "Rest"), "Long Rest", () => sheet.change((x) => E.longRest(x, hp.max, hdTotal)), "dnd-rest-btn");
+    if (editing) hitDiceEditor(sheet, hpEl, d.level);
     // roll a hit die (one button per die type when multiclassed)
     const hdRoll = hpEl.createDiv({ cls: "dnd-row dnd-hd-roll" });
-    if (man) richText(sheet, labeled(hdRoll, "Hit Dice"), m.hitDice, (v) => sheet.change((x) => { x.manual.hitDice = v; }), { placeholder: "e.g. 3d8 + 2d10", singleLine: true });
     for (const [die, n] of Object.entries(hd)) sheet.rollable(hdRoll, `🎲 Roll ${die}`, `1${die}${fmtMod(mod(sc.con.total))}`, `Hit die (${die})`).setAttr("aria-label", `Roll a hit die: 1${die}${fmtMod(mod(sc.con.total))} (${n}${die} total)`);
 
     const conds = el.createDiv({ cls: "dnd-chips" });
@@ -72,4 +74,31 @@ export function combat(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
     const dv = d.darkvision;
     senses.setText([dv ? `Darkvision ${dv} ft.` : "", `Passive Perception ${10 + d.skills.perception}`, `Passive Investigation ${10 + d.skills.investigation}`, `Passive Insight ${10 + d.skills.insight}`, `PB ${fmtMod(d.pb)}`].filter(Boolean).join(" · "));
   });
+}
+
+/** How many hit dice there are; with none set (manual mode), as many as the character's level. */
+const hitDiceTotal = (hd: Record<string, number>, level: number) => Object.values(hd).reduce((a, b) => a + b, 0) || level;
+
+/**
+ * Manual mode: the character's hit dice, each a number of dice of one size (several for a multiclass).
+ * With none set the character has as many as their level; "+ Add hit dice" starts there, as d8s.
+ */
+function hitDiceEditor(sheet: CharacterSheet, parent: HTMLElement, level: number) {
+  const m = sheet.s.manual;
+  // after a change, no more hit dice used than there are
+  const edit = (mutate: (x: E.CharState) => void) => sheet.change((x) => {
+    mutate(x);
+    x.hitDiceUsed = Math.min(x.hitDiceUsed, hitDiceTotal(E.manualHitDice(x.manual), level));
+  });
+  const box = parent.createDiv({ cls: "dnd-hd-editor" });
+  m.hitDice.forEach((h, i) => {
+    const row = box.createDiv({ cls: "dnd-row" });
+    stepper(labeled(row, "Hit dice", "dnd-field-narrow"), h.count, (v) => edit((x) => { x.manual.hitDice[i].count = Math.max(1, v); }), { min: 1, title: "How many hit dice of this size" });
+    const sizes = E.HIT_DIE_SIDES.includes(h.sides) ? E.HIT_DIE_SIDES : [...E.HIT_DIE_SIDES, h.sides].sort((a, b) => a - b);
+    select(labeled(row, "Die"), sizes.map((n) => ({ value: String(n), label: `d${n}` })), String(h.sides), (v) => edit((x) => { x.manual.hitDice[i].sides = parseInt(v) || 8; }));
+    iconButton(row, "trash-2", "Remove these hit dice", () => edit((x) => { x.manual.hitDice.splice(i, 1); }));
+  });
+  const add = box.createDiv({ cls: "dnd-row" });
+  button(add, "+ Add hit dice", () => edit((x) => { x.manual.hitDice.push({ count: x.manual.hitDice.length ? 1 : Math.max(1, level), sides: 8 }); }), "dnd-small");
+  if (!m.hitDice.length) add.createSpan({ cls: "dnd-hint", text: `None set: ${Math.max(1, level)}, as many as the character's level.` });
 }

@@ -238,6 +238,8 @@
 .dnd-hp-grid { display: grid; grid-template-columns: max-content minmax(0, max-content); gap: var(--dnd-s3) var(--dnd-s4); align-items: start; }
 .dnd-sheet input.dnd-fraction { width: 3.6em; text-align: center; padding: 0 var(--dnd-s1); }
 .dnd-hd-roll { gap: var(--dnd-s3); }
+/* manual mode: the hit dice edit mode, one row per number and size of dice */
+.dnd-hd-editor { display: flex; flex-direction: column; gap: var(--dnd-s2); margin-top: var(--dnd-s2); }
 .dnd-death-icon { color: var(--dnd-accent); }
 .dnd-death-fail { margin-left: var(--dnd-s2); }
 .dnd-status { align-items: flex-start; gap: var(--dnd-s4); }
