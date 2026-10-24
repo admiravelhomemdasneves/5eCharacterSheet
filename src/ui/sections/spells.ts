@@ -1,4 +1,5 @@
 // Spellcasting: casters, spell slots and the spell list (or what manual mode types in).
+import { setIcon } from "obsidian";
 import * as E from "../../rules/engine";
 import { ABILITIES, type Ability, ABILITY_NAMES, type CharState, fmtMod } from "../../rules/engine";
 import { button, checkbox, iconButton, labeled, Picker, select, stepper } from "../widgets";
@@ -28,8 +29,7 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
     }
     // slots
     const st = el.createDiv({ cls: "dnd-slots" });
-    st.createDiv({ cls: "dnd-subtitle", text: `Spell Slots${slots.casterLevel ? ` (caster level ${slots.casterLevel})` : ""}` });
-    slotRules(sheet, st, slots);
+    slotRules(sheet, st.createDiv({ cls: "dnd-subtitle", text: `Spell Slots${slots.casterLevel ? ` (caster level ${slots.casterLevel})` : ""}` }), slots);
     // the computed slots, with the player's adjustment on top
     slotGrid(sheet, st, slots.max, "Add/remove slots of this level", (x, i, v) => { x.slots.adjust[i] += v - slots.max[i]; });
     if (slots.pact) {
@@ -123,14 +123,19 @@ export function addSpell(sheet: CharacterSheet, casters: E.CasterInfo[], slots: 
 }
 
 /**
- * One line with the slots the rules give the character, by level, and the Warlock's pact slots: a
- * level where the sheet has other slots is marked (one stepped down to 0 is only in this line), and
- * "Reset" brings the sheet back to the rules. Not shown for characters without slots from their classes.
+ * An info button after the "Spell Slots" title, with a popup (on hover, or focus for keyboard and touch)
+ * of the slots the rules give the character, by level, and the Warlock's pact slots. A level where the
+ * sheet has other slots is marked (one stepped down to 0 is only there), the button too, and "Reset"
+ * brings the sheet back to the rules. Not shown for characters without slots from their classes.
  */
-function slotRules(sheet: CharacterSheet, parent: HTMLElement, slots: E.Derived["slots"]) {
+function slotRules(sheet: CharacterSheet, title: HTMLElement, slots: E.Derived["slots"]) {
   const levels = E.slotsByRules(slots);
   if (!levels.some((l) => l.rules) && !slots.pact) return;
-  const line = parent.createDiv({ cls: "dnd-hint dnd-slot-rules" });
+  const differs = levels.some((l) => l.differs);
+  const info = title.createSpan({ cls: `dnd-slot-info${differs ? " is-off" : ""}`, attr: { tabindex: "0", role: "button", "aria-haspopup": "true" } });
+  setIcon(info.createSpan({ cls: "dnd-slot-info-icon" }), "info");
+  // inside the button, so the pointer can move onto it (to press Reset) without closing it
+  const line = info.createDiv({ cls: "dnd-slot-rules", attr: { role: "tooltip" } });
   line.createSpan({ cls: "dnd-slot-rules-label", text: "By the rules: " });
   const parts = levels.filter((l) => l.rules || l.differs).map((l) => ({ text: `${ORD[l.level]} ${l.rules}${l.differs ? ` (you have ${l.sheet})` : ""}`, off: l.differs }));
   if (slots.pact) parts.push({ text: `Pact Magic ${slots.pact.slots} × ${ORD[slots.pact.level]}`, off: false });
@@ -138,7 +143,7 @@ function slotRules(sheet: CharacterSheet, parent: HTMLElement, slots: E.Derived[
     if (i) line.appendText(" · ");
     line.createSpan({ text: p.text, cls: p.off ? "dnd-slot-off" : "" });
   });
-  if (!levels.some((l) => l.differs)) return;
+  if (!differs) return;
   line.appendText(" · ");
   const reset = line.createEl("a", { text: "Reset", href: "#", attr: { "aria-label": "Set the spell slots to what the rules give" } });
   reset.onclick = (e) => {
