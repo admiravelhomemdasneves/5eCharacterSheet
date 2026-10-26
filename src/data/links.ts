@@ -37,7 +37,13 @@ export class Linker {
   private exact = new Map<string, string>();
   private byName = new Map<string, string>();
   root: string | null;
-  constructor(root: string | null, notes: NoteInfo[]) {
+  /**
+   * `chosen`: notes the user picked for some entries, by "kind|name|source" (as noteKey in
+   * src/data/entries.ts makes it); "" = no note. They win over the notes matched by name.
+   */
+  private chosen: Map<string, string>;
+  constructor(root: string | null, notes: NoteInfo[], chosen: Record<string, string> = {}) {
+    this.chosen = new Map(Object.entries(chosen));
     this.root = root;
     for (const n of notes) {
       // kind = folder right under "<root>/compendium/", e.g. spells, races, classes
@@ -52,13 +58,20 @@ export class Linker {
   get enabled() { return !!this.root && this.exact.size > 0; }
   /** note for an entity of a kind (spells, races, classes, …), preferring the same source */
   note(kind: string, name: string, source?: string): string | null {
-    return this.exact.get(`${kind}|${lc(name)}|${sourceTag(source)}`) ?? this.byName.get(`${kind}|${lc(name)}`) ?? null;
+    const key = `${kind}|${lc(name)}|${sourceTag(source)}`;
+    const own = this.chosen.get(key);
+    if (own != null) return own || null;
+    return this.exact.get(key) ?? this.byName.get(`${kind}|${lc(name)}`) ?? null;
   }
   /** heading inside a rules note, e.g. rule("conditions", "Blinded") */
   rule(file: string, heading: string): string | null {
     return this.enabled ? `${this.root}/rules/${file}#${heading}` : null;
   }
-  has(kind: string, name: string, source: string) { return this.exact.has(`${kind}|${lc(name)}|${sourceTag(source)}`); }
+  has(kind: string, name: string, source: string) {
+    const key = `${kind}|${lc(name)}|${sourceTag(source)}`;
+    const own = this.chosen.get(key);
+    return own != null ? !!own : this.exact.has(key);
+  }
 
   /** replace ⟦kind|name|source|display⟧ tokens with wikilinks, or plain text when there is no note */
   text(s: string): string {

@@ -442,6 +442,16 @@
 .dnd-report .dnd-report-messages summary { cursor: pointer; }
 .dnd-report ul { margin: var(--size-4-2) 0; overflow-wrap: anywhere; }
 
+/* ------------------------------------------------------- import data (settings page) */
+.dnd-import-data .dnd-import-data-bar { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin: var(--size-4-3) 0; }
+.dnd-import-data .dnd-import-data-bar input { flex: 1 1 14em; }
+.dnd-import-data .dnd-report-file.is-filtered-out { display: none; }
+.dnd-import-data .dnd-import-data-note { overflow-wrap: anywhere; }
+.dnd-import-data .dnd-import-data-actions { white-space: nowrap; text-align: right; }
+.dnd-import-data .dnd-import-data-actions .clickable-icon { display: inline-flex; padding: var(--size-2-1); }
+.dnd-import-data .dnd-import-data-actions .mod-warning { color: var(--text-error); }
+.dnd-import-data .dnd-import-data-removed li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); margin-bottom: var(--size-4-1); }
+
 /* ------------------------------------------------- settings tabs (Obsidian before 1.13) */
 .dnd-settings-tabs { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin-bottom: var(--size-4-4); }
 .dnd-settings-tabs .is-active { background: var(--interactive-accent); color: var(--text-on-accent); }

@@ -120,13 +120,14 @@ The character's data is saved in that note's properties. Put your own notes, hea
 
 ### Settings
 
-The settings have four pages (tabs in Obsidian before 1.13):
+The settings have four pages, and a fifth with imported data (tabs in Obsidian before 1.13):
 
 - **General**
   - **Characters folder**: optional. Where new characters are created. Leave it empty to use the last folder you created a character in (the vault root the first time).
   - **Theme**: the sheet's accent colour. *Original* keeps the plugin's red accent, *Obsidian theme* uses your theme's accent colour, and *Custom* lets you pick your own.
 - **Sheet template**: which sections new sheets show (all of them by default, even while empty). On a sheet, hover a section's title to hide it, and use the **Hidden sections** menu at the top to show it again.
 - **Rules data**: none (manual mode), SRD 5.1 or imported data (see below). For imported data it walks you through the three steps of the import. A warning on the page means the import is still to do or out of date.
+- **Import data** (with imported data): what was imported and from where; remove entries and change their compendium notes (see [Import data](#import-data)).
 - **Compendium**: optional, only for links (see [Compendium links](#compendium-links-optional)).
 
 ### Rules data
@@ -171,6 +172,15 @@ The report after the import has a row for each homebrew file with what came from
 - A file, or an entry in it, that can't be read is left out and the rest still imports. The report says what was left out (also in the developer console).
 - Compendium links and **Only entries with a note** also work for homebrew in a ttrpg-convert-cli compendium.
 - Your homebrew files stay in your vault; nothing is downloaded.
+
+#### Import data
+
+The **Import data** page shows what the imported data holds, as the report after an import does: a row for the 5etools data and one for each homebrew file, with how many races, subraces, classes, subclasses, backgrounds, feats, spells and items came from it. Open a row to list its entries; the search box and the kind menu narrow them down. For each entry:
+
+- **Compendium note**: the note it links to (click to open it), or *None*. The pencil picks another note of your compendium folder (of the whole vault without one), *No note*, or, for a note you chose, *Match by name again*. Your choice is kept when you import again, and links from the sheets and from other entries' text follow it.
+- **Remove**: the bin takes the entry out of the imported data (a race or class takes its subraces or subclasses along). It stays out when you import again; **Removed entries**, at the bottom, lists what you removed, and *Restore* brings an entry back with the next import.
+
+Data imported before this page existed shows everything as 5etools data until you import again.
 
 ### Compendium links (optional)
 
