@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCompendium, type HomebrewFile } from "../src/data/build.ts";
+import { buildCompendium, type BrewEntry, type HomebrewFile } from "../src/data/build.ts";
+import { importReport } from "../src/data/report.ts";
 import { Linker, noteInfoFromText, sourceOfTag } from "../src/data/links.ts";
 import * as E from "../src/rules/engine.ts";
 
@@ -319,4 +320,66 @@ test("variant backgrounds: \"Variant Sage (Archivist)\" matches the note \"Sage 
   assert.ok(linker.has("backgrounds", "Sage (Archivist) (Variant)", "PHB"));
   assert.ok(!linker.has("backgrounds", "Variant Sage (Archivist)", "XPHB"));
   assert.ok(!linker.has("spells", "Variant Ink Blot", "TestBook"));
+});
+
+// what became of each homebrew entry, for the import report
+const MIXED: HomebrewFile = {
+  file: "homebrew/Mixed.json",
+  json: {
+    _meta: { sources: [{ json: "MX", full: "Mixed Book" }] },
+    race: [{ name: "Ashborn", source: "MX", size: ["M"], speed: 30 }, { name: "Ashborn", source: "MX24", edition: "one", size: ["M"], speed: 30 }],
+    // the 2024 race's subrace is never looked at; the unnamed one is part of its race, not an entry
+    subrace: [{ name: "Cinder", source: "MX24", raceName: "Ashborn", raceSource: "MX24" }, { source: "MX", raceName: "Ashborn", raceSource: "MX" }],
+    subclass: [{ name: "College of Ash", shortName: "Ash", source: "MX", className: "Bard", classSource: "PHB" }],
+    spell: [spell("Ash Cloud", "MX"), { name: "Broken Spell", source: "MX", school: "V" }],
+    item: [{ name: "+1 Ash Ring", source: "MX", _copy: { name: "Ring of Shielding", source: "DMG" } }],
+    monster: [{ name: "Ash Wraith", source: "MX" }, { name: "Ash Hound", source: "MX" }],
+    optionalfeature: [{ name: "Ashen Step", source: "MX" }],
+  },
+};
+
+test("each homebrew entry is told as imported, or left out with the reason", async () => {
+  const entries: BrewEntry[] = [];
+  await buildCompendium({ read, homebrew: [MIXED], rules2014Only: true, brewEntry: (e) => entries.push(e) });
+  assert.deepEqual(entries.map((e) => [e.kind, e.name, e.source, e.reason]), [
+    ["race", "Ashborn", "MX", null],
+    ["race", "Ashborn", "MX24", "2024 edition"],
+    ["subrace", "Ashborn (Cinder)", "MX24", "its race is not imported"],
+    ["subclass", "College of Ash (Bard)", "MX", "its class is not imported"],
+    ["spell", "Ash Cloud", "MX", null],
+    ["spell", "Broken Spell", "MX", "no spell level"],
+    // a copy is still from its file
+    ["item", "+1 Ash Ring", "MX", null],
+  ]);
+  assert.ok(entries.every((e) => e.file === "homebrew/Mixed.json"));
+});
+
+test("without a 5etools data folder only the homebrew is imported", async () => {
+  const entries: BrewEntry[] = [];
+  const d = await buildCompendium({ homebrew: [BOOK], brewEntry: (e) => entries.push(e) });
+  assert.deepEqual(d.races.map((r) => r.name), ["Moss Folk"]);
+  assert.deepEqual(d.spells.map((s) => s.name), ["Ink Blot", "Ink Ward"]);
+  assert.equal(d.classes.length, 0);
+  // what needs official entries (the Dwarf, the Wizard) has nothing to attach to
+  assert.deepEqual(entries.filter((e) => e.reason).map((e) => [e.name, e.reason]), [
+    ["Dwarf (Deep)", "its race is not imported"],
+    ["School of Ink (Wizard)", "its class is not imported"],
+  ]);
+});
+
+test("import report: counts by source, the file's entries, its unused collections and messages", async () => {
+  const entries: BrewEntry[] = [], messages: string[] = [];
+  const d = await buildCompendium({ read, homebrew: [MIXED], rules2014Only: true, brewEntry: (e) => entries.push(e), warn: (m) => messages.push(m) });
+  const r = importReport({ data: d, dataFolder: ".5etools/data", entries, messages: [...messages, "homebrew/Mixed.json: a message"], files: [MIXED, { file: "homebrew/Gone.json", error: "not found" }] });
+  const [mixed, gone] = r.files;
+  assert.deepEqual(mixed.books, ["Mixed Book"]);
+  assert.deepEqual([mixed.imported.race, mixed.imported.spell, mixed.imported.item, mixed.leftOut], [1, 1, 1, 4]);
+  assert.deepEqual(mixed.unused, [{ collection: "monster", count: 2 }, { collection: "optionalfeature", count: 1 }]);
+  assert.deepEqual(mixed.messages, ["a message"]);
+  assert.deepEqual([gone.error, gone.entries.length, gone.leftOut], ["not found", 0, 0]);
+  // the rest is official: one race (Dwarf), three spells, one item
+  assert.deepEqual([r.official.race, r.official.spell, r.official.item], [1, 3, 1]);
+  assert.deepEqual([r.total.race, r.total.spell, r.total.item], [2, 4, 2]);
+  // the message about the spell that could not be read is not about one file
+  assert.deepEqual(r.messages, ["spells: left out Broken Spell (MX): no spell level"]);
 });

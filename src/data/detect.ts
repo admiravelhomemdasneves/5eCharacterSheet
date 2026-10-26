@@ -15,8 +15,6 @@ export interface Detected {
   homebrew: DetectedHomebrew[];
   /** folders with the "compendium" and "rules" folders of a ttrpg-convert-cli compendium */
   compendiums: string[];
-  /** the scan stopped reading JSON files at `maxReads`, so some homebrew may be missing */
-  truncated: boolean;
 }
 export interface DetectOptions {
   /** folder names never entered; the plugin adds the vault's config folder (Vault#configDir) */
@@ -24,8 +22,6 @@ export interface DetectOptions {
   maxDepth?: number;
   /** larger JSON files are not read */
   maxBytes?: number;
-  /** at most this many JSON files are read */
-  maxReads?: number;
 }
 
 /** version control, Obsidian's trash and packages */
@@ -91,8 +87,8 @@ export function homebrewSources(json: unknown): string[] | null {
 
 export async function detect(fs: DetectFs, o: DetectOptions = {}): Promise<Detected> {
   const skip = new Set(o.skip ?? SKIP_FOLDERS);
-  const maxDepth = o.maxDepth ?? 10, maxBytes = o.maxBytes ?? 20 * 1024 * 1024, maxReads = o.maxReads ?? 500;
-  const out: Detected = { dataFolders: [], homebrew: [], compendiums: [], truncated: false };
+  const maxDepth = o.maxDepth ?? 10, maxBytes = o.maxBytes ?? 20 * 1024 * 1024;
+  const out: Detected = { dataFolders: [], homebrew: [], compendiums: [] };
   const candidates: string[] = [];
   const walk = async (dir: string, depth: number) => {
     let listed: { files: string[]; folders: string[] };
@@ -109,12 +105,10 @@ export async function detect(fs: DetectFs, o: DetectOptions = {}): Promise<Detec
     for (const f of listed.folders.sort()) if (!skip.has(base(f))) await walk(f, depth + 1);
   };
   await walk("", 0);
-  let reads = 0;
+  // every JSON file is read: a whole homebrew repository in the vault has thousands of them
   for (const path of candidates.sort()) {
-    if (reads >= maxReads) { out.truncated = true; break; }
     const size = await fs.size(path).catch(() => null);
     if (size == null || size > maxBytes) continue;
-    reads++;
     let text: string;
     try { text = await fs.read(path); } catch { continue; }
     // cheap check before parsing: homebrew always has a "_meta" key
