@@ -307,16 +307,12 @@ export default class CharacterSheetPlugin extends Plugin {
   /** Keep the views after a change: in the vault's local storage, with only the sheets shown other than the default. */
   saveViews() {
     const kept = Object.fromEntries(Object.entries(this.views).filter(([, v]) => Object.values(v.collapsed).some(Boolean) || Object.values(v.editing).some(Boolean)));
-    // App#saveLocalStorage (Obsidian 1.8.7+) keeps it per vault; before that, the browser's, under the vault's name
-    const app = this.app as LocalStorageApp;
-    if (app.saveLocalStorage) app.saveLocalStorage(VIEWS_KEY, kept);
-    else window.localStorage.setItem(`${VIEWS_KEY}:${this.app.vault.getName()}`, JSON.stringify(kept));
+    // App#saveLocalStorage (Obsidian 1.8.7+) keeps it per vault; before that the views last only the session
+    (this.app as LocalStorageApp).saveLocalStorage?.(VIEWS_KEY, kept);
   }
   private loadViews(): Record<string, SheetView> {
     try {
-      const app = this.app as LocalStorageApp;
-      const saved: unknown = app.loadLocalStorage ? app.loadLocalStorage(VIEWS_KEY)
-        : JSON.parse(window.localStorage.getItem(`${VIEWS_KEY}:${this.app.vault.getName()}`) ?? "null");
+      const saved: unknown = (this.app as LocalStorageApp).loadLocalStorage?.(VIEWS_KEY);
       if (!saved || typeof saved !== "object") return {};
       return Object.fromEntries(Object.entries(saved as Record<string, Partial<SheetView>>).map(([p, v]) => [p, { collapsed: { ...v?.collapsed }, editing: { ...v?.editing } }]));
     } catch {

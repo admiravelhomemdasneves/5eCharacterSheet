@@ -1,4 +1,4 @@
-import { App, FuzzySuggestModal, Notice, Platform, TFile, setIcon } from "obsidian";
+import { App, FuzzySuggestModal, Notice, Platform, TFile, TFolder, Vault, setIcon } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import { ENTRY_KINDS, type EntryKind } from "../data/build";
 import { groupByFile, type DataEntry, type EntryGroup } from "../data/entries";
@@ -185,8 +185,12 @@ class NoteSuggestModal extends FuzzySuggestModal<NoteChoice> {
     this.setPlaceholder("Choose the compendium note of this entry");
   }
   getItems(): NoteChoice[] {
-    const inRoot = (f: TFile) => !this.root || f.path.startsWith(`${this.root}/`);
-    const notes = this.app.vault.getMarkdownFiles().filter(inRoot).map((f) => ({ label: f.path.replace(/\.md$/, ""), path: f.path.replace(/\.md$/, "") }));
+    // with a compendium folder only its notes are listed, not the rest of the vault
+    const files: TFile[] = [];
+    const folder = this.root ? this.app.vault.getAbstractFileByPath(this.root) : null;
+    if (folder instanceof TFolder) Vault.recurseChildren(folder, (f) => { if (f instanceof TFile && f.extension === "md") files.push(f); });
+    else files.push(...this.app.vault.getMarkdownFiles());
+    const notes = files.map((f) => ({ label: f.path.replace(/\.md$/, ""), path: f.path.replace(/\.md$/, "") }));
     return [
       ...this.chosen ? [{ label: "Match by name again (automatic)", path: null }] : [],
       { label: "No note", path: "" },
