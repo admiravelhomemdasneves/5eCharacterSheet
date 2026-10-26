@@ -1,6 +1,6 @@
 {
   "name": "fifth-edition-character-sheet",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "description": "Interactive fifth edition (2014) character sheets for Obsidian",
   "scripts": {
