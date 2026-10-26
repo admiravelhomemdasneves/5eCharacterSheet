@@ -2,7 +2,7 @@
 
 What each version of 5e Character Sheet brings. The release of each version on GitHub uses its section as its notes.
 
-## Unreleased
+## 1.3.1
 
 ### Fixes
 - **Community review warnings**: no browser local storage (on Obsidian before 1.8.7 how each sheet is shown lasts until Obsidian closes), the note picker of *Import data* lists only the compendium folder when one is set, and a CSS property the review does not accept is gone.
