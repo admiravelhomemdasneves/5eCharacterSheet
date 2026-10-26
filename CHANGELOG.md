@@ -2,18 +2,18 @@
 
 What each version of 5e Character Sheet brings. The release of each version on GitHub uses its section as its notes.
 
-## Unreleased
+## 1.3.0
 
 ### New
 - **Import report.** After an import, a window shows what came from the 5etools data and from each homebrew file, by kind. Open a homebrew file to see its entries, whether each was imported or why not (e.g. *2024 edition*), and what in it the sheet does not use. (#71)
 - **Homebrew without 5etools data.** With *Folder with 5etools data* empty, the import brings in only the homebrew files. (#71)
 - **Import data page** in the settings: what the imported data holds and where each entry came from (the 5etools data or a homebrew file), with a search. Remove entries you don't want (they stay out of later imports until you restore them), and open or change the compendium note of each one. (#73)
 
-### After updating
-- **To see which homebrew file each entry came from** on the *Import data* page, press **Import now** once more.
-
 ### Fixes
 - **Detect finds homebrew anywhere in the vault**, also with the whole 5etools homebrew repository there: it stopped after 500 JSON files. (#71)
+
+### After updating
+- **To see which homebrew file each entry came from** on the *Import data* page, press **Import now** once more.
 
 ## 1.2.0
 
