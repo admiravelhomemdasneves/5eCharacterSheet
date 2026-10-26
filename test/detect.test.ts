@@ -41,18 +41,26 @@ test("detect: 5etools data, homebrew and a compendium, hidden folders included",
     assert.deepEqual(found.dataFolders, [".5etools/data"]);
     assert.deepEqual(found.homebrew, [{ path: ".5etools/homebrew/My Book.json", sources: ["My Book"] }, { path: "Homebrew/Other.json", sources: ["Other Book"] }]);
     assert.deepEqual(found.compendiums, ["Notes"]);
-    assert.equal(found.truncated, false);
   } finally { v.done(); }
 });
 
-test("detect: a folder with races.json but no class index is not 5etools data; reads are capped", async () => {
+test("detect: a folder with races.json but no class index is not 5etools data", async () => {
   const v = vault({ "Stuff/races.json": "{}", "Stuff/backgrounds.json": "{}", "Stuff/class/readme.md": "", "a.json": brew("A"), "b.json": brew("B") });
   try {
-    // read in path order: Stuff/backgrounds.json, Stuff/races.json, a.json, then the cap
-    const found = await detect(v.io, { maxReads: 3 });
+    const found = await detect(v.io);
     assert.deepEqual(found.dataFolders, []);
-    assert.equal(found.homebrew.length, 1);
-    assert.equal(found.truncated, true);
+    assert.equal(found.homebrew.length, 2);
+  } finally { v.done(); }
+});
+
+test("detect: every JSON file is read, however many there are", async () => {
+  // like a whole homebrew repository: files far down the path order are found too
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 700; i++) files[`homebrew/adventure/${String(i).padStart(3, "0")}.json`] = JSON.stringify({ adventure: [] });
+  files["homebrew/collection/Grim Hollow.json"] = brew("Grim Hollow");
+  const v = vault(files);
+  try {
+    assert.deepEqual((await detect(v.io)).homebrew.map((h) => h.path), ["homebrew/collection/Grim Hollow.json"]);
   } finally { v.done(); }
 });
 
@@ -82,7 +90,7 @@ test("homebrew grouped by folder, in the order found", () => {
 });
 
 test("apply detected: unchecked folders are cleared; the homebrew list keeps its order", () => {
-  const found: Detected = { dataFolders: ["d"], compendiums: ["c"], truncated: false, homebrew: ["h/1.json", "h/2.json", "h/3.json"].map((path) => ({ path, sources: [] })) };
+  const found: Detected = { dataFolders: ["d"], compendiums: ["c"], homebrew: ["h/1.json", "h/2.json", "h/3.json"].map((path) => ({ path, sources: [] })) };
   const cur = { fivetoolsPath: "d", compendiumFolder: "c", homebrewFiles: ["h\\2.json", "manual/x.json", "h/1.json"] };
   assert.deepEqual(applyDetected(cur, found, { data: null, compendium: "c", homebrew: new Set(["h/1.json", "h/3.json"]) }), {
     fivetoolsPath: "", compendiumFolder: "c",

@@ -417,6 +417,31 @@
 .dnd-detect .dnd-detect-folder { margin: var(--size-4-1) 0 var(--size-4-1) var(--size-4-2); }
 .dnd-detect .dnd-detect-folder > .dnd-detect-option { margin-left: var(--size-4-6); }
 
+/* ------------------------------------------------------- import report (settings) */
+.modal.dnd-report-modal { --dialog-width: 1100px; --dialog-max-width: 95vw; }
+.dnd-report .dnd-hint { color: var(--text-muted); font-size: var(--font-ui-small); }
+.dnd-report .dnd-report-scroll { overflow-x: auto; }
+.dnd-report table { border-collapse: collapse; width: 100%; font-size: var(--font-ui-small); }
+.dnd-report th, .dnd-report td { padding: var(--size-4-1) var(--size-4-2); border-bottom: 1px solid var(--background-modifier-border); text-align: left; vertical-align: top; }
+.dnd-report thead th { position: sticky; top: 0; background: var(--background-primary); font-weight: var(--font-semibold); }
+.dnd-report tfoot th { border-top: 2px solid var(--background-modifier-border); border-bottom: none; }
+.dnd-report .dnd-report-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dnd-report .is-zero { color: var(--text-faint); }
+.dnd-report .is-left-out { color: var(--text-warning); }
+.dnd-report .dnd-report-file { cursor: pointer; }
+.dnd-report .dnd-report-file:hover { background: var(--background-modifier-hover); }
+.dnd-report .dnd-report-file > td:first-child { min-width: 14em; overflow-wrap: anywhere; }
+.dnd-report .dnd-report-toggle { all: unset; cursor: pointer; display: inline-flex; gap: var(--size-4-2); font-weight: var(--font-semibold); }
+.dnd-report .dnd-report-toggle:focus-visible { outline: 2px solid var(--interactive-accent); }
+.dnd-report .dnd-report-chevron { color: var(--text-muted); width: 0.8em; flex: none; }
+.dnd-report .dnd-report-detail > td { background: var(--background-secondary); padding: var(--size-4-2) var(--size-4-3) var(--size-4-3) var(--size-4-6); }
+.dnd-report .dnd-report-entries { margin-top: var(--size-4-2); }
+.dnd-report .dnd-report-entries tr.is-left-out td:last-child { color: var(--text-warning); }
+.dnd-report .dnd-report-entries tr.is-left-out td:not(:last-child) { color: var(--text-muted); }
+.dnd-report .dnd-report-messages { margin-top: var(--size-4-3); }
+.dnd-report .dnd-report-messages summary { cursor: pointer; }
+.dnd-report ul { margin: var(--size-4-2) 0; overflow-wrap: anywhere; }
+
 /* ------------------------------------------------- settings tabs (Obsidian before 1.13) */
 .dnd-settings-tabs { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin-bottom: var(--size-4-4); }
 .dnd-settings-tabs .is-active { background: var(--interactive-accent); color: var(--text-on-accent); }

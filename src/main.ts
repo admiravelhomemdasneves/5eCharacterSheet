@@ -3,8 +3,10 @@ import * as E from "./rules/engine";
 import { CharState, Compendium, Rules, SheetView, newCharacter } from "./rules/engine";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo, sourceOfTag } from "./data/links";
-import { HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
+import { BrewEntry, HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
 import { SKIP_FOLDERS, detect } from "./data/detect";
+import { ReportFile, importReport } from "./data/report";
+import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import { fileNameProblem, renamedPath } from "./files";
 import { loadSrd } from "./data/srd";
@@ -140,53 +142,60 @@ export default class CharacterSheetPlugin extends Plugin {
   }
 
   /**
-   * Import a 5etools `data/` folder the user owns. The folder lives inside the vault (a hidden
-   * folder such as `.5etools/data` keeps it out of the file list and search), so it is read
-   * through the vault adapter and works on desktop and mobile.
+   * Import a 5etools `data/` folder the user owns, with the homebrew files listed (either can be
+   * missing). The files live inside the vault (a hidden folder such as `.5etools/data` keeps them
+   * out of the file list and search), so they are read through the vault adapter and work on
+   * desktop and mobile. A report of what came from where is shown at the end.
    */
   async importFiveTools() {
     const adapter = this.app.vault.adapter;
-    const base = normalizePath(this.settings.fivetoolsPath.trim() || "/");
-    if (base === "/" || !(await adapter.exists(`${base}/races.json`))) {
-      new Notice("Set the 5etools \"data\" folder (inside this vault, the one that contains races.json).");
+    const folder = this.settings.fivetoolsPath.trim();
+    const base = folder ? normalizePath(folder) : null;
+    const brewPaths = this.settings.homebrewFiles.map((p) => p.trim()).filter(Boolean);
+    if (base != null && (base === "/" || !(await adapter.exists(`${base}/races.json`)))) {
+      new Notice(`"${folder}" is not a 5etools "data" folder (the one that contains races.json). Correct it, or leave it empty to import only the homebrew files.`);
       return;
     }
-    const notice = new Notice("Importing 5etools data…", 0);
+    if (base == null && !brewPaths.length) {
+      new Notice("Nothing to import: set the 5etools \"data\" folder, homebrew files, or both.");
+      return;
+    }
+    const notice = new Notice(base ? "Importing 5etools data…" : "Importing homebrew…", 0);
     try {
       const linker = this.settings.importOnlyWithNotes ? this.buildLinker() : null;
       if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
       // homebrew files, and entries in them, that can't be read are left out and reported; the rest is imported
-      const homebrew: HomebrewFile[] = [], leftOut: string[] = [];
-      for (const path of this.settings.homebrewFiles) {
+      const homebrew: HomebrewFile[] = [], files: ReportFile[] = [], leftOut: string[] = [], entries: BrewEntry[] = [];
+      for (const path of brewPaths) {
         const file = normalizePath(path);
         try {
           if (!(await adapter.exists(file))) throw new Error("not found");
-          homebrew.push({ file, json: JSON.parse(await adapter.read(file)) as unknown });
+          const json = JSON.parse(await adapter.read(file)) as unknown;
+          homebrew.push({ file, json });
+          files.push({ file, json });
         } catch (e) {
-          leftOut.push(`${file}: ${(e as Error).message}`);
+          files.push({ file, error: (e as Error).message });
         }
       }
       const data = await buildCompendium({
-        read: async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown,
+        read: base ? async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown : undefined,
         homebrew,
         warn: (message) => leftOut.push(message),
+        brewEntry: (e) => entries.push(e),
         rules2014Only: this.settings.importRules2014 && !this.settings.importOnlyWithNotes,
         keep: linker ? (kind, name, source) => linker.has(kind, name, source) : undefined,
       });
       const dir = normalizePath(`${this.manifest.dir}/data`);
       if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.adapter.mkdir(dir);
       await this.app.vault.adapter.write(`${dir}/imported.json`, JSON.stringify(data));
-      const brew = homebrew.length ? ` (with ${homebrew.length} homebrew file${homebrew.length > 1 ? "s" : ""})` : "";
+      const brewFiles = `${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"}`;
+      const brew = !base ? ` (${brewFiles} only, no 5etools data)` : homebrew.length ? ` (with ${brewFiles})` : "";
       this.settings.lastImport = `${new Date().toLocaleString()} — ${summarize(data)}${brew}`;
       this.settings.dataSource = "imported";
       await this.saveSettings();
       notice.hide();
-      new Notice(`Imported${brew}: ${summarize(data)}`, 8000);
-      if (leftOut.length) {
-        console.warn(`5e Character Sheet: left out of the import:\n${leftOut.join("\n")}`);
-        const more = leftOut.length > 3 ? `\n…and ${leftOut.length - 3} more (see the developer console).` : "";
-        new Notice(`Left out of the import:\n${leftOut.slice(0, 3).join("\n")}${more}`, 20000);
-      }
+      if (leftOut.length) console.warn(`5e Character Sheet: left out of the import:\n${leftOut.join("\n")}`);
+      new ImportReportModal(this.app, importReport({ data, dataFolder: base, files, entries, messages: leftOut })).open();
     } catch (e) {
       notice.hide();
       console.error("5e Character Sheet: import failed", e);

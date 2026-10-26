@@ -25,7 +25,6 @@ export class DetectModal extends Modal {
     const data = this.folderChoice(contentEl, "5etools data folder", "The folder of a 5etools copy, with races.json.", dataFolders, st.fivetoolsPath);
     const brew = this.homebrewChoice(contentEl);
     const comp = this.folderChoice(contentEl, "Compendium folder", "A ttrpg-convert-cli compendium, for links to its notes.", compendiums, st.compendiumFolder);
-    if (this.found.truncated) contentEl.createEl("p", { cls: "dnd-hint", text: "Many JSON files were found, so not all of them were checked for homebrew. Add any missing ones by hand." });
 
     new Setting(contentEl)
       .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))

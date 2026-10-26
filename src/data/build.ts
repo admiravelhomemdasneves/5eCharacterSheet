@@ -8,7 +8,7 @@
 import type {
   AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
   HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawMod, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
-  RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
+  RawSubclass, RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
 import { HOMEBREW_COLLECTIONS } from "./fivetools.ts";
 import { ABILITIES, combineAbilityOptions } from "../rules/engine.ts";
@@ -24,12 +24,20 @@ export type ReadJson = (relPath: string) => Promise<unknown>;
 export interface HomebrewFile { file: string; json: unknown }
 /** Told about each file or entry the import leaves out, and why. */
 export type Warn = (message: string) => void;
+/** The kinds of entries the sheet offers (base and magic items are both items). */
+export const ENTRY_KINDS = ["race", "subrace", "class", "subclass", "background", "feat", "spell", "item"] as const;
+export type EntryKind = (typeof ENTRY_KINDS)[number];
+/** What became of one entry of a homebrew file: `reason` is null when it was imported, else why it was left out. */
+export interface BrewEntry { file: string; kind: EntryKind; name: string; source: string; reason: string | null }
 export interface BuildOptions {
-  read: ReadJson;
+  /** reads the official 5etools data; without it, only the homebrew is imported */
+  read?: ReadJson;
   /** homebrew files whose entries are added to the official data */
   homebrew?: HomebrewFile[];
   /** told what was left out; without it, what can't be read is left out silently */
   warn?: Warn;
+  /** told what became of each homebrew entry the sheet uses (named subraces only), after the build */
+  brewEntry?: (e: BrewEntry) => void;
   /** keep only SRD 5.1 content (uses 5etools' `srd` flags and SRD names) */
   srdOnly?: boolean;
   /** drop 2024-edition content (XPHB/XDMG/XMM and entries marked edition "one") */
@@ -256,9 +264,9 @@ function applyMods(x: Record<string, unknown>, mods: Record<string, RawMod | Raw
 /**
  * Replace every `_copy` entry with the entry it copies, changed by its own fields and `_mod`. Copies
  * are found across official and homebrew data, also through other copies; a copy whose original is
- * missing stays as it is.
+ * missing stays as it is. A copy keeps its `origin` (the homebrew file it is from).
  */
-function resolveCopies(raw: RawData) {
+function resolveCopies(raw: RawData, origin: Map<RawBase, string>) {
   for (const k of HOMEBREW_COLLECTIONS) {
     const list = raw[k] as RawBase[];
     if (!list.some((x) => x._copy)) continue;
@@ -279,6 +287,8 @@ function resolveCopies(raw: RawData) {
       for (const f of NOT_COPIED) if (!_preserve?.[f]) { if (f in x) merged[f] = (x as unknown as Record<string, unknown>)[f]; else delete merged[f]; }
       if (_mod) applyMods(merged, _mod);
       done.set(x, merged as unknown as RawBase);
+      const file = origin.get(x);
+      if (file) origin.set(merged as unknown as RawBase, file);
       return merged as unknown as RawBase;
     };
     (raw[k] as RawBase[]) = list.map((x) => resolve(x, new Set()));
@@ -330,12 +340,19 @@ function indexBy<T>(list: T[], key: (x: T) => string): Map<string, T> {
 const isEntry = (k: string, x: unknown) =>
   !!x && typeof x === "object" && typeof (x as RawBase).source === "string" && (typeof (x as RawBase).name === "string" || (k === "subrace" && (x as RawBase).name == null));
 
+/** the files of an official data folder as they read without one: no entries (new lists on each read) */
+const noData = (rel: string): unknown => ({
+  "races.json": { race: [], subrace: [] }, "backgrounds.json": { background: [] }, "feats.json": { feat: [] },
+  "items-base.json": { baseitem: [] }, "items.json": { item: [] }, "books.json": { book: [] }, "adventures.json": { adventure: [] },
+}[rel] ?? {});
+
 /**
- * Read the collections of an official 5etools `data/` folder into flat lists, then add the homebrew ones.
- * What a homebrew file gets wrong is left out and told to `warn`, so the rest still imports.
+ * Read the collections of an official 5etools `data/` folder (none without `readJson`) into flat lists,
+ * then add the homebrew ones. What a homebrew file gets wrong is left out and told to `warn`, so the rest
+ * still imports. `origin` is filled with the file each homebrew entry comes from.
  */
-export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = [], warn: Warn = () => {}): Promise<RawData> {
-  const read = <T>(rel: string) => readJson(rel) as Promise<T>;
+export async function loadData(readJson: ReadJson | undefined, homebrew: HomebrewFile[] = [], warn: Warn = () => {}, origin = new Map<RawBase, string>()): Promise<RawData> {
+  const read = <T>(rel: string) => (readJson ? readJson(rel) : Promise.resolve(noData(rel))) as Promise<T>;
   const racesJson = await read<RacesFile>("races.json");
   const raw: RawData = {
     race: racesJson.race, subrace: racesJson.subrace,
@@ -376,6 +393,7 @@ export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = []
       if (!Array.isArray(list)) { warn(`${file}: "${k}" is not a list, left out`); continue; }
       const good = (list as unknown[]).filter((x) => isEntry(k, x));
       if (good.length < list.length) warn(`${file}: ${list.length - good.length} ${k} without a name or source, left out`);
+      for (const x of good) origin.set(x as RawBase, file);
       (raw[k] as unknown[]).push(...good);
     }
   }
@@ -387,31 +405,42 @@ export async function loadData(readJson: ReadJson, homebrew: HomebrewFile[] = []
       .flatMap(([, ids]): unknown[] => (Array.isArray(ids) ? ids : [])).filter((id): id is string => typeof id === "string" && !known.has(lc(id))));
     if (missing.size) warn(`${file}: uses ${[...missing].join(", ")}, which ${missing.size > 1 ? "are" : "is"} not loaded; entries from there are missing`);
   }
-  resolveCopies(raw);
+  resolveCopies(raw, origin);
   return raw;
 }
 
 // ---------------------------------------------------------------- build
 export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const warn = o.warn || (() => {});
-  const raw = await loadData(o.read, o.homebrew, warn);
+  const origin = new Map<RawBase, string>();
+  const raw = await loadData(o.read, o.homebrew, warn, origin);
+  // the raw entries that made it into the data, and why others were left out (for brewEntry)
+  const made = new Set<RawBase>(), leftOut = new Map<RawBase, string>();
   /** convert one entry; one the importer can't read (e.g. homebrew with unusual fields) is left out and reported */
   const guard = (kind: string, e: RawBase, convert: () => void) => {
-    try { convert(); } catch (err) { warn(`${kind}: left out ${e.name} (${e.source}): ${(err as Error).message}`); }
+    try { convert(); } catch (err) { warn(`${kind}: left out ${e.name} (${e.source}): ${(err as Error).message}`); leftOut.set(e, (err as Error).message); }
   };
   const is2024 = (e: RawBase) => SOURCES_2024.has(e.source) || e.edition === "one";
   // SRD: 5etools marks SRD entries with srd: true, or srd: "<SRD name>" when the SRD renames them
   const srdName = (e: RawBase): string | null => (e.srd === true ? e.name : typeof e.srd === "string" ? e.srd : null);
-  const allowed = (kind: string, e: RawBase, name = e.name) =>
+  /** why the options leave an entry out, or null when it is kept */
+  const filteredBy = (kind: string, e: RawBase, name: string) =>
     // the SRD flag itself, not the SRD name: unnamed subraces (e.g. the standard Human) have none
-    (!o.srdOnly || e.srd === true || typeof e.srd === "string") && (!o.rules2014Only || !is2024(e)) && (!o.keep || o.keep(kind, name, e.source));
+    o.srdOnly && e.srd !== true && typeof e.srd !== "string" ? "not in the SRD"
+      : o.rules2014Only && is2024(e) ? "2024 edition"
+        : o.keep && !o.keep(kind, name, e.source) ? "no compendium note" : null;
+  const allowed = (kind: string, e: RawBase, name = e.name) => {
+    const why = filteredBy(kind, e, name);
+    if (why) leftOut.set(e, why);
+    return !why;
+  };
   const nameOf = (e: RawBase) => (o.srdOnly ? srdName(e) || e.name : e.name);
 
   // races
   const races: RaceData[] = [];
   for (const r of raw.race) guard("races", r, () => {
-    if (o.rules2014Only && is2024(r)) return;
-    const subOut: SubraceData[] = [];
+    if (o.rules2014Only && is2024(r)) { leftOut.set(r, "2024 edition"); return; }
+    const subOut: SubraceData[] = [], subsMade: RawSubrace[] = [];
     // An unnamed subrace is the race as written: 5etools keeps e.g. the standard Human's +1 to every
     // ability there. Next to named subraces (Variant Human, the dragonmarks, which replace those +1s)
     // it is offered as "Standard"; on its own it is merged into the race below. Most races' unnamed
@@ -433,6 +462,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
         spells: s.additionalSpells || null,
         hpPerLevel: /hit point maximum increases by 1/i.test(JSON.stringify(s.entries || "")) ? 1 : 0,
       });
+      subsMade.push(s);
     }
     const baseOk = allowed("races", r);
     if (!baseOk && !subOut.length) return;
@@ -456,6 +486,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     };
     if (standard && subOut.length === 1) mergeSubrace(race, standard);
     races.push(race);
+    [r, ...subsMade].forEach((x) => made.add(x));
   });
 
   // classes
@@ -489,7 +520,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
         tableCols.push({ label, rows: (g.rows || []).map((row) => tableValue(row[i])) });
       });
     }
-    const subclasses: SubclassData[] = [];
+    const subclasses: SubclassData[] = [], subsMade: RawBase[] = [];
     for (const sc of raw.subclass.filter((x) => x.className === c.name && x.classSource === c.source)) guard("subclasses", sc, () => {
       if (!allowed("classes", sc)) return;
       const sfeats: Feature[] = [];
@@ -519,6 +550,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       const keys = (sc.subclassSpells || []).map(spellKey).filter((k): k is string => !!k);
       if (keys.length) subclassSpells.set(sub, keys);
       subclasses.push(sub);
+      subsMade.push(sc);
     });
     const sp = c.startingProficiencies || {};
     const profText = (a: RawProfItem) => plain(renderStr(typeof a === "string" ? a : a.full || a.proficiency || ""));
@@ -550,6 +582,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       } : null,
       subclasses,
     });
+    [c, ...subsMade].forEach((x) => made.add(x));
     for (const ref of c.classSpells || []) {
       const k = spellKey(ref);
       if (k) classSpells.set(k, [...classSpells.get(k) || [], c.name]);
@@ -573,6 +606,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       feature: fe ? { name: fe.name.replace(FEATURE, ""), heading: fe.name, text: renderEntries(fe.entries), link: null } : null,
       feats: b.feats || null,
     });
+    made.add(b);
   });
 
   // feats
@@ -581,6 +615,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     if (!allowed("feats", f)) return;
     const prereq = (f.prerequisite || []).map(prereqText).join(" or ");
     feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries) });
+    made.add(f);
   });
 
   // spells
@@ -612,6 +647,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       concentration: !!dur?.concentration, ritual: !!s.meta?.ritual, classes: classes2,
       text: renderEntries(s.entries) + (s.entriesHigherLevel ? "\n\n" + renderEntries(s.entriesHigherLevel) : ""),
     });
+    made.add(s);
   });
 
   // subclass spell lists: the spells that were imported; one with the wrong source is found by its name,
@@ -644,6 +680,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       bonusAc: it.bonusAc ? parseInt(it.bonusAc) : 0, bonusWeapon: it.bonusWeapon ? parseInt(it.bonusWeapon) : 0,
       baseItem: it.baseItem ? it.baseItem.split("|")[0] : null,
     });
+    made.add(it);
   };
   raw.baseitem.forEach((i) => guard("items", i, () => pushItem(i, false)));
   raw.item.forEach((i) => guard("items", i, () => pushItem(i, true)));
@@ -660,6 +697,26 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       if (v == null || (Array.isArray(v) && !v.length) || (k === "kind" && it.kind === "gear")) target[k] = source[k];
     }
     if (it.weight == null) it.weight = base.weight;
+  }
+
+  // what became of each homebrew entry; unnamed subraces are part of their race, not entries of their own
+  if (o.brewEntry) {
+    const lists: [EntryKind, RawBase[]][] = [
+      ["race", raw.race], ["subrace", raw.subrace.filter((s) => s.name)], ["class", raw.class], ["subclass", raw.subclass],
+      ["background", raw.background], ["feat", raw.feat], ["spell", raw.spell], ["item", [...raw.baseitem, ...raw.item]],
+    ];
+    // a subrace or subclass not even looked at: its race or class was left out, or is not loaded
+    const unreached: Partial<Record<EntryKind, string>> = { subrace: "its race is not imported", subclass: "its class is not imported" };
+    for (const [kind, list] of lists) for (const e of list) {
+      const file = origin.get(e);
+      if (!file) continue;
+      const parent = kind === "subrace" ? (e as RawSubrace).raceName : kind === "subclass" ? (e as RawSubclass).className : null;
+      o.brewEntry({
+        file, kind, source: e.source,
+        name: parent ? (kind === "subrace" ? `${parent} (${e.name})` : `${e.name} (${parent})`) : e.name,
+        reason: made.has(e) ? null : leftOut.get(e) ?? (o.rules2014Only && is2024(e) ? "2024 edition" : unreached[kind]) ?? "left out",
+      });
+    }
   }
 
   // names only for the sources that are actually used
