@@ -431,7 +431,7 @@
 .dnd-report .dnd-report-file { cursor: pointer; }
 .dnd-report .dnd-report-file:hover { background: var(--background-modifier-hover); }
 .dnd-report .dnd-report-file > td:first-child { min-width: 14em; overflow-wrap: anywhere; }
-.dnd-report .dnd-report-toggle { all: unset; cursor: pointer; display: inline-flex; gap: var(--size-4-2); font-weight: var(--font-semibold); }
+.dnd-report .dnd-report-toggle { background: none; border: none; box-shadow: none; padding: 0; margin: 0; height: auto; color: inherit; font: inherit; text-align: left; cursor: pointer; display: inline-flex; gap: var(--size-4-2); font-weight: var(--font-semibold); }
 .dnd-report .dnd-report-toggle:focus-visible { outline: 2px solid var(--interactive-accent); }
 .dnd-report .dnd-report-chevron { color: var(--text-muted); width: 0.8em; flex: none; }
 .dnd-report .dnd-report-detail > td { background: var(--background-secondary); padding: var(--size-4-2) var(--size-4-3) var(--size-4-3) var(--size-4-6); }
