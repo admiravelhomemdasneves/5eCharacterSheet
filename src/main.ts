@@ -6,6 +6,7 @@ import { Linker, NoteInfo, sourceOfTag } from "./data/links";
 import { BrewEntry, HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
 import { SKIP_FOLDERS, detect } from "./data/detect";
 import { ReportFile, importReport } from "./data/report";
+import { RemovedEntry, entryKey, removedKeys, withoutEntries } from "./data/entries";
 import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import { fileNameProblem, renamedPath } from "./files";
@@ -83,7 +84,7 @@ export default class CharacterSheetPlugin extends Plugin {
     try {
       if (this.settings.dataSource === "srd") data = loadSrd();
       else if (this.settings.dataSource === "imported") {
-        const file = normalizePath(`${this.manifest.dir}/data/imported.json`);
+        const file = this.importedFile();
         if (await this.app.vault.adapter.exists(file)) data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;
         else new Notice("No imported rules data yet. Import it in the plugin settings.");
       }
@@ -106,11 +107,13 @@ export default class CharacterSheetPlugin extends Plugin {
   /** Index the compendium notes (title + source tag) under the configured folder. */
   buildLinker() {
     const root = normalizePath(this.settings.compendiumFolder.trim() || "/");
-    if (root === "/") return new Linker(null, []);
+    // notes chosen in "Import data" link even without a compendium folder
+    const chosen = this.settings.noteLinks;
+    if (root === "/") return new Linker(null, [], chosen);
     const notes: NoteInfo[] = [];
     // only the compendium folder is read, not the rest of the vault
     const folder = this.app.vault.getAbstractFileByPath(`${root}/compendium`);
-    if (!(folder instanceof TFolder)) return new Linker(root, notes);
+    if (!(folder instanceof TFolder)) return new Linker(root, notes, chosen);
     Vault.recurseChildren(folder, (f) => {
       if (!(f instanceof TFile) || f.extension !== "md") return;
       const fm: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(f)?.frontmatter;
@@ -120,7 +123,7 @@ export default class CharacterSheetPlugin extends Plugin {
       const source = tags.map((t) => sourceOfTag(String(t))).find(Boolean);
       if ((typeof alias === "string" || typeof alias === "number") && source) notes.push({ path: f.path.replace(/\.md$/, ""), alias: String(alias), source });
     });
-    return new Linker(root, notes);
+    return new Linker(root, notes, chosen);
   }
 
   /**
@@ -177,7 +180,7 @@ export default class CharacterSheetPlugin extends Plugin {
           files.push({ file, error: (e as Error).message });
         }
       }
-      const data = await buildCompendium({
+      const built = await buildCompendium({
         read: base ? async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown : undefined,
         homebrew,
         warn: (message) => leftOut.push(message),
@@ -185,9 +188,17 @@ export default class CharacterSheetPlugin extends Plugin {
         rules2014Only: this.settings.importRules2014 && !this.settings.importOnlyWithNotes,
         keep: linker ? (kind, name, source) => linker.has(kind, name, source) : undefined,
       });
-      const dir = normalizePath(`${this.manifest.dir}/data`);
-      if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.adapter.mkdir(dir);
-      await this.app.vault.adapter.write(`${dir}/imported.json`, JSON.stringify(data));
+      // entries removed in "Import data" stay out; the file of each homebrew entry is kept for that page
+      const removed = removedKeys(this.settings.removedEntries);
+      const origins: Record<string, string> = {};
+      for (const e of entries) {
+        const key = entryKey(e.kind, e.name, e.source);
+        if (e.reason == null && removed.has(key)) e.reason = "removed in Import data";
+        if (e.reason == null) origins[key] = e.file;
+      }
+      const data = withoutEntries(built, removed);
+      data.meta = { ...data.meta, origins };
+      await this.writeImported(data);
       const brewFiles = `${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"}`;
       const brew = !base ? ` (${brewFiles} only, no 5etools data)` : homebrew.length ? ` (with ${brewFiles})` : "";
       this.settings.lastImport = `${new Date().toLocaleString()} — ${summarize(data)}${brew}`;
@@ -201,6 +212,38 @@ export default class CharacterSheetPlugin extends Plugin {
       console.error("5e Character Sheet: import failed", e);
       new Notice(`Import failed: ${(e as Error).message}`, 10000);
     }
+  }
+
+  private importedFile() { return normalizePath(`${this.manifest.dir}/data/imported.json`); }
+  private async writeImported(data: Compendium) {
+    const dir = normalizePath(`${this.manifest.dir}/data`);
+    if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.adapter.mkdir(dir);
+    await this.app.vault.adapter.write(this.importedFile(), JSON.stringify(data));
+  }
+
+  /** Remove entries from the imported data ("Import data"); they stay out of later imports until restored. */
+  async removeEntries(entries: RemovedEntry[]) {
+    const file = this.importedFile();
+    if (await this.app.vault.adapter.exists(file)) {
+      const data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;
+      await this.writeImported(withoutEntries(data, removedKeys(entries)));
+    }
+    const known = removedKeys(this.settings.removedEntries);
+    this.settings.removedEntries = [...this.settings.removedEntries, ...entries.filter((e) => !known.has(entryKey(e.kind, e.name, e.source)))];
+    await this.saveSettings();
+  }
+  /** Let removed entries come back: they are in the data again after the next import. */
+  async restoreEntries(entries: RemovedEntry[]) {
+    const back = removedKeys(entries);
+    this.settings.removedEntries = this.settings.removedEntries.filter((e) => !back.has(entryKey(e.kind, e.name, e.source)));
+    await this.saveData(this.settings);
+  }
+  /** The compendium note of an entry, by its note key: a note path (without .md), "" for none, or null to match by name again. */
+  async setNoteLink(key: string, path: string | null) {
+    const links = { ...this.settings.noteLinks };
+    if (path == null) delete links[key]; else links[key] = path;
+    this.settings.noteLinks = links;
+    await this.saveSettings();
   }
 
   async saveSettings() {

@@ -1,9 +1,12 @@
+import * as obsidian from "obsidian";
 import { App, PluginSettingTab, Setting, SettingDefinitionItem } from "obsidian";
 import type CharacterSheetPlugin from "./main";
 import { SRD_ATTRIBUTION } from "./data/srd";
 import { SECTIONS } from "./sections";
 import { IMPORT_CHANGES } from "./data/build";
+import type { RemovedEntry } from "./data/entries";
 import { DetectModal } from "./ui/detect";
+import { ImportDataView } from "./ui/import-data";
 
 export interface SheetSettings {
   /** optional fixed folder for new characters; empty = last used folder (vault root the first time) */
@@ -19,7 +22,11 @@ export interface SheetSettings {
   importRules2014: boolean;
   importOnlyWithNotes: boolean;
   lastImport: string;
-  /** plugin = the sheet's own accent colour, obsidian = the active theme's accent, custom = customAccent */
+  /** entries removed from the imported data ("Import data"), kept out of later imports too */
+  removedEntries: RemovedEntry[];
+  /** compendium notes chosen for entries ("Import data"), by note key; "" = no note */
+  noteLinks: Record<string, string>;
+  /** plugin =the sheet's own accent colour, obsidian = the active theme's accent, custom = customAccent */
   theme: "plugin" | "obsidian" | "custom";
   customAccent: string;
   /** sections left out of new sheets (Sheet template); empty = all sections */
@@ -27,7 +34,7 @@ export interface SheetSettings {
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
   charactersFolder: "", lastFolder: "", dataSource: "none", compendiumFolder: "",
-  fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "",
+  fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "", removedEntries: [], noteLinks: {},
   theme: "plugin", customAccent: "#922610", hiddenSections: [],
 };
 const THEME_KEYS = ["theme", "customAccent"];
@@ -55,6 +62,7 @@ const T = {
   // pages, and the steps of the import
   general: "Where new characters are created and how the sheets look.",
   rules: "Where races, classes, spells and items come from: typed in by you (manual mode), the SRD 5.1 included with the plugin, or your own 5etools data.",
+  importData: "What was imported and from where. Remove entries, and open or change their compendium notes.",
   compendiumPage: "Optional. Links from the sheets to the notes of a compendium, with page previews.",
   step1: ["Step 1: Get the data", "What you need", "The \"data\" folder of a 5etools copy: JSON files with the races, classes, spells and items of the books. Use only content you are entitled to use; the plugin downloads nothing."],
   step2: ["Step 2: Put it in your vault", "Where to put it", "Copy that folder into this vault. A hidden folder such as .5etools/data keeps its files out of your file list and search. Then press Detect, or fill in the paths below."],
@@ -99,6 +107,32 @@ interface Def {
   visible?: Value<boolean>; status?: Value<"warning" | null>; items?: Def[];
   control?: { type: string; key: string; options?: Record<string, string>; placeholder?: string; rows?: number };
   render?: (setting: Setting, group: never) => void; action?: (el: HTMLElement, index: number) => void;
+  /** not Obsidian's: a page drawn by hand (see drawnPage) */
+  draw?: (el: HTMLElement) => void;
+}
+
+/** What a page drawn by hand needs: `draw` fills an element, `redraw` is set by the page that shows it. */
+interface DrawnView { draw(el: HTMLElement): void; redraw: () => void }
+/**
+ * A settings page drawn by hand rather than from definitions: from Obsidian 1.13 a SettingPage (the
+ * class is only used when the page opens, as older versions have none), before that `draw`.
+ */
+function drawnPage(o: { name: string; desc: string; visible: () => boolean; view: () => DrawnView }): SettingDefinitionItem {
+  const show = (view: DrawnView, el: HTMLElement) => { view.redraw = () => view.draw(el); view.draw(el); };
+  const def: Def & { page: () => object } = {
+    type: "page", name: o.name, desc: o.desc, visible: o.visible,
+    // called by Obsidian 1.13+ only, where SettingPage exists
+    page: () => {
+      const Base = (obsidian as unknown as { SettingPage: new () => { containerEl: HTMLElement; title: string } }).SettingPage;
+      const view = o.view();
+      class Page extends Base { display() { show(view, this.containerEl); } }
+      const page = new Page();
+      page.title = o.name;
+      return page;
+    },
+    draw: (el) => show(o.view(), el),
+  };
+  return def as unknown as SettingDefinitionItem;
 }
 const valueOf = <T>(v: Value<T> | undefined) => (typeof v === "function" ? (v as () => T)() : v);
 const shown = (d: Def) => valueOf(d.visible) !== false;
@@ -166,6 +200,7 @@ export class SheetSettingTab extends PluginSettingTab {
           },
         ] },
       ] },
+      drawnPage({ name: "Import data", desc: T.importData, visible: imported, view: () => new ImportDataView(this.plugin) }),
       { type: "page", name: "Compendium", desc: T.compendiumPage, items: [
         { type: "group", items: [
           { name: T.compendium[0], desc: withLinks(T.compendium[1], L.compendium), control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
@@ -228,6 +263,7 @@ export class SheetSettingTab extends PluginSettingTab {
     });
     const page = pages[this.page], items = page.items ?? [];
     const el = containerEl.createDiv();
+    if (page.draw) { page.draw(el); return; }
     if (page.desc) el.createEl("p", { cls: "setting-item-description" }).append(page.desc);
     // a change that shows or hides settings (the custom colour, the import steps) builds the page again
     const before = JSON.stringify(visibleKeys(items));
