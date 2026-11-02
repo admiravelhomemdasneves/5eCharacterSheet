@@ -5,6 +5,7 @@ import type CharacterSheetPlugin from "../main";
 import { newEntryId, type CustomEntry } from "../custom/format";
 import { choicesOf, emptyData, emptyValue, missingFields, type Choice, type CustomContext, type FieldDef, type KindDef } from "../custom/schema";
 import { NoteSuggestModal } from "./import-data";
+import { richSelect } from "./widgets";
 import { lc } from "../text";
 
 export class EntryModal extends Modal {
@@ -80,11 +81,17 @@ export class EntryModal extends Modal {
         t.inputEl.addEventListener("change", () => this.draw());
       }); break;
       case "checkbox": s.addToggle((t) => t.setValue(value === true).onChange((v) => set(v, true))); break;
-      case "select": s.addDropdown((d) => {
-        d.addOption("", "—");
-        for (const c of choicesOf(f, this.ctx)) d.addOption(c.value, c.label);
-        d.setValue(asText(value)).onChange((v) => set(v, true));
-      }); break;
+      case "select": {
+        const opts = choicesOf(f, this.ctx);
+        // a long list (races, classes): a menu to search, grouped by book
+        if (opts.length > SEARCH_FROM) richSelect(s.controlEl, opts, asText(value) || null, (v) => set(v, true), { placeholder: "Choose…", cls: "dnd-entry-search" });
+        else s.addDropdown((d) => {
+          d.addOption("", "—");
+          for (const c of opts) d.addOption(c.value, c.label);
+          d.setValue(asText(value)).onChange((v) => set(v, true));
+        });
+        break;
+      }
       case "multiselect":
         s.settingEl.addClass("dnd-entry-wide");
         chips(s.controlEl, choicesOf(f, this.ctx), asList(value), (v) => set(v));
@@ -167,6 +174,8 @@ export class EntryModal extends Modal {
   }
 }
 
+/** a select field with more options than this is a menu with a search box */
+const SEARCH_FROM = 12;
 const asText = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v) : "");
 const asList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 /** Toggle buttons for a multiselect field: `onChange` gets the values picked, in the options' order. */

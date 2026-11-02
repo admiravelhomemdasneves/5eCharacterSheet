@@ -368,7 +368,8 @@
   padding: 0 var(--dnd-s5) 0 var(--dnd-s2);
 }
 .dnd-rich-select.is-placeholder { color: var(--text-muted); }
-.dnd-dropdown { position: fixed; z-index: var(--layer-popover); width: 330px; display: flex; flex-direction: column; padding: var(--dnd-s1, 4px); }
+/* above the modals too (the custom data form) */
+.dnd-dropdown { position: fixed; z-index: var(--layer-menu); width: 330px; display: flex; flex-direction: column; padding: var(--dnd-s1, 4px); }
 .dnd-dropdown-search { width: 100%; margin-bottom: 4px; }
 .dnd-dropdown-list { overflow-y: auto; flex: 1; }
 .dnd-dropdown-group { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); padding: 8px 8px 2px; }
@@ -472,6 +473,7 @@
 .dnd-entry-modal .dnd-entry-cell { display: flex; flex-direction: column; gap: var(--size-2-1); }
 .dnd-entry-modal .dnd-entry-cell .dnd-label { font-size: var(--font-ui-smaller); color: var(--text-muted); }
 .dnd-entry-modal .dnd-entry-cell input[type="number"] { width: 5em; }
+.dnd-entry-modal .dnd-entry-search { min-width: 16em; max-width: 24em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .dnd-entry-modal .dnd-entry-chips { display: flex; flex-wrap: wrap; gap: var(--size-2-2); }
 .dnd-entry-modal .dnd-entry-chips button { height: auto; padding: var(--size-2-1) var(--size-4-2); font-size: var(--font-ui-smaller); }
 .dnd-entry-modal .dnd-entry-chips button.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }

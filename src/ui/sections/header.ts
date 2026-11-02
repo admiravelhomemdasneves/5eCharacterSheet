@@ -109,4 +109,6 @@ export function manualHeader(sheet: CharacterSheet, info: HTMLElement, d: E.Deri
   });
   const add = classes.createDiv({ cls: "dnd-row dnd-add-row" });
   button(add, m.classes.length ? "+ Add class (multiclass)" : "+ Add class", () => sheet.change((x) => { x.manual.classes.push({ name: "", subclass: "", level: 1 }); }));
+  fromCustom(sheet, add, "class");
+  fromCustom(sheet, add, "subclass");
 }

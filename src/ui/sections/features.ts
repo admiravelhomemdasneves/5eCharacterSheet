@@ -22,7 +22,10 @@ export function manualRaceFeatures(sheet: CharacterSheet, root: HTMLElement) {
   });
 }
 export function manualClassFeatures(sheet: CharacterSheet, root: HTMLElement) {
-  sheet.section(root, "class-features", "Class Features", (el) => bulletList(sheet, el, "class-features", (x) => x.manual.classFeatures, "Feature (e.g. **Second Wind** — 1d10 + level, short rest)…", "+ Add feature"));
+  sheet.section(root, "class-features", "Class Features", (el) => {
+    bulletList(sheet, el, "class-features", (x) => x.manual.classFeatures, "Feature (e.g. **Second Wind** — 1d10 + level, short rest)…", "+ Add feature");
+    fromCustom(sheet, el.createDiv({ cls: "dnd-row" }), "class-features");
+  });
 }
 
 /**

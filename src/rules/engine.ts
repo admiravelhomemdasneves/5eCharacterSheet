@@ -25,7 +25,9 @@ export const FULL_CASTER_SLOTS: number[][] = [
 // ------------------------------------------------------------------ data types (from compendium-2014.json)
 export interface AbilityOption { label: string; fixed: Partial<Record<Ability, number>>; choose: { from: Ability[]; count: number; amount: number; distinct?: boolean }[] }
 export interface ProfList { fixed: string[]; choose: { from: string[] | "any"; count: number }[] }
-export interface Feature { name: string; level: number; source: string; text: string; link: string | null; optional?: boolean; subclassFeature?: boolean }
+/** `uses`: how often it can be used before a rest (custom features): a number, the proficiency bonus, or an ability's modifier (at least 1) */
+export interface FeatureUses { max: number | "pb" | Ability; rest: "short" | "long" }
+export interface Feature { name: string; level: number; source: string; text: string; link: string | null; optional?: boolean; subclassFeature?: boolean; uses?: FeatureUses }
 export interface Spellcasting { ability: Ability; progression: string; prepared?: string | null; cantrips?: number[] | null; known?: number[] | null; knownFixed?: number[] | null; list: string | null }
 /** speeds in feet; "walk" means "equal to your walking speed" */
 export type Speeds = Record<string, number | string>;
@@ -704,7 +706,8 @@ export function classFeatures(r: Rules, s: CharState) {
 }
 /** A count the sheet tracks (key in CharState.resources): from a class table column, or added from a grant (`grant`, `from`; `gone`: no longer given). */
 export interface Resource { key: string; label: string; max: number | string; from?: string; grant?: string; gone?: boolean }
-export function classResources(r: Rules, s: CharState) {
+/** The columns of the class tables at the character's levels, then the uses of features that say how many (FeatureUses). `scores`/`features`: abilityScores()/classFeatures(), when known. */
+export function classResources(r: Rules, s: CharState, scores?: Record<Ability, AbilityBreakdown>, features = classFeatures(r, s)) {
   const out: Resource[] = [];
   for (const e of s.classes) {
     const c = r.cls(e.id);
@@ -714,6 +717,10 @@ export function classResources(r: Rules, s: CharState) {
       if (v == null || v === 0 || v === "0" || v === "—") continue;
       out.push({ key: `${c.name}:${col.label}`, label: col.label, max: v });
     }
+  }
+  const usesOf = (u: FeatureUses) => (typeof u.max === "number" ? u.max : u.max === "pb" ? proficiencyBonus(totalLevel(s)) : Math.max(1, mod((scores ??= abilityScores(r, s, features))[u.max].total)));
+  for (const g of features) for (const f of g.features) if (f.uses) {
+    out.push({ key: `${g.cls.name}:${f.name}`, label: `${f.name} (${f.uses.rest === "short" ? "short or long rest" : "long rest"})`, max: usesOf(f.uses) });
   }
   return out;
 }
@@ -1275,7 +1282,7 @@ export function derive(r: Rules, s: CharState) {
     hp: hpBreakdown(r, s, scores, features), ac: armorClass(r, s, scores, features), initiative: initiative(r, s, scores),
     speeds: speeds(r, s, features), hitDice: hitDice(r, s), darkvision: darkvision(r, s),
     features, choices, asi, grants, suggestions: grantSuggestions(r, s, grants, granted),
-    resources: [...classResources(r, s), ...grantResources(s, grants)],
+    resources: [...classResources(r, s, scores, features), ...grantResources(s, grants)],
     casters: casterList,
     /** casterSpellCounts() of each caster, by class id */
     spellCounts: new Map(casterList.map((c) => [c.classId, casterSpellCounts(r, s, c.classId)])),
