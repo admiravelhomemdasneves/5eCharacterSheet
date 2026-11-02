@@ -16,6 +16,12 @@ export interface RawEntryObject {
   rows?: (RawCell[] | { row: RawCell[] })[];
   attributes?: string[];
   roll?: { exact?: number; min?: number; max?: number };
+  /** "options": how many of its entries are chosen (none: all of them apply) */
+  count?: number;
+  /** "refOptionalfeature": "name|source" (PHB when left out) */
+  optionalfeature?: string;
+  /** "refSubclassFeature": "name|class|classSource|subclassShortName|subclassSource|level|source" */
+  subclassFeature?: string;
 }
 export type RawEntry = string | RawEntryObject;
 
@@ -82,6 +88,12 @@ export interface RacesFile { race: RawRace[]; subrace: RawSubrace[] }
 export type RawTableValue = string | number | { value?: number; toRoll?: { number: number; faces: number }[] };
 export interface RawTableGroup { colLabels?: string[]; rows?: RawTableValue[][]; rowsSpellProgression?: number[][] }
 export type RawClassFeatureRef = string | { classFeature: string; gainSubclassFeature?: boolean };
+/**
+ * Options of a kind the class or subclass picks (Fighting Style, Eldritch Invocations, Metamagic…):
+ * optional features of `featureType`, as many as `progression` gives at each class level: an array by
+ * level, or { "<level>": total } (from that level on; "*": at every level).
+ */
+export interface RawOptionalProgression { name: string; featureType: string[]; progression: number[] | Record<string, number> }
 export interface RawClass extends RawBase {
   hd?: { faces: number };
   proficiency?: Ability[];
@@ -95,6 +107,7 @@ export interface RawClass extends RawBase {
   classTableGroups?: RawTableGroup[];
   classFeatures?: RawClassFeatureRef[];
   subclassTitle?: string;
+  optionalfeatureProgression?: RawOptionalProgression[];
   /** homebrew: the class's spell list, as "name|source" (PHB when left out) or { name, source } */
   classSpells?: (string | { name?: string; source?: string })[];
   multiclassing?: {
@@ -115,6 +128,7 @@ export interface RawSubclass extends RawBase {
   additionalSpells?: RawAdditionalSpells[];
   /** homebrew: spells added to the class's list for this subclass only, written like classSpells */
   subclassSpells?: (string | { name?: string; source?: string })[];
+  optionalfeatureProgression?: RawOptionalProgression[];
 }
 export interface RawSubclassFeature extends RawBase { className: string; subclassShortName: string; level: number }
 export interface ClassFile { class?: RawClass[]; subclass?: RawSubclass[]; classFeature?: RawClassFeature[]; subclassFeature?: RawSubclassFeature[] }
@@ -125,6 +139,16 @@ export interface RawBackground extends RawBase {
   toolProficiencies?: RawProf[];
   languageProficiencies?: RawProf[];
   feats?: unknown;
+}
+/** An optional feature: a Fighting Style, Eldritch Invocation, Metamagic option, maneuver… (optionalfeatures.json) */
+export interface RawOptionalFeature extends RawBase {
+  featureType?: string[];
+  /** alternatives (any one will do), each a set of requirements that must all be met */
+  prerequisite?: Record<string, unknown>[];
+  isClassFeatureVariant?: boolean;
+  additionalSpells?: RawAdditionalSpells[];
+  /** options it lets the character pick in turn (e.g. Superior Technique: one maneuver) */
+  optionalfeatureProgression?: RawOptionalProgression[];
 }
 export interface RawFeat extends RawBase { prerequisite?: Record<string, unknown>[]; ability?: RawAbility[] }
 
@@ -184,13 +208,14 @@ export interface RawData {
   spell: RawSpell[];
   baseitem: RawItem[];
   item: RawItem[];
+  optionalfeature: RawOptionalFeature[];
   /** spell class lists of official spells (spells/sources.json) */
   spellSources: SpellSourcesFile;
   /** source id -> book or adventure name */
   sourceNames: Record<string, string>;
 }
 /** Collections of RawData that a homebrew file can add to. */
-export const HOMEBREW_COLLECTIONS = ["race", "subrace", "class", "classFeature", "subclass", "subclassFeature", "background", "feat", "spell", "baseitem", "item"] as const;
+export const HOMEBREW_COLLECTIONS = ["race", "subrace", "class", "classFeature", "subclass", "subclassFeature", "background", "feat", "spell", "baseitem", "item", "optionalfeature"] as const;
 /** A 5etools homebrew file: `_meta.sources` names its books, the rest are collections like the official data's. */
 export type HomebrewJson = {
   _meta?: {

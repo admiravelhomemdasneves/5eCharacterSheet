@@ -334,7 +334,7 @@ const MIXED: HomebrewFile = {
     spell: [spell("Ash Cloud", "MX"), { name: "Broken Spell", source: "MX", school: "V" }],
     item: [{ name: "+1 Ash Ring", source: "MX", _copy: { name: "Ring of Shielding", source: "DMG" } }],
     monster: [{ name: "Ash Wraith", source: "MX" }, { name: "Ash Hound", source: "MX" }],
-    optionalfeature: [{ name: "Ashen Step", source: "MX" }],
+    deity: [{ name: "Ashen One", source: "MX" }],
   },
 };
 
@@ -374,7 +374,7 @@ test("import report: counts by source, the file's entries, its unused collection
   const [mixed, gone] = r.files;
   assert.deepEqual(mixed.books, ["Mixed Book"]);
   assert.deepEqual([mixed.imported.race, mixed.imported.spell, mixed.imported.item, mixed.leftOut], [1, 1, 1, 4]);
-  assert.deepEqual(mixed.unused, [{ collection: "monster", count: 2 }, { collection: "optionalfeature", count: 1 }]);
+  assert.deepEqual(mixed.unused, [{ collection: "monster", count: 2 }, { collection: "deity", count: 1 }]);
   assert.deepEqual(mixed.messages, ["a message"]);
   assert.deepEqual([gone.error, gone.entries.length, gone.leftOut], ["not found", 0, 0]);
   // the rest is official: one race (Dwarf), three spells, one item

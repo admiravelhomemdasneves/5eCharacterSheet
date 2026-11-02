@@ -7,15 +7,15 @@
 // and where the user keeps a compendium of notes.
 import type {
   AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
-  HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawMod, RawFeat, RawItem, RawProf, RawProfItem, RawSkillChoice, RawSpeed, RawSpell,
-  RawSubclass, RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
+  HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawEntryObject, RawMod, RawFeat, RawItem, RawOptionalFeature, RawOptionalProgression, RawProf, RawProfItem,
+  RawSkillChoice, RawSpeed, RawSpell, RawSubclass, RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
 import { HOMEBREW_COLLECTIONS } from "./fivetools.ts";
 import { ABILITIES, combineAbilityOptions } from "../rules/engine.ts";
 import { lc, title } from "../text.ts";
 import type {
-  AbilityOption, BackgroundData, ClassData, Compendium, FeatData, Feature, ItemData, ProfList, RaceData,
-  SpellData, Speeds, SubclassData, SubraceData,
+  AbilityOption, BackgroundData, ChoiceOption, ClassData, Compendium, FeatData, Feature, FeatureChoice, ItemData, OptionalFeatureData,
+  OptionRequirement, ProfList, RaceData, SpellData, Speeds, SubclassData, SubraceData,
 } from "../rules/engine.ts";
 
 /** Reads a 5etools data file (path relative to the `data` folder) and returns its parsed JSON. */
@@ -52,11 +52,11 @@ const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
  * (and say what it brings in IMPORT_CHANGES) whenever an importer change needs a new import: data with
  * an older stamp makes the plugin ask the user to press "Import now" again.
  *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces   3 = copied entries completed (_copy, _mod)
- *   4 = homebrew subclass spell lists (subclassSpells)
+ *   4 = homebrew subclass spell lists (subclassSpells)   5 = optional features and the choices of class features
  */
-export const IMPORT_VERSION = 4;
+export const IMPORT_VERSION = 5;
 /** What an import with this importer brings to data imported before it (shown when it is out of date). */
-export const IMPORT_CHANGES = "completes the entries 5etools copies from others, and adds the extra spells of homebrew subclasses to their spell lists";
+export const IMPORT_CHANGES = "adds the options of class features to choose from on the sheet, such as Fighting Styles, Eldritch Invocations, Metamagic and maneuvers";
 /** Imported data made by an older importer (data from before the stamp counts as version 1). */
 export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
@@ -328,6 +328,51 @@ function prereqText(p: Record<string, unknown>): string {
   }).filter(Boolean).join(", ");
 }
 
+// ---------------------------------------------------------------- choices
+/** How many picks a progression gives at each class level 1-20 (see RawOptionalProgression). */
+export function choiceCounts(p: RawOptionalProgression["progression"] | undefined): number[] {
+  const out: number[] = [];
+  if (Array.isArray(p)) { for (let l = 0; l < 20; l++) out.push(Number(p[Math.min(l, p.length - 1)]) || 0); return out; }
+  let n = Number(p?.["*"]) || 0;
+  for (let l = 1; l <= 20; l++) { const v = p?.[String(l)]; if (v != null) n = Number(v) || 0; out.push(n); }
+  return out;
+}
+const choicesOf = (list: RawOptionalProgression[] | undefined): FeatureChoice[] =>
+  (list || []).filter((p) => p?.name && Array.isArray(p.featureType)).map((p) => ({ name: p.name, feature: null, counts: choiceCounts(p.progression), types: p.featureType }));
+/** The `options` blocks of some entries, at any depth: the ones with a count are choices. */
+function optionBlocks(entries: RawEntry[] | undefined, out: RawEntryObject[] = []): RawEntryObject[] {
+  for (const e of entries || []) if (typeof e === "object" && e) {
+    if (e.type === "options") out.push(e);
+    else optionBlocks(e.entries, out);
+  }
+  return out;
+}
+/** "name|source" of a refOptionalfeature (PHB when left out), lowercased */
+const optRefKey = (ref: string | undefined) => { const [name, source] = (ref || "").split("|"); return `${lc(name)}|${lc(source || "PHB")}`; };
+/** "Level 5 Warlock, Pact of the Tome, Eldritch Blast" (one alternative of an optional feature's prerequisite) */
+function optPrereqText(p: Record<string, unknown>): string {
+  const names = (v: unknown) => (Array.isArray(v) ? v : []).map((x) => (typeof x === "string" ? title(x.split("|")[0].replace(/#\w+$/, "")) : plain(renderStr(String((x as { entry?: string })?.entry ?? ""))))).filter(Boolean).join(", ");
+  return Object.entries(p).map(([k, v]) => {
+    if (k === "level") { const l = v as number | { level: number; class?: { name: string } }; return typeof l === "number" ? `Level ${l}` : `Level ${l.level}${l.class ? ` ${l.class.name}` : ""}`; }
+    if (k === "pact") return `Pact of the ${String(v)}`;
+    if (k === "patron") return `The ${String(v)} patron`;
+    if (k === "spell" || k === "feature" || k === "optionalfeature" || k === "item") return names(v);
+    if (k === "otherSummary") return plain(renderStr(String((v as { entrySummary?: string; entry?: string }).entrySummary ?? (v as { entry?: string }).entry ?? "")));
+    return typeof v === "string" ? v : "";
+  }).filter(Boolean).join(", ");
+}
+/** What the sheet checks of one alternative of an optional feature's prerequisite (the rest is only shown). */
+function requirementOf(p: Record<string, unknown>): OptionRequirement {
+  const out: OptionRequirement = {};
+  const l = p.level as number | { level: number; class?: { name: string } } | undefined;
+  if (typeof l === "number") out.level = l;
+  else if (l && typeof l === "object") { out.level = l.level; if (l.class?.name) out.class = l.class.name; }
+  if (typeof p.pact === "string") out.pact = p.pact;
+  const spells = (Array.isArray(p.spell) ? p.spell : []).filter((x): x is string => typeof x === "string").map((x) => lc(x.split("|")[0].replace(/#\w+$/, "")));
+  if (spells.length) out.spells = spells;
+  return out;
+}
+
 /** first entry for each key, like `list.find` on that key */
 function indexBy<T>(list: T[], key: (x: T) => string): Map<string, T> {
   const m = new Map<string, T>();
@@ -344,6 +389,7 @@ const isEntry = (k: string, x: unknown) =>
 const noData = (rel: string): unknown => ({
   "races.json": { race: [], subrace: [] }, "backgrounds.json": { background: [] }, "feats.json": { feat: [] },
   "items-base.json": { baseitem: [] }, "items.json": { item: [] }, "books.json": { book: [] }, "adventures.json": { adventure: [] },
+  "optionalfeatures.json": { optionalfeature: [] },
 }[rel] ?? {});
 
 /**
@@ -362,6 +408,11 @@ export async function loadData(readJson: ReadJson | undefined, homebrew: Homebre
     spell: [],
     baseitem: (await read<{ baseitem: RawItem[] }>("items-base.json")).baseitem,
     item: (await read<{ item: RawItem[] }>("items.json")).item,
+    // a copy of 5etools without it still imports, with no options for class features to choose from
+    optionalfeature: await read<{ optionalfeature?: RawOptionalFeature[] }>("optionalfeatures.json").then((j) => j?.optionalfeature || [], () => {
+      warn("optionalfeatures.json: not found, so class features have no options to choose from");
+      return [];
+    }),
     spellSources: await read<SpellSourcesFile>("spells/sources.json"),
     sourceNames: {},
   };
@@ -489,11 +540,67 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     [r, ...subsMade].forEach((x) => made.add(x));
   });
 
+  // optional features: the options of class features (Fighting Styles, Eldritch Invocations, Metamagic…)
+  const optionalFeatures: OptionalFeatureData[] = [];
+  for (const x of raw.optionalfeature) guard("optional features", x, () => {
+    if (!allowed("optional-features", x)) return;
+    const prereq = x.prerequisite || [];
+    const of: OptionalFeatureData = {
+      id: idOf(x.name, x.source), name: nameOf(x), source: x.source, link: null, types: x.featureType || [],
+      prereq: prereq.map(optPrereqText).filter(Boolean).join(" or "), requires: prereq.map(requirementOf),
+      text: renderEntries(x.entries), spells: x.additionalSpells || null,
+    };
+    const choices = choicesOf(x.optionalfeatureProgression);
+    if (choices.length) of.choices = choices;
+    optionalFeatures.push(of);
+  });
+  const rawOpts = indexBy(raw.optionalfeature, (x) => `${lc(x.name)}|${lc(x.source)}`);
+  const optByKey = indexBy(optionalFeatures, (x) => `${lc(x.name)}|${lc(x.source)}`);
+
   // classes
   const classes: ClassData[] = [];
   // features by name|class|level|source, and subclass features by name|class|subclass|level|source
   const classFeatures = indexBy(raw.classFeature, (x) => [x.name, x.className, x.level, x.source].join("|"));
   const subclassFeatures = indexBy(raw.subclassFeature, (x) => [x.name, x.className, x.subclassShortName, x.level, x.source].join("|"));
+  // the 5etools entries of each converted feature, for the choices in them
+  const rawOf = new Map<Feature, RawEntry[] | undefined>();
+  /**
+   * The choices of a class or subclass (`cls`: the class's name), each with the feature it is shown in:
+   * one whose options are of its types (one with a count first), else the one named like it. Then the
+   * options with a count in a feature no choice is shown in, as a choice of their own (Totem Spirit's
+   * animals, Hunter's Prey…).
+   */
+  const placeChoices = (list: FeatureChoice[], feats: Feature[], cls: string): FeatureChoice[] => {
+    const blocks = new Map(feats.map((f) => [f, optionBlocks(rawOf.get(f))]));
+    const ofTypes = (b: RawEntryObject, types: string[]) => (b.entries || []).some((e) => typeof e === "object" && e.type === "refOptionalfeature"
+      && !!rawOpts.get(optRefKey(e.optionalfeature))?.featureType?.some((t) => types.includes(t)));
+    const norm = (s: string) => lc(s).replace(/s$/, "");
+    for (const ch of list) {
+      const types = ch.types || [];
+      const host = feats.find((f) => blocks.get(f)!.some((b) => b.count && ofTypes(b, types)))
+        ?? feats.find((f) => blocks.get(f)!.some((b) => ofTypes(b, types)))
+        ?? feats.find((f) => norm(f.name) === norm(ch.name)) ?? feats.find((f) => lc(f.name).includes(lc(ch.name)));
+      ch.feature = host?.name ?? null;
+    }
+    for (const f of feats) {
+      if (list.some((ch) => ch.feature === f.name)) continue;
+      for (const b of blocks.get(f)!) {
+        if (!b.count) continue;
+        const options = (b.entries || []).flatMap((e): ChoiceOption[] => {
+          if (typeof e !== "object") return [];
+          if (e.type === "refSubclassFeature" && e.subclassFeature) {
+            const [name, , clsSrc, scShort, scSrc, lvl, src] = e.subclassFeature.split("|");
+            const x = subclassFeatures.get([name, cls, scShort, +lvl, src || scSrc || clsSrc || "PHB"].join("|"));
+            return x ? [{ id: idOf(x.name, x.source), name: x.name, source: x.source, text: renderEntries(x.entries), link: null }] : [];
+          }
+          const x = e.type === "refOptionalfeature" ? optByKey.get(optRefKey(e.optionalfeature)) : undefined;
+          return x ? [{ id: x.id, name: x.name, source: x.source, text: x.text, link: null }] : [];
+        });
+        if (options.length && !list.some((ch) => ch.name === f.name)) list.push({ name: f.name, feature: f.name, counts: Array.from({ length: 20 }, (_, i) => (i + 1 >= f.level ? b.count! : 0)), options });
+      }
+    }
+    return list;
+  };
   // spells on the lists of imported homebrew classes: "name|source" -> class names
   const classSpells = new Map<string, string[]>();
   // the subclassSpells of each subclass, as keys; they become spell ids once the spells are converted
@@ -507,7 +614,9 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       const [name, cls, clsSrc, lvl, src] = s.split("|");
       const f = classFeatures.get([name, cls, +lvl, src || clsSrc || "PHB"].join("|"));
       if (!f || !featOk(f)) return null;
-      return { name, level: +lvl, source: f.source, text: renderEntries(f.entries), optional: !!f.isClassFeatureVariant, subclassFeature: typeof ref === "object" && !!ref.gainSubclassFeature, link: null };
+      const out: Feature = { name, level: +lvl, source: f.source, text: renderEntries(f.entries), optional: !!f.isClassFeatureVariant, subclassFeature: typeof ref === "object" && !!ref.gainSubclassFeature, link: null };
+      rawOf.set(out, f.entries);
+      return out;
     };
     const features = (c.classFeatures || []).map(feat).filter((f): f is Feature => f !== null)
       .filter((f) => !f.optional || !o.rules2014Only || !SOURCES_2024.has(f.source));
@@ -527,7 +636,9 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       const pushSub = (name: string, scShort: string, scSrc: string, lvl: string, src: string, clsSrc = "PHB"): RawSubclassFeature | null => {
         const f = subclassFeatures.get([name, c.name, scShort, +lvl, src || scSrc || clsSrc || "PHB"].join("|"));
         if (!f || !featOk(f) || sfeats.some((y) => y.name === name && y.level === +lvl)) return null;
-        sfeats.push({ name, level: +lvl, source: f.source, text: renderEntries(f.entries), link: null });
+        const out: Feature = { name, level: +lvl, source: f.source, text: renderEntries(f.entries), link: null };
+        rawOf.set(out, f.entries);
+        sfeats.push(out);
         return f;
       };
       for (const ref of sc.subclassFeatures || []) {
@@ -547,6 +658,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
         spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
         additionalSpells: sc.additionalSpells || null,
       };
+      const choices = placeChoices(choicesOf(sc.optionalfeatureProgression), sub.features, c.name);
+      if (choices.length) sub.choices = choices;
       const keys = (sc.subclassSpells || []).map(spellKey).filter((k): k is string => !!k);
       if (keys.length) subclassSpells.set(sub, keys);
       subclasses.push(sub);
@@ -563,7 +676,9 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       })[0] || null
       : null;
     const mc = c.multiclassing;
+    const choices = placeChoices(choicesOf(c.optionalfeatureProgression), features, c.name);
     classes.push({
+      ...choices.length ? { choices } : {},
       id: idOf(c.name, c.source), name: nameOf(c), source: c.source, link: null,
       hd: c.hd?.faces || 8, saves: c.proficiency || [],
       armor: (sp.armor || []).map(profText), weapons: (sp.weapons || []).map(profText), tools: (sp.tools || []).map(profText),
@@ -727,6 +842,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     meta: { generated: new Date().toISOString(), srdOnly: !!o.srdOnly, sources, importVersion: IMPORT_VERSION },
     races: races.sort(byName), classes: classes.sort(byName), backgrounds: backgrounds.sort(byName), feats: feats.sort(byName),
     spells: spells.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)), items: items.sort(byName),
+    optionalFeatures: optionalFeatures.sort(byName),
   };
 }
 

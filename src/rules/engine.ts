@@ -33,14 +33,28 @@ export interface SubraceData { id: string; name: string; source: string; link: s
 export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Speeds; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean }
 export interface SubclassData { id: string; name: string; shortName: string; source: string; link: string | null; features: Feature[]; spellcasting: Spellcasting | null; additionalSpells: AdditionalSpells[] | null;
   /** ids of spells added to the class's spell list for this subclass only (homebrew `subclassSpells`) */
-  spells?: string[] }
-export interface ClassData { id: string; name: string; source: string; link: string | null; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number | null)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[] }
+  spells?: string[]; choices?: FeatureChoice[] }
+export interface ClassData { id: string; name: string; source: string; link: string | null; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number | null)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[]; choices?: FeatureChoice[] }
 export interface BackgroundData { id: string; name: string; source: string; link: string | null; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; heading?: string; text: string; link: string | null } | null; feats: unknown }
 export interface FeatData { id: string; name: string; source: string; link: string | null; prereq: string; ability: AbilityOption[]; text: string }
 export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; text: string }
 export interface ItemData { id: string; name: string; source: string; link: string | null; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number; baseItem: string | null }
-export type AdditionalSpells = { ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
-export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string; importVersion?: number; /** the homebrew file each imported homebrew entry came from, by entry key (src/data/entries.ts) */ origins?: Record<string, string> }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[] }
+/** An option of a feature choice; `id` is what a pick saves. */
+export interface ChoiceOption { id: string; name: string; source: string; text: string; link: string | null }
+/**
+ * Something a class or subclass picks from: the optional features of `types` (Fighting Style, Eldritch
+ * Invocations, Metamagic…) or its own `options` (Totem Spirit). `counts[n - 1]`: how many picks class
+ * level n gives. `feature`: the feature that explains it, where the sheet shows it (none: on its own).
+ */
+export interface FeatureChoice { name: string; feature: string | null; counts: number[]; types?: string[]; options?: ChoiceOption[] }
+/** One way to meet an option's prerequisite: all it gives must hold. `level` is in `class` (the character's level without one). */
+export interface OptionRequirement { level?: number; class?: string; pact?: string; spells?: string[] }
+/** An optional feature (optionalfeatures.json), offered by the choices whose types it has. `choices`: what picking it lets the character pick in turn. */
+export interface OptionalFeatureData extends ChoiceOption { types: string[]; prereq: string; requires: OptionRequirement[]; spells: AdditionalSpells[] | null; choices?: FeatureChoice[] }
+export type AdditionalSpells ={ ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
+export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string; importVersion?: number; /** the homebrew file each imported homebrew entry came from, by entry key (src/data/entries.ts) */ origins?: Record<string, string> }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[];
+  /** none in data imported before choices (importVersion 5) */
+  optionalFeatures?: OptionalFeatureData[] }
 
 // ------------------------------------------------------------------ character state (stored in frontmatter `dnd`)
 export type ProfLevel = 0 | 1 | 2; // none / proficient / expertise
@@ -84,6 +98,12 @@ export interface CharState {
   hiddenFeatures: string[];
   /** data features the player removed, by featureKey(); not listed, they come back from "+ Add feature" */
   removedFeatures: string[];
+  /**
+   * What the player picked in each feature choice (Fighting Style, Eldritch Invocations, Expertise…), by
+   * the choice's key (see characterChoices): option ids, or names for choices read from a feature's text.
+   * Kept when a class or level no longer gives the choice, so they come back with it.
+   */
+  choices: Record<string, string[]>;
   manual: ManualData; // used when no rules data is configured (manual mode)
   /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
   ui: { hidden: Record<string, boolean> };
@@ -130,7 +150,7 @@ export function newCharacter(name = ""): CharState {
     proficiencies: { armor: "", weapons: "", tools: "", languages: "" },
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
-    allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], removedFeatures: [], manual: emptyManual(),
+    allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], removedFeatures: [], choices: {}, manual: emptyManual(),
     ui: { hidden: {} },
   };
 }
@@ -173,6 +193,9 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   }));
   out.hiddenFeatures = Array.isArray(out.hiddenFeatures) ? out.hiddenFeatures.map(String) : [];
   out.removedFeatures = Array.isArray(out.removedFeatures) ? out.removedFeatures.map(String) : [];
+  const choices: unknown = out.choices;
+  out.choices = choices && typeof choices === "object" && !Array.isArray(choices)
+    ? Object.fromEntries(Object.entries(choices).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, (v as unknown[]).map(String)])) : {};
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
   out.manual.hitDice = manualHitDiceOf(s?.manual?.hitDice);
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
@@ -247,6 +270,7 @@ export class Rules {
   private feats: Map<string, FeatData>;
   private spellsByName: Map<string, SpellData>;
   private spellsByNameSource: Map<string, SpellData>;
+  private options: Map<string, OptionalFeatureData>;
   constructor(data: Compendium) {
     this.data = data;
     this.races = byId(data.races);
@@ -257,7 +281,11 @@ export class Rules {
     this.feats = byId(data.feats);
     this.spellsByName = indexBy(data.spells, (x) => x.name.toLowerCase());
     this.spellsByNameSource = indexBy(data.spells, (x) => `${x.name.toLowerCase()}|${x.source.toLowerCase()}`);
+    this.options = byId(data.optionalFeatures ?? []);
   }
+  optionalFeature(id: string) { return this.options.get(id) || null; }
+  /** the optional features of any of these types (e.g. "FS:F" for the Fighter's Fighting Styles) */
+  optionalFeatures(types: string[]) { return (this.data.optionalFeatures ?? []).filter((x) => x.types.some((t) => types.includes(t))); }
   race(s: CharState) { return (s.race && this.races.get(s.race)) || null; }
   subrace(s: CharState) { return this.race(s)?.subraces.find((r) => r.id === s.subrace) || null; }
   background(s: CharState) { return (s.background && this.backgrounds.get(s.background)) || null; }
@@ -463,9 +491,10 @@ export function autoSkillSources(r: Rules, s: CharState): Record<string, string[
   s.classes.forEach((e) => e.skills.forEach((k) => add(k, r.cls(e.id)?.name || "Class")));
   return src;
 }
-export function skillProficiencies(r: Rules, s: CharState, auto = autoSkillSources(r, s)): Record<string, ProfLevel> {
+/** `expertise`: the skills picked for Expertise (expertiseSkills()); they are expertise unless the player set the skill by hand */
+export function skillProficiencies(r: Rules, s: CharState, auto = autoSkillSources(r, s), expertise = expertiseSkills(characterChoices(r, s, classFeatures(r, s), auto))): Record<string, ProfLevel> {
   const out: Record<string, ProfLevel> = {};
-  for (const k of Object.keys(SKILLS)) out[k] = s.skills[k] ?? (auto[k] ? 1 : 0);
+  for (const k of Object.keys(SKILLS)) out[k] = s.skills[k] ?? (auto[k] ? (expertise.has(k) ? 2 : 1) : 0);
   return out;
 }
 /** `features`: the character's classFeatures(), when already known */
@@ -673,6 +702,135 @@ export function classResources(r: Rules, s: CharState) {
   }
   return out;
 }
+// ------------------------------------------------------------------ feature choices
+/** An option as a character's choice offers it: `prereq` is its prerequisite's text, `met` whether the character meets it. */
+export interface OfferedOption extends ChoiceOption { prereq: string; met: boolean }
+/**
+ * A choice the character has at their level. `key`: where the picks are kept (CharState.choices);
+ * `from`: what gives it ("Fighter", "Fighter (Champion)", "Dragonborn"); `owner`: the id of that class,
+ * subclass, race or subrace (or of the option whose pick brought it, see `parent`); `group`: the class
+ * or race whose features list it; `feature`: the feature it is shown in (none: on its own); `level`: the
+ * class level it comes at. `skills`: its options are skills (Expertise).
+ */
+export interface CharChoice {
+  key: string; name: string; from: string; owner: string; group: string; feature: string | null; level: number;
+  count: number; options: OfferedOption[]; picked: string[]; parent?: string; types?: string[]; skills?: boolean;
+}
+const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 };
+/** link tokens (src/data/build.ts) reduced to their display text */
+const untoken = (t: string) => t.replace(/⟦[^|⟧]*\|[^|⟧]*\|[^|⟧]*\|([^⟧]*)⟧/g, "$1");
+/** "| A | B |" -> ["A", "B"] */
+const cells = (line: string) => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => untoken(c.trim()));
+/**
+ * A choice read from a feature's text, for the features 5etools gives no options for: Expertise (`level`
+ * of the feature; the options are the `proficient` skills), "Choose a type of favored enemy: …, or …"
+ * (more picks at the levels its text names, up to `level`) and "choose one type of dragon" with a table
+ * (a row each). Null when the text has none.
+ */
+function textChoice(f: { name: string; text: string }, level: number, proficient: Set<string>): { count: number; options: ChoiceOption[] } | null {
+  const text = f.text || "";
+  const option = (name: string, t = ""): ChoiceOption => ({ id: name.toLowerCase(), name, source: "", text: t, link: null });
+  if (f.name === "Expertise") {
+    const w = /choose (?:another )?(one|two|three|four|\d+)\b/i.exec(text)?.[1];
+    const skills = Object.keys(SKILLS).filter((k) => proficient.has(k)).map((k) => option(k.replace(/\b\w/g, (c) => c.toUpperCase())));
+    if (/thieves' tools/i.test(text)) skills.push(option("Thieves' Tools"));
+    return { count: w ? NUMBER_WORDS[w.toLowerCase()] ?? (parseInt(w) || 2) : 2, options: skills };
+  }
+  const favored = /choose (?:a|one) type of favored (\w+):\s*([^.]+)\./i.exec(untoken(text));
+  if (favored) {
+    const options = favored[2].split(/,\s*(?:or\s+)?|\s+or\s+/).map((x) => x.trim()).filter(Boolean).map((x) => option(x.replace(/^\w/, (c) => c.toUpperCase())));
+    if (/two races of humanoid/i.test(text)) options.push(option("Two humanoid races"));
+    // "You choose one additional favored enemy … at 6th and 14th level."
+    const more = /additional[^.]*?\bat ((?:\d+(?:st|nd|rd|th)[, and]*)+)level/i.exec(text)?.[1] ?? "";
+    return { count: 1 + [...more.matchAll(/\d+/g)].filter((m) => parseInt(m[0]) <= level).length, options };
+  }
+  if (/\bchoose one type of \w+/i.test(text)) {
+    const rows = text.split("\n").filter((l) => /^\s*\|.*\|\s*$/.test(l));
+    if (rows.length < 3) return null;
+    const head = cells(rows[0]);
+    const options = rows.slice(2).map(cells).filter((c) => c[0]).map((c) => option(c[0], c.slice(1).map((v, i) => `${head[i + 1] ?? ""}: ${v}`).join(" · ")));
+    return options.length ? { count: 1, options } : null;
+  }
+  return null;
+}
+/**
+ * The choices of the character's class, subclass and race features at their levels: the options 5etools
+ * gives them (and what a picked option brings, e.g. Superior Technique's maneuver), and those read from
+ * a feature's text (textChoice). An option picked in another choice of the same kind is not offered
+ * again (the same Fighting Style twice). `auto`/`granted`: autoSkillSources()/grantedSpells(), when known.
+ */
+export function characterChoices(r: Rules, s: CharState, groups = classFeatures(r, s), auto = autoSkillSources(r, s), granted = grantedSpells(r, s)): CharChoice[] {
+  const proficient = new Set(Object.keys(SKILLS).filter((k) => (s.skills[k] ?? (auto[k] ? 1 : 0)) >= 1));
+  const found: (Omit<CharChoice, "options" | "picked"> & { offered: (ChoiceOption | OptionalFeatureData)[] })[] = [];
+  const picks = (key: string) => s.choices[key] ?? [];
+  const has = (key: string) => found.some((c) => c.key === key);
+  const fromData = (ch: FeatureChoice, owner: string, from: string, group: string, level: number, parent?: string) => {
+    const count = ch.counts[Math.min(20, Math.max(1, level)) - 1] || 0;
+    const key = featureKey(owner, ch.name);
+    if (!count || has(key)) return;
+    found.push({ key, name: ch.name, from, owner, group, feature: ch.feature, level: ch.counts.findIndex((n) => n > 0) + 1, count, offered: ch.options ?? r.optionalFeatures(ch.types || []), parent, types: ch.types });
+    // what a picked option lets the character pick in turn, shown with it
+    for (const id of picks(key)) for (const sub of r.optionalFeature(id)?.choices || []) fromData({ ...sub, feature: ch.feature }, id, from, group, level, key);
+  };
+  const fromText = (f: { name: string; text: string }, owner: string, from: string, group: string, featureLevel: number, level: number) => {
+    const key = featureKey(owner, f.name);
+    const t = has(key) ? null : textChoice(f, level, proficient);
+    if (t?.count) found.push({ key, name: f.name, from, owner, group, feature: f.name, level: featureLevel, count: t.count, offered: t.options });
+  };
+  for (const g of groups) {
+    for (const ch of g.cls.choices || []) fromData(ch, g.cls.id, g.cls.name, g.cls.id, g.level);
+    if (g.sub) for (const ch of g.sub.choices || []) fromData(ch, g.sub.id, `${g.cls.name} (${g.sub.name})`, g.cls.id, g.level);
+    // all of a class's Expertise features are one choice, with the picks of each
+    const expertise = g.features.filter((f) => f.name === "Expertise");
+    if (expertise.length) {
+      const each = expertise.map((f) => textChoice(f, g.level, proficient)!);
+      found.push({ key: featureKey(g.cls.id, "Expertise"), name: "Expertise", from: g.cls.name, owner: g.cls.id, group: g.cls.id, feature: "Expertise", level: expertise[0].level,
+        count: each.reduce((a, c) => a + c.count, 0), offered: each[0].options, skills: true });
+    }
+    for (const f of g.features) if (f.name !== "Expertise") {
+      const sub = g.sub?.features.includes(f) ? g.sub : null;
+      fromText(f, sub?.id ?? g.cls.id, sub ? `${g.cls.name} (${sub.name})` : g.cls.name, g.cls.id, f.level, g.level);
+    }
+  }
+  const race = r.race(s), subrace = r.subrace(s);
+  if (race) for (const [t, owner] of [...race.traits.map((t) => [t, race.id] as const), ...(subrace?.traits || []).map((t) => [t, subrace!.id] as const)]) {
+    if (!RACE_TRAIT_SKIP.has(t.name)) fromText(t, owner, race.name, race.id, 1, totalLevel(s));
+  }
+  // prerequisites: levels, the pact boon picked, spells the character has
+  const pickedNames = new Set(found.flatMap((c) => picks(c.key)).map((id) => r.optionalFeature(id)?.name.toLowerCase()).filter(Boolean));
+  const spellNames = new Set([...s.spells, ...granted].map((x) => r.spell(x.id)?.name.toLowerCase()).filter(Boolean));
+  const levelIn = (cls?: string) => (cls ? s.classes.filter((e) => r.cls(e.id)?.name === cls).reduce((a, e) => a + e.level, 0) : totalLevel(s));
+  const met = (o: ChoiceOption | OptionalFeatureData) => {
+    const reqs = "requires" in o ? o.requires : [];
+    return !reqs.length || reqs.some((q) => (q.level == null || levelIn(q.class) >= q.level)
+      && (!q.pact || pickedNames.has(`pact of the ${q.pact.toLowerCase()}`))
+      && (q.spells || []).every((n) => n.split("/").some((x) => spellNames.has(x))));
+  };
+  return found.map(({ offered, ...c }) => {
+    const picked = picks(c.key);
+    // picked in another choice of one of these types: not offered here
+    const taken = new Set(c.types ? found.filter((o) => o.key !== c.key && o.types?.some((t) => c.types!.includes(t))).flatMap((o) => picks(o.key)) : []);
+    const options = offered.filter((o) => picked.includes(o.id) || !taken.has(o.id))
+      .map((o) => ({ id: o.id, name: o.name, source: o.source, text: o.text, link: o.link, prereq: "prereq" in o ? o.prereq : "", met: met(o) }));
+    return { ...c, options, picked };
+  });
+}
+/** The skills picked for Expertise (lowercase names, as SKILLS has them). */
+export const expertiseSkills = (choices: CharChoice[]) => new Set(choices.filter((c) => c.skills).flatMap((c) => c.picked));
+/** "Choose a Fighting Style for Fighter", "Choose 1 more Metamagic for Sorcerer"…, for each choice with picks missing or too many. */
+export function choicesPending(choices: CharChoice[]): string[] {
+  const out: string[] = [];
+  for (const c of choices) {
+    const n = c.picked.length, left = c.count - n;
+    if (left > 0) {
+      if (c.skills) out.push(`Choose ${left}${n ? " more" : ""} skill(s) for ${c.name} (${c.from})`);
+      // "Choose a Fighting Style", "Choose one of the Maneuvers"
+      else if (c.count === 1) out.push(`Choose ${/[^s]s$/.test(c.name) ? "one of the" : /^[aeiou]/i.test(c.name) ? "an" : "a"} ${c.name} for ${c.from}`);
+      else out.push(`Choose ${left}${n ? " more" : ""} ${c.name} for ${c.from}`);
+    } else if (left < 0) out.push(`${c.name} (${c.from}): ${-left} more than your level gives — remove ${-left === 1 ? "one" : -left}`);
+  }
+  return out;
+}
 export function multiclassRequirementsMet(r: Rules, c: ClassData, scores: Record<Ability, AbilityBreakdown>) {
   const req = c.multiclass?.requirements;
   if (!req || !Object.keys(req).length) return { ok: true, text: "" };
@@ -852,7 +1010,7 @@ export function casterSpellCounts(r: Rules, s: CharState, classId: string) {
   };
 }
 /** `known`: values already worked out for the character (see derive()) */
-export function pendingChoices(r: Rules, s: CharState, known: { asiSlots: number; casters: CasterInfo[] } = { asiSlots: asiSlots(r, s), casters: casters(r, s) }): string[] {
+export function pendingChoices(r: Rules, s: CharState, known: { asiSlots: number; casters: CasterInfo[]; choices?: CharChoice[] } = { asiSlots: asiSlots(r, s), casters: casters(r, s) }): string[] {
   const out: string[] = [];
   const race = r.race(s);
   if (!s.name) out.push("Give the character a name");
@@ -873,6 +1031,7 @@ export function pendingChoices(r: Rules, s: CharState, known: { asiSlots: number
     const skillRule = i === 0 ? c.skills[0] : c.multiclass?.skills[0];
     if (skillRule && e.skills.length < skillRule.count) out.push(`Pick ${skillRule.count - e.skills.length} ${c.name} skill proficiency(ies)`);
   });
+  out.push(...choicesPending(known.choices ?? characterChoices(r, s)));
   if (!s.background) out.push("Choose a background");
   if (s.abilities.method === "pointbuy") { const pbs = pointBuySpent(s.abilities.base); if (!pbs.valid) out.push("Point buy is over 27 points or out of range (8–15)"); else if (pbs.remaining > 0) out.push(`${pbs.remaining} point-buy point(s) unspent`); }
   const free = known.asiSlots - asiTaken(s);
@@ -898,9 +1057,10 @@ export function derive(r: Rules, s: CharState) {
   const scores = abilityScores(r, s, features);
   const level = totalLevel(s);
   const skillSources = autoSkillSources(r, s);
-  const skillProf = skillProficiencies(r, s, skillSources);
-  const casterList = casters(r, s, scores);
   const granted = grantedSpells(r, s);
+  const choices = characterChoices(r, s, features, skillSources, granted);
+  const skillProf = skillProficiencies(r, s, skillSources, expertiseSkills(choices));
+  const casterList = casters(r, s, scores);
   const asi = { slots: asiSlots(r, s), taken: asiTaken(s) };
   return {
     scores, level, pb: proficiencyBonus(level),
@@ -909,13 +1069,13 @@ export function derive(r: Rules, s: CharState) {
     skills: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, skillBonus(r, s, k, scores, skillProf, features)])) as Record<string, number>,
     hp: hpBreakdown(r, s, scores, features), ac: armorClass(r, s, scores, features), initiative: initiative(r, s, scores),
     speeds: speeds(r, s, features), hitDice: hitDice(r, s), darkvision: darkvision(r, s),
-    features, resources: classResources(r, s), asi,
+    features, choices, resources: classResources(r, s), asi,
     casters: casterList,
     /** casterSpellCounts() of each caster, by class id */
     spellCounts: new Map(casterList.map((c) => [c.classId, casterSpellCounts(r, s, c.classId)])),
     slots: spellSlots(r, s), granted, spells: sortedSpells(r, s, granted),
     attacks: attacks(r, s, scores),
-    pending: pendingChoices(r, s, { asiSlots: asi.slots, casters: casterList }),
+    pending: pendingChoices(r, s, { asiSlots: asi.slots, casters: casterList, choices }),
   };
 }
 export type Derived = ReturnType<typeof derive>;

@@ -319,6 +319,11 @@
 @media (hover: none) { .dnd-details summary .dnd-feature-btn { opacity: 1; } }
 .dnd-custom-feature-body { display: flex; flex-direction: column; gap: var(--dnd-s2); padding: var(--dnd-s2) 0 var(--dnd-s2) var(--dnd-s4); }
 .dnd-custom-feature-body .dnd-md { padding: 0; }
+/* a choice in a feature (Fighting Style…): its picks under the feature's text; the choices a pick brings nest in it */
+.dnd-feature-choice { display: flex; flex-direction: column; gap: var(--dnd-s2); padding: 0 0 var(--dnd-s2) var(--dnd-s4); }
+.dnd-feature-choice .dnd-md { padding: 0; }
+.dnd-feature-choice .dnd-feature-choice { padding: var(--dnd-s2) 0 0; }
+.dnd-tag.is-pending { background: var(--dnd-accent); color: var(--text-on-accent); }
 .dnd-hidden-features { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dnd-s1) var(--dnd-s2); padding: var(--dnd-s2) 0; }
 .dnd-hidden-features .dnd-chip { color: var(--text-muted); text-decoration: line-through; }
 .dnd-hidden-features .dnd-chip:hover { color: var(--text-normal); text-decoration: none; }

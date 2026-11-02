@@ -27,6 +27,8 @@ export class CharacterSheet extends MarkdownRenderChild {
   /** what opens in edit mode on the next render: a list item ("list-key:index"), a custom feature
    *  ("feature:id") or a manual-mode spell ("spell:index") */
   focusItem: string | null = null;
+  /** the features open in this sheet, by key (see details()), so a render keeps them open */
+  openDetails = new Set<string>();
   /** owns what one render() makes (markdown children); unloaded by the next render */
   private renderScope: Component | null = null;
 
@@ -143,7 +145,7 @@ export class CharacterSheet extends MarkdownRenderChild {
       manualFeats(this, root);
       manualSpellcasting(this, root, d);
     } else {
-      raceFeatures(this, root);
+      raceFeatures(this, root, d);
       classFeaturesSection(this, root, d);
       feats(this, root, d);
       spellcasting(this, root, d);
@@ -198,8 +200,12 @@ export class CharacterSheet extends MarkdownRenderChild {
     };
     return b;
   }
-  /** `noteKey`: the feature's E.featureKey(); adds the player's notes field under the text */
-  details(parent: HTMLElement, summary: (el: HTMLElement) => void, text: string, noteKey?: string) {
+  /**
+   * `noteKey`: the feature's E.featureKey(); adds the player's notes field under the text, and the
+   * feature stays open across renders (e.g. after a pick in it), as one with an `openKey` does.
+   * `extra`: more under the text (a choice).
+   */
+  details(parent: HTMLElement, summary: (el: HTMLElement) => void, text: string, noteKey?: string, extra?: (el: HTMLElement) => void, openKey = noteKey) {
     const d = parent.createEl("details", { cls: "dnd-details" });
     const sm = d.createEl("summary");
     summary(sm);
@@ -207,14 +213,20 @@ export class CharacterSheet extends MarkdownRenderChild {
     const tag = noteKey ? sm.createSpan({ cls: "dnd-tag", text: "notes" }) : null;
     tag?.toggle(!!this.s.featureNotes[noteKey!]);
     let done = false;
-    d.addEventListener("toggle", () => {
-      if (!d.open || done) return;
+    const build = () => {
+      if (done) return;
       done = true;
       this.md(d, text);
+      extra?.(d);
       if (noteKey) richText(this, labeled(d, "Notes", "dnd-feature-notes"), this.s.featureNotes[noteKey] ?? "", (v) => {
         tag?.toggle(!!v.trim());
         this.change((x) => { if (v.trim()) x.featureNotes[noteKey] = v; else delete x.featureNotes[noteKey]; }, false);
       }, { placeholder: "Your notes: reminders, uses, rulings… Type [[ to link a note." });
+    };
+    if (openKey && this.openDetails.has(openKey)) { d.open = true; build(); }
+    d.addEventListener("toggle", () => {
+      if (openKey) { if (d.open) this.openDetails.add(openKey); else this.openDetails.delete(openKey); }
+      if (d.open) build();
     });
     return d;
   }

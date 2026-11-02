@@ -37,7 +37,7 @@ AC, initiative and speed are calculated from your equipment, class and race, and
 <p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet02.png" alt="Combat and skills" width="720"></p>
 
 ### Attacks and features
-Attacks come from your equipped weapons. Race, background and class features are filled in as you level up; expand any of them to read the full text and write your own notes on it (reminders, uses, rulings, `[[links]]`). Notes stay with the feature when you level up or re-import your data. **+ Add feature** adds any class, subclass, race or background feature from your rules data, and **+ Custom feature** one of your own (a DM boon, a homebrew tweak). On a feature you don't use, hide moves it to a **Hidden** list, where a click shows it again, and remove takes it off the sheet (pick it in **+ Add feature** to get it back).
+Attacks come from your equipped weapons. Race, background and class features are filled in as you level up; expand any of them to read the full text and write your own notes on it (reminders, uses, rulings, `[[links]]`). Notes stay with the feature when you level up or re-import your data. A feature with a choice (Fighting Style, Eldritch Invocations, Pact Boon, Metamagic, maneuvers, Totem Spirit, Expertise, Favored Enemy, Draconic Ancestry…) shows its options inside it, with the text of what you picked; **Character Creation** reminds you while a pick is missing, and your picks are kept when you change level. **+ Add feature** adds any class, subclass, race or background feature from your rules data, and **+ Custom feature** one of your own (a DM boon, a homebrew tweak). On a feature you don't use, hide moves it to a **Hidden** list, where a click shows it again, and remove takes it off the sheet (pick it in **+ Add feature** to get it back).
 
 <p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet03.png" alt="Attacks and race and background features" width="720"></p>
 
@@ -64,7 +64,7 @@ Plain text when you read, a text box when you click. Type `[[` to link any note 
 - **Ability scores** with Point Buy (validated), Standard Array, 4d6 rolls or manual entry; racial bonuses applied automatically; an edit mode keeps the view clean.
 - **Combat**: AC from equipped armour/shield (Unarmored Defense included), HP from hit dice and CON, hit dice (in manual mode, their number and die are set with the pencil next to *Hit Dice used*), death saves, inspiration, exhaustion, conditions and a Long Rest button.
 - **Saves and skills** with proficiency/expertise, passive scores, Jack of All Trades.
-- **Race, background and class features** filled in by level, with class resources (Ki, Rage, Sorcery Points…).
+- **Race, background and class features** filled in by level, with class resources (Ki, Rage, Sorcery Points…) and the choices they give (Fighting Style, Eldritch Invocations with their prerequisites, Metamagic, maneuvers, Expertise, Draconic Ancestry…).
 - **Feats and Ability Score Improvements** counted against the ASIs your class levels grant.
 - **Spellcasting**: spell save DC, spell attack, prepared/known counts, spell slots for single and multiclass casters (Pact Magic separate), slots you can add or remove (and what the rules give, under the ⓘ), and a spell list with prepared spells first. Domain/oath/circle spells are added automatically.
 - **Inventory and coins**, attunement (max 3), carrying capacity, attacks from equipped weapons.
