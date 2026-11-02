@@ -102,6 +102,7 @@ export class Linker {
     for (const x of data.feats) x.link = this.note("feats", x.name, x.source);
     for (const x of data.spells) x.link = this.note("spells", x.name, x.source);
     for (const x of data.items) x.link = this.note("items", x.name, x.source);
+    for (const x of data.optionalFeatures ?? []) x.link = this.note("optional-features", x.name, x.source);
     return data;
   }
 }

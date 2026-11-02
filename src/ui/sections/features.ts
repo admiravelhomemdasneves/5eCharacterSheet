@@ -4,6 +4,7 @@ import * as E from "../../rules/engine";
 import type { CharState } from "../../rules/engine";
 import { button, iconButton, labeled, Picker, stepper } from "../widgets";
 import { bulletList, richText } from "../richtext";
+import { choiceBody, choiceTags, looseChoice } from "./choices";
 import type { CharacterSheet } from "../sheet";
 
 /**
@@ -20,7 +21,20 @@ export function manualClassFeatures(sheet: CharacterSheet, root: HTMLElement) {
   sheet.section(root, "class-features", "Class Features", (el) => bulletList(sheet, el, "class-features", (x) => x.manual.classFeatures, "Feature (e.g. **Second Wind** — 1d10 + level, short rest)…", "+ Add feature"));
 }
 
-export function raceFeatures(sheet: CharacterSheet, root: HTMLElement) {
+/**
+ * The choices of one class or race (`group`), by the feature that shows each (the first one of its
+ * name in `features`); `loose` are those no feature shows.
+ */
+function choicesByFeature(all: E.CharChoice[], group: string, features: { name: string }[]) {
+  const by = new Map<object, E.CharChoice[]>(), loose: E.CharChoice[] = [];
+  for (const c of all.filter((x) => x.group === group && !x.parent)) {
+    const f = c.feature ? features.find((x) => x.name === c.feature) : undefined;
+    if (f) by.set(f, [...by.get(f) || [], c]); else loose.push(c);
+  }
+  return { by, loose };
+}
+
+export function raceFeatures(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
   const s = sheet.v, r = sheet.r;
   const race = r.race(s), sub = r.subrace(s), bg = r.background(s);
   sheet.section(root, "race-features", "Race & Background Features", (el) => {
@@ -28,8 +42,13 @@ export function raceFeatures(sheet: CharacterSheet, root: HTMLElement) {
     if (!race && !bg) el.createDiv({ cls: "dnd-hint", text: "Choose a race and a background to see their features." });
     if (race) {
       const h = el.createDiv({ cls: "dnd-subtitle" }); sheet.link(h, sub ? `${race.name} (${sub.name})` : race.name, sub?.link || race.link);
-      const traits = [...race.traits.map((t) => ({ t, owner: race.id })), ...(sub?.traits || []).map((t) => ({ t, owner: sub!.id }))];
-      for (const { t, owner } of traits.filter(({ t }) => !E.RACE_TRAIT_SKIP.has(t.name))) dataFeature(sheet, el, E.featureKey(owner, t.name), t.name, (sm) => sm.createSpan({ text: t.name, cls: "dnd-feature-name" }), t.text, ctx);
+      const traits = [...race.traits.map((t) => ({ t, owner: race.id })), ...(sub?.traits || []).map((t) => ({ t, owner: sub!.id }))].filter(({ t }) => !E.RACE_TRAIT_SKIP.has(t.name));
+      const { by, loose } = choicesByFeature(d.choices, race.id, traits.map(({ t }) => t));
+      for (const { t, owner } of traits) {
+        const choices = by.get(t) ?? [];
+        if (!dataFeature(sheet, el, E.featureKey(owner, t.name), t.name, (sm) => sm.createSpan({ text: t.name, cls: "dnd-feature-name" }), t.text, ctx, choices, d.choices)) loose.push(...choices);
+      }
+      for (const c of loose) looseChoice(sheet, el, c, d.choices, false);
     }
     if (bg) {
       const h = el.createDiv({ cls: "dnd-subtitle" }); sheet.link(h, `Background: ${bg.name}`, bg.link);
@@ -66,13 +85,17 @@ export function classFeaturesSection(sheet: CharacterSheet, root: HTMLElement, d
       const h = el.createDiv({ cls: "dnd-subtitle" });
       sheet.link(h, `${g.cls.name} ${g.level}`, g.cls.link);
       if (g.sub) { h.createSpan({ text: " · " }); sheet.link(h, g.sub.name, g.sub.link); }
+      const { by, loose } = choicesByFeature(d.choices, g.cls.id, g.features);
       for (const f of g.features) {
-        dataFeature(sheet, el, E.featureKey(g.sub?.features.includes(f) ? g.sub.id : g.cls.id, f.name, f.level), `${f.name} (Lv ${f.level})`, (sm) => {
+        const choices = by.get(f) ?? [];
+        const shown = dataFeature(sheet, el, E.featureKey(g.sub?.features.includes(f) ? g.sub.id : g.cls.id, f.name, f.level), `${f.name} (Lv ${f.level})`, (sm) => {
           sm.createSpan({ cls: "dnd-feature-level", text: `Lv ${f.level}` });
           sheet.link(sm, f.name, f.link, "dnd-feature-name");
           if (f.optional) sm.createSpan({ cls: "dnd-tag", text: "optional (TCE)" });
-        }, f.text, ctx);
+        }, f.text, ctx, choices, d.choices);
+        if (!shown) loose.push(...choices);
       }
+      for (const c of loose) looseChoice(sheet, el, c, d.choices, true);
     }
     customFeatures(sheet, el, "class", ctx);
   });
@@ -80,16 +103,21 @@ export function classFeaturesSection(sheet: CharacterSheet, root: HTMLElement, d
 
 /**
  * A feature from the rules data, with buttons to hide it (listed under the section, a click shows
- * it again) or remove it (gone from the sheet until it is picked again in "+ Add feature").
+ * it again) or remove it (gone from the sheet until it is picked again in "+ Add feature"). The
+ * `choices` it explains are made in it (`all`: every choice, for those a pick brings). False when it
+ * is not shown (hidden or removed).
  */
-export function dataFeature(sheet: CharacterSheet, el: HTMLElement, key: string, name: string, summary: (el: HTMLElement) => void, text: string, ctx: FeatureCtx) {
+export function dataFeature(sheet: CharacterSheet, el: HTMLElement, key: string, name: string, summary: (el: HTMLElement) => void, text: string, ctx: FeatureCtx,
+  choices: E.CharChoice[] = [], all: E.CharChoice[] = []) {
   ctx.own.add(key);
-  if (sheet.s.removedFeatures.includes(key)) return;
-  if (sheet.s.hiddenFeatures.includes(key)) { ctx.hidden.push({ key, name }); return; }
-  featureButtons(sheet, sheet.details(el, summary, text, key), key, () => {
+  if (sheet.s.removedFeatures.includes(key)) return false;
+  if (sheet.s.hiddenFeatures.includes(key)) { ctx.hidden.push({ key, name }); return false; }
+  const d = sheet.details(el, (sm) => { summary(sm); choiceTags(sm, choices); }, text, key, choices.length ? (body) => choices.forEach((c) => choiceBody(sheet, body, c, all)) : undefined);
+  featureButtons(sheet, d, key, () => {
     new Notice(`Removed ${name}. To get it back, pick it in "+ Add feature".`);
     sheet.change((x) => { x.removedFeatures.push(key); });
   });
+  return true;
 }
 
 /** Hide (by `hideKey`, listed under the section) and remove buttons, together at the end of the feature's summary. */
