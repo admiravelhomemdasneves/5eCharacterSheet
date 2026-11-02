@@ -1,11 +1,8 @@
 import { App, Modal, Setting } from "obsidian";
-import { ENTRY_KINDS, type EntryKind } from "../data/build";
+import { ENTRY_KINDS } from "../data/build";
 import type { Counts, FileReport, ImportReport } from "../data/report";
+import { KIND_LABELS as KIND } from "../data/entries";
 
-const KIND: Record<EntryKind, [one: string, many: string]> = {
-  race: ["Race", "Races"], subrace: ["Subrace", "Subraces"], class: ["Class", "Classes"], subclass: ["Subclass", "Subclasses"],
-  background: ["Background", "Backgrounds"], feat: ["Feat", "Feats"], spell: ["Spell", "Spells"], item: ["Item", "Items"],
-};
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 /**

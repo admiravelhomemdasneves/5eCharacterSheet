@@ -5,6 +5,7 @@ import { fmtMod } from "../../rules/engine";
 import { button, iconButton, imageFiles, labeled, Picker, select, stepper, textInput } from "../widgets";
 import { richText } from "../richtext";
 import type { CharacterSheet } from "../sheet";
+import { fromCustom } from "./custom-fill";
 
 export function header(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
   const s = sheet.v, r = sheet.r, sc = d.scores;
@@ -91,7 +92,9 @@ export function manualHeader(sheet: CharacterSheet, info: HTMLElement, d: E.Deri
   const m = sheet.s.manual;
   const row2 = info.createDiv({ cls: "dnd-row dnd-fill" });
   for (const [k, label] of [["race", "Race"], ["subrace", "Subrace"], ["background", "Background"]] as const) {
-    richText(sheet, labeled(row2, label), m[k], (v) => sheet.change((x) => { x.manual[k] = v; }, false), { placeholder: "—", singleLine: true });
+    const field = labeled(row2, label);
+    richText(sheet, field, m[k], (v) => sheet.change((x) => { x.manual[k] = v; }, false), { placeholder: "—", singleLine: true });
+    if (k === "background") fromCustom(sheet, field, "background");
   }
   const sumRow = info.createDiv({ cls: "dnd-summary" });
   sumRow.createSpan({ text: `Level ${lvl || "—"}` });

@@ -1,14 +1,10 @@
 import { App, FuzzySuggestModal, Notice, Platform, TFile, TFolder, Vault, setIcon } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import { ENTRY_KINDS, type EntryKind } from "../data/build";
-import { groupByFile, type DataEntry, type EntryGroup } from "../data/entries";
+import { KIND_LABELS as KIND, groupByFile, type DataEntry, type EntryGroup } from "../data/entries";
 import type { Counts } from "../data/report";
 import { lc } from "../text";
 
-const KIND: Record<EntryKind, [one: string, many: string]> = {
-  race: ["Race", "Races"], subrace: ["Subrace", "Subraces"], class: ["Class", "Classes"], subclass: ["Subclass", "Subclasses"],
-  background: ["Background", "Backgrounds"], feat: ["Feat", "Feats"], spell: ["Spell", "Spells"], item: ["Item", "Items"],
-};
 /** at most this many entries are listed under a row; the search narrows them down */
 const MAX_ROWS = 300;
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
@@ -28,7 +24,8 @@ export class ImportDataView {
   draw(el: HTMLElement) {
     el.empty();
     el.addClass("dnd-report", "dnd-import-data");
-    const { plugin } = this, st = plugin.settings, data = plugin.rules.data;
+    // the data as imported, without the custom entries (see Custom data)
+    const { plugin } = this, st = plugin.settings, data = plugin.baseData;
     if (st.dataSource !== "imported" || !st.lastImport) {
       el.createEl("p", { cls: "dnd-hint", text: "Nothing imported yet. Import your 5etools data or homebrew in the rules data settings first." });
       return;
@@ -179,7 +176,7 @@ type NoteChoice = { label: string; path: string | null };
  * Pick the compendium note of an entry: a note of the compendium folder (else of the whole vault),
  * no note, or back to the one matched by name (only when one was chosen).
  */
-class NoteSuggestModal extends FuzzySuggestModal<NoteChoice> {
+export class NoteSuggestModal extends FuzzySuggestModal<NoteChoice> {
   constructor(app: App, private root: string, private chosen: boolean, private pick: (path: string | null) => Promise<void>) {
     super(app);
     this.setPlaceholder("Choose the compendium note of this entry");

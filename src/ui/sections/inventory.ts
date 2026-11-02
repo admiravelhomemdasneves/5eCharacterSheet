@@ -4,6 +4,7 @@ import * as E from "../../rules/engine";
 import { button, checkbox, iconButton, labeled, Picker, stepper } from "../widgets";
 import { richText } from "../richtext";
 import type { CharacterSheet } from "../sheet";
+import { fromCustom } from "./custom-fill";
 
 export function inventory(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
   const s = sheet.v, r = sheet.r;
@@ -34,6 +35,7 @@ export function inventory(sheet: CharacterSheet, root: HTMLElement, d: E.Derived
     if (r.data.items.length) button(add, "+ Add item from compendium", () => new Picker(sheet.app, r.data.items, (it) => `${it.name} (${it.source})`, (it) => sheet.change((x) => {
       x.inventory.push({ id: it.id, name: it.name, qty: 1, weight: it.weight, equipped: it.kind !== "gear", attuned: false, notes: "" });
     }), "Search items…", (it) => [it.kind, it.rarity, it.weight != null ? `${it.weight} lb.` : "", it.value != null ? `${it.value / 100} gp` : ""].filter(Boolean).join(" · ")).open());
+    fromCustom(sheet, add, "inventory");
     button(add, "+ Custom item", () => sheet.change((x) => { x.inventory.push({ id: null, name: "", qty: 1, weight: null, equipped: false, attuned: false, notes: "" }); }));
     const wt = E.inventoryWeight(s), cap = E.carryingCapacity(d.scores);
     el.createDiv({ cls: wt > cap ? "dnd-warn" : "dnd-hint", text: `Carried: ${Math.round(wt * 10) / 10} lb. / capacity ${cap} lb. · Attuned items: ${attuned}/${E.ATTUNEMENT_MAX}` });

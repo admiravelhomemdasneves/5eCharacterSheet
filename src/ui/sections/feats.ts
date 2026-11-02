@@ -3,11 +3,15 @@ import * as E from "../../rules/engine";
 import { ABILITIES, type Ability, ABILITY_NAMES } from "../../rules/engine";
 import { button, iconButton, Picker, select } from "../widgets";
 import { bulletList } from "../richtext";
+import { fromCustom } from "./custom-fill";
 import type { CharacterSheet } from "../sheet";
 
 // Manual mode: the feats are a list the player types
 export function manualFeats(sheet: CharacterSheet, root: HTMLElement) {
-  sheet.section(root, "feats", "Feats", (el) => bulletList(sheet, el, "feats", (x) => x.manual.feats, "Feat…", "+ Add feat"));
+  sheet.section(root, "feats", "Feats", (el) => {
+    bulletList(sheet, el, "feats", (x) => x.manual.feats, "Feat…", "+ Add feat");
+    fromCustom(sheet, el.createDiv({ cls: "dnd-row" }), "feats");
+  });
 }
 
 export function feats(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {

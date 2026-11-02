@@ -11,6 +11,10 @@ import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import { fileNameProblem, renamedPath } from "./files";
 import { loadSrd } from "./data/srd";
+import { emptyCustomFile, type CustomEntry, type CustomFile } from "./custom/format";
+import { DEFAULT_CUSTOM_PATH, loadCustom, saveCustom } from "./custom/store";
+import { mergeCustom, rulesetOf } from "./custom/merge";
+import { rulesetById } from "./rules/rulesets";
 
 // Code block names: "character-sheet-5e" for new notes, "dnd-character" kept for older ones
 export const BLOCKS = ["character-sheet-5e", "dnd-character"];
@@ -51,8 +55,19 @@ export default class CharacterSheetPlugin extends Plugin {
   importIsOutdated = false;
   private importNoticeShown = false;
   sheets = new Set<CharacterSheet>();
-  /** manual mode: no rules data configured (or the configured data could not be loaded) */
-  get manual() { return this.rules.data.races.length === 0 && this.rules.data.classes.length === 0; }
+  /** the rules data without the custom entries (what "Import data" lists) */
+  baseData: Compendium = EMPTY;
+  /** the custom data file as last read; `customProblems`: what could not be read or added; `customOther`: entries for other rules */
+  customFile: CustomFile = emptyCustomFile();
+  customProblems: string[] = [];
+  customOther = 0;
+  /** the custom entries on their own, as rules data: what manual mode fills its fields from */
+  customOnly: Compendium = EMPTY;
+  /** manual mode: no rules data configured (or the configured data could not be loaded); custom entries alone don't leave it */
+  get manual() { return this.settings.dataSource === "none" || (this.baseData.races.length === 0 && this.baseData.classes.length === 0); }
+  /** the ruleset of the rules data, which custom entries are made for */
+  get ruleset() { return rulesetById(rulesetOf(this.baseData)); }
+  customPath() { return normalizePath(this.settings.customDataPath.trim() || DEFAULT_CUSTOM_PATH); }
 
   async onload() {
     this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<SheetSettings> | null) };
@@ -99,16 +114,39 @@ export default class CharacterSheetPlugin extends Plugin {
       this.importNoticeShown = true;
       new Notice(`5e Character Sheet: your imported 5etools data is from an older version of the plugin. Press "Import now" in the plugin settings to update it (${IMPORT_CHANGES}).`, 15000);
     }
-    this.linker = this.buildLinker();
-    this.rules = new Rules(this.linker.attach(data));
+    // custom entries: added to the data, or on their own for manual mode to fill its fields from
+    const custom = await loadCustom(this.app.vault.adapter, this.customPath());
+    this.customFile = custom.file;
+    const ruleset = rulesetById(rulesetOf(data));
+    const merged = mergeCustom(data, custom.file, ruleset), alone = mergeCustom(EMPTY, custom.file, ruleset);
+    this.customProblems = [...(custom.error ? [custom.error] : []), ...custom.warnings, ...merged.warnings];
+    this.customOther = merged.other;
+    this.baseData = data;
+    this.linker = this.buildLinker(merged.links);
+    this.customOnly = this.linker.attach(alone.data);
+    this.rules = new Rules(this.linker.attach(this.manual ? data : merged.data));
     this.sheets.forEach((s) => s.reload());
   }
 
-  /** Index the compendium notes (title + source tag) under the configured folder. */
-  buildLinker() {
+  /** Save the custom data file, then load the data again with it. */
+  async saveCustomFile(file: CustomFile) {
+    await saveCustom(this.app.vault.adapter, this.customPath(), file);
+    await this.reloadData();
+  }
+  /** Add a custom entry, or replace the one with its id. */
+  async saveCustomEntry(e: CustomEntry) {
+    const entries = this.customFile.entries.some((x) => x.id === e.id) ? this.customFile.entries.map((x) => (x.id === e.id ? e : x)) : [...this.customFile.entries, e];
+    await this.saveCustomFile({ ...this.customFile, entries });
+  }
+  async deleteCustomEntry(id: string) {
+    await this.saveCustomFile({ ...this.customFile, entries: this.customFile.entries.filter((x) => x.id !== id) });
+  }
+
+  /** Index the compendium notes (title + source tag) under the configured folder. `extra`: notes custom entries link to, by note key. */
+  buildLinker(extra: Record<string, string> = {}) {
     const root = normalizePath(this.settings.compendiumFolder.trim() || "/");
     // notes chosen in "Import data" link even without a compendium folder
-    const chosen = this.settings.noteLinks;
+    const chosen = { ...this.settings.noteLinks, ...extra };
     if (root === "/") return new Linker(null, [], chosen);
     const notes: NoteInfo[] = [];
     // only the compendium folder is read, not the rest of the vault

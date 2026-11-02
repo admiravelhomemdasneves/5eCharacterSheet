@@ -7,6 +7,7 @@ import { d20 } from "../dice";
 import { ORD } from "../format";
 import { richText } from "../richtext";
 import type { CharacterSheet } from "../sheet";
+import { fromCustom } from "./custom-fill";
 
 export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
   const s = sheet.v;
@@ -96,6 +97,7 @@ export function manualSpellcasting(sheet: CharacterSheet, root: HTMLElement, d: 
     const list = el.createDiv({ cls: "dnd-spell-list" });
     const head = list.createDiv({ cls: "dnd-row" });
     head.createDiv({ cls: "dnd-subtitle", text: "Spells" });
+    fromCustom(sheet, head, "spells");
     button(head, "+ Add spell", () => { sheet.focusItem = `spell:${m.spells.length}`; sheet.change((x) => { x.manual.spells.push({ name: "", level: 1, prepared: false }); }); });
     const order = m.spells.map((sp, i) => ({ sp, i })).sort((a, b) => Number(b.sp.prepared || b.sp.level === 0) - Number(a.sp.prepared || a.sp.level === 0) || a.sp.level - b.sp.level || a.sp.name.localeCompare(b.sp.name));
     const t = list.createDiv({ cls: "dnd-table-wrap" }).createEl("table", { cls: "dnd-table dnd-spells dnd-manual-spells" });

@@ -21,6 +21,11 @@ export interface DataEntry {
 
 /** Identifies an entry across imports: kind, name and source, lowercased. */
 export const entryKey = (kind: EntryKind, name: string, source: string) => `${kind}|${lc(name)}|${lc(source)}`;
+/** Each kind's name, singular and plural. */
+export const KIND_LABELS: Record<EntryKind, [one: string, many: string]> = {
+  race: ["Race", "Races"], subrace: ["Subrace", "Subraces"], class: ["Class", "Classes"], subclass: ["Subclass", "Subclasses"],
+  background: ["Background", "Backgrounds"], feat: ["Feat", "Feats"], spell: ["Spell", "Spells"], item: ["Item", "Items"],
+};
 /** An entry removed from the imported data, as it is kept in the settings. */
 export interface RemovedEntry { kind: EntryKind; name: string; source: string }
 export const removedKeys = (list: RemovedEntry[]) => new Set(list.map((e) => entryKey(e.kind, e.name, e.source)));
