@@ -25,7 +25,8 @@ export function mergeCustom(base: Compendium, file: CustomFile, ruleset: Ruleset
   for (const def of ruleset.kinds) for (const e of mine.filter((x) => x.kind === def.kind)) {
     const problem = def.apply(e, data);
     if (problem) { warnings.push(`${e.name} (${def.label[0]}): ${problem}`); continue; }
-    if (e.link) links[noteKey(def.noteKind, e.name, CUSTOM_SOURCE)] = e.link;
+    const name = def.noteName ? def.noteName(e, data) : e.name;
+    if (e.link && def.noteKind) links[noteKey(def.noteKind, name, CUSTOM_SOURCE)] = e.link;
   }
   for (const e of mine) if (!kinds.has(e.kind)) warnings.push(`${e.name}: "${e.kind}" is not a kind of entry of these rules, so it is left out.`);
   return { data, warnings, links, other: file.entries.length - mine.length };

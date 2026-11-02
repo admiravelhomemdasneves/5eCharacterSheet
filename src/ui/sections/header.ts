@@ -94,7 +94,7 @@ export function manualHeader(sheet: CharacterSheet, info: HTMLElement, d: E.Deri
   for (const [k, label] of [["race", "Race"], ["subrace", "Subrace"], ["background", "Background"]] as const) {
     const field = labeled(row2, label);
     richText(sheet, field, m[k], (v) => sheet.change((x) => { x.manual[k] = v; }, false), { placeholder: "—", singleLine: true });
-    if (k === "background") fromCustom(sheet, field, "background");
+    fromCustom(sheet, field, k);
   }
   const sumRow = info.createDiv({ cls: "dnd-summary" });
   sumRow.createSpan({ text: `Level ${lvl || "—"}` });

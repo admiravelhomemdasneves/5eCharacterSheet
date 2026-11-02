@@ -5,6 +5,7 @@ import type { CharState } from "../../rules/engine";
 import { button, iconButton, labeled, Picker, stepper } from "../widgets";
 import { bulletList, richText } from "../richtext";
 import { choiceBody, choiceTags, looseChoice } from "./choices";
+import { fromCustom } from "./custom-fill";
 import type { CharacterSheet } from "../sheet";
 
 /**
@@ -15,7 +16,10 @@ type FeatureCtx = { own: Set<string>; hidden: { key: string; name: string }[] };
 
 // Manual mode: the features are a list the player types
 export function manualRaceFeatures(sheet: CharacterSheet, root: HTMLElement) {
-  sheet.section(root, "race-features", "Race & Background Features", (el) => bulletList(sheet, el, "race-features", (x) => x.manual.raceFeatures, "Feature or trait…", "+ Add feature"));
+  sheet.section(root, "race-features", "Race & Background Features", (el) => {
+    bulletList(sheet, el, "race-features", (x) => x.manual.raceFeatures, "Feature or trait…", "+ Add feature");
+    fromCustom(sheet, el.createDiv({ cls: "dnd-row" }), "race-features");
+  });
 }
 export function manualClassFeatures(sheet: CharacterSheet, root: HTMLElement) {
   sheet.section(root, "class-features", "Class Features", (el) => bulletList(sheet, el, "class-features", (x) => x.manual.classFeatures, "Feature (e.g. **Second Wind** — 1d10 + level, short rest)…", "+ Add feature"));
