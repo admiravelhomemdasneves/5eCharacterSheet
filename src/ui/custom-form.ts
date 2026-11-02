@@ -25,33 +25,41 @@ export class EntryModal extends Modal {
   onOpen() {
     this.modalEl.addClass("dnd-entry-modal");
     this.draw();
+    // only now: each redraw would scroll the form back up to the name
+    if (!this.name) window.setTimeout(() => this.contentEl.querySelector("input")?.focus(), 50);
   }
   onClose() { this.contentEl.empty(); }
 
   /** The whole form again: a field shown only for some values (armour fields) appears or goes. */
   private draw() {
     const { contentEl, def } = this;
-    const top = contentEl.scrollTop;
+    // the modal is what scrolls: drawing the form again keeps the place the player is at
+    const top = this.modalEl.scrollTop;
     contentEl.empty();
     this.titleEl.setText(`${this.editing ? "Edit" : "New"} ${lc(def.label[0])}`);
     new Setting(contentEl).setName("Name").addText((t) => {
       t.setPlaceholder(`${def.label[0]} name`).setValue(this.name).onChange((v) => (this.name = v));
-      if (!this.name) window.setTimeout(() => t.inputEl.focus(), 50);
     });
     for (const f of def.fields) if (!f.visible || f.visible(this.data)) this.field(contentEl, f);
-    const note = new Setting(contentEl).setName("Note").setDesc("A note about it, opened from the sheet (with a preview on hover).");
-    note.addText((t) => t.setPlaceholder("Folder/note").setValue(this.link).onChange((v) => (this.link = v.trim())));
-    note.addExtraButton((b) => b.setIcon("search").setTooltip("Choose a note").onClick(() => new NoteSuggestModal(this.app, "", false, async (path) => { this.link = path ?? ""; this.draw(); }).open()));
+    if (def.noteKind) this.noteField(contentEl);
     new Setting(contentEl)
       .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
       .addButton((b) => b.setButtonText(this.editing ? "Save" : "Create").setCta().onClick(() => void this.save()));
-    contentEl.scrollTop = top;
+    this.modalEl.scrollTop = top;
+  }
+
+  /** The note the entry links to: typed, or picked from the vault's notes. */
+  private noteField(contentEl: HTMLElement) {
+    const note = new Setting(contentEl).setName("Note").setDesc("A note about it, opened from the sheet (with a preview on hover).");
+    note.addText((t) => t.setPlaceholder("Folder/note").setValue(this.link).onChange((v) => (this.link = v.trim())));
+    note.addExtraButton((b) => b.setIcon("search").setTooltip("Choose a note").onClick(() => new NoteSuggestModal(this.app, "", false, async (path) => { this.link = path ?? ""; this.draw(); }).open()));
   }
 
   /** A field as a setting row; a list is a heading with its rows under it. */
   private field(el: HTMLElement, f: FieldDef) {
     const s = new Setting(el).setName(f.label + (f.required ? " *" : ""));
-    if (f.help) s.setDesc(f.help);
+    const help = typeof f.help === "function" ? f.help(this.data, this.ctx) : f.help;
+    if (help) s.setDesc(help);
     const value = this.data[f.key];
     const set = (v: unknown, redraw = false) => { this.data[f.key] = v; if (redraw) this.draw(); };
     switch (f.type) {
@@ -65,7 +73,11 @@ export class EntryModal extends Modal {
         if (f.min != null) t.inputEl.min = String(f.min);
         if (f.max != null) t.inputEl.max = String(f.max);
         if (f.step != null) t.inputEl.step = String(f.step);
-        t.setValue(asText(value)).onChange((v) => set(v === "" ? emptyValue(f) : Number(v)));
+        // a field that may be left empty (null: e.g. a subrace's speed, its race's) shows what that means as its placeholder
+        if (f.placeholder) t.setPlaceholder(typeof f.placeholder === "function" ? f.placeholder(this.data, this.ctx) : f.placeholder);
+        t.setValue(f.default === null && !value ? "" : asText(value)).onChange((v) => set(v === "" ? emptyValue(f) : Number(v)));
+        // when the field is left: fields shown for some numbers only (the skills to choose from) appear or go
+        t.inputEl.addEventListener("change", () => this.draw());
       }); break;
       case "checkbox": s.addToggle((t) => t.setValue(value === true).onChange((v) => set(v, true))); break;
       case "select": s.addDropdown((d) => {
@@ -134,7 +146,8 @@ export class EntryModal extends Modal {
     const missing = [...(name ? [] : ["Name"]), ...missingFields(this.def.fields, this.data)];
     if (missing.length) { new Notice(`Fill in: ${missing.join(", ")}.`); return; }
     const others = this.plugin.customFile.entries.filter((x) => !(this.editing && x.id === this.entry!.id));
-    if (others.some((x) => x.kind === this.def.kind && lc(x.name) === lc(name))) { new Notice(`There is already a custom ${lc(this.def.label[0])} named ${name}.`); return; }
+    const parent = (d: Record<string, unknown>) => (this.def.parentKey ? JSON.stringify(d[this.def.parentKey] ?? null) : "");
+    if (others.some((x) => x.kind === this.def.kind && lc(x.name) === lc(name) && parent(x.data) === parent(this.data))) { new Notice(`There is already a custom ${lc(this.def.label[0])} named ${name}${this.def.parentKey ? " there" : ""}.`); return; }
     // only the fields that apply are kept (an item that stopped being a weapon loses its damage)
     const data = Object.fromEntries(this.def.fields.filter((f) => !f.visible || f.visible(this.data)).map((f) => [f.key, this.data[f.key]]));
     const e: CustomEntry = {

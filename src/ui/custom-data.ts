@@ -33,7 +33,7 @@ export class CustomDataView {
         })());
       })
       .addButton((b) => b.setButtonText("Reload").onClick(async () => { await plugin.reloadData(); new Notice("Custom data reloaded."); this.redraw(); }));
-    new Setting(el).setName("New entry").setDesc("A feat, spell, item or background of your own.")
+    new Setting(el).setName("New entry").setDesc("A race, subrace, race trait, background, feat, spell or item of your own.")
       .addButton((b) => b.setButtonText("Create an entry").setCta().onClick(() => this.create()));
 
     if (plugin.customProblems.length) {
@@ -109,8 +109,12 @@ export class CustomDataView {
   /** "+ New entry": the kind first, then its form. */
   private create() {
     const { plugin } = this;
-    new Picker(plugin.app, plugin.ruleset.kinds, (k) => k.label[0], (k) => window.setTimeout(() => new EntryModal(plugin.app, plugin, k, null, () => this.redraw()).open(), 0),
-      "What do you want to create?").open();
+    const ctx = { data: plugin.manual ? plugin.customOnly : plugin.rules.data };
+    new Picker(plugin.app, plugin.ruleset.kinds, (k) => k.label[0], (k) => {
+      const why = k.available?.(ctx);
+      if (why) { new Notice(why); return; }
+      window.setTimeout(() => new EntryModal(plugin.app, plugin, k, null, () => this.redraw()).open(), 0);
+    }, "What do you want to create?", (k) => k.available?.(ctx) ?? "").open();
   }
 
   /** set by the page that shows this view: draws it again after a change */

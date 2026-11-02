@@ -1,8 +1,8 @@
 // The custom entries of the 2014 rules: the kinds a player can make, their fields, and how each becomes
 // rules data (the types of src/rules/engine.ts) or fills the free text of manual mode.
-import { ABILITIES, ABILITY_NAMES, SKILLS, type Ability, type AbilityOption, type BackgroundData, type FeatData, type ItemData, type SpellData } from "../engine.ts";
+import { ABILITIES, ABILITY_NAMES, SKILLS, type Ability, type AbilityOption, type BackgroundData, type Compendium, type FeatData, type ItemData, type ProfList, type RaceData, type Speeds, type SpellData, type SubraceData } from "../engine.ts";
 import { CUSTOM_SOURCE, type CustomEntry } from "../../custom/format.ts";
-import { bool, commaList, num, rows, str, strs, type Choice, type FieldDef, type KindDef, type Ruleset } from "../../custom/schema.ts";
+import { bool, commaList, num, rows, str, strs, type Choice, type CustomContext, type FieldDef, type KindDef, type Ruleset } from "../../custom/schema.ts";
 import { title } from "../../text.ts";
 
 const ORDINAL = ["Cantrip", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
@@ -164,5 +164,158 @@ const item: KindDef = {
   } },
 };
 
+// ---------------------------------------------------------------- races, subraces and their traits
+const SIZES = ["Tiny", "Small", "Medium", "Large"];
+const SPEEDS: [key: string, label: string][] = [["walk", "Speed (feet)"], ["fly", "Flying speed"], ["swim", "Swimming speed"], ["climb", "Climbing speed"]];
+const raceSpeedFields: FieldDef[] = SPEEDS.map(([key, label]) => (key === "walk"
+  ? { key, label, type: "number", min: 0, step: 5, default: 30, required: true }
+  : { key, label, help: "0: none.", type: "number", min: 0, step: 5 }));
+/** The race a subrace's data names, in the data the form is for. */
+const raceOfSub = (d: Record<string, unknown>, ctx: CustomContext) => ctx.data.races.find((r) => r.id === str(d, "race"));
+/** What a subrace's speed or darkvision is when left empty: its race's ("30 ft.", "none"), null while no race is chosen. */
+function raceValue(d: Record<string, unknown>, ctx: CustomContext, key: string) {
+  const race = raceOfSub(d, ctx);
+  if (!race) return null;
+  const v = key === "darkvision" ? race.darkvision : typeof race.speed[key] === "string" ? race.speed.walk : race.speed[key];
+  return typeof v === "number" && v > 0 ? `${v} ft.` : "none";
+}
+/** A subrace's speeds and darkvision: empty, the race's (shown as the placeholder and in the help); a value replaces it. */
+const subraceSenseFields: FieldDef[] = [...SPEEDS, ["darkvision", "Darkvision (feet)"] as [string, string]].map(([key, label]): FieldDef => ({
+  key, label, type: "number", min: 0, step: key === "darkvision" ? 30 : 5, default: null,
+  help: (d, ctx) => { const v = raceValue(d, ctx, key); return v ? `If left empty: ${v} from race ${raceOfSub(d, ctx)!.name}.` : "If left empty: the race's, once one is chosen."; },
+  placeholder: (d, ctx) => raceValue(d, ctx, key)?.replace(" ft.", "") ?? "",
+}));
+/** The speeds an entry gives (a race always has a walking speed; a subrace only those it changes). */
+function speedsOf(d: Record<string, unknown>, walk: boolean): Speeds {
+  const out: Speeds = walk ? { walk: num(d, "walk") || 30 } : {};
+  for (const [k] of SPEEDS) if (k !== "walk" || !walk) { if (num(d, k) > 0) out[k] = num(d, k); }
+  return out;
+}
+const skillFields: FieldDef[] = [
+  { key: "skills", label: "Skill proficiencies", type: "multiselect", options: skillChoices },
+  { key: "skillChoices", label: "Skills to choose", help: "How many more skills the player picks.", type: "number", min: 0, max: 6 },
+  { key: "skillChoiceFrom", label: "Skills to choose from", help: "None picked: any skill.", type: "multiselect", options: skillChoices, visible: (d) => num(d, "skillChoices") > 0 },
+];
+const skillsOf = (d: Record<string, unknown>): ProfList => {
+  const from = strs(d, "skillChoiceFrom").filter((k) => k in SKILLS), more = num(d, "skillChoices");
+  return { fixed: strs(d, "skills").filter((k) => k in SKILLS), choose: more > 0 ? [{ from: from.length ? from : "any", count: more }] : [] };
+};
+const traitsField: FieldDef = { key: "traits", label: "Traits", help: "Shown in Race & Background Features.", type: "list", addLabel: "+ Add a trait", of: [
+  { key: "name", label: "Name", type: "text" }, { key: "text", label: "Text", type: "markdown" },
+] };
+const traitsOf = (d: Record<string, unknown>) => rows(d, "traits").filter((r) => str(r, "name")).map((r) => ({ name: str(r, "name"), text: str(r, "text") }));
+const fixedList = (d: Record<string, unknown>, k: string): ProfList => ({ fixed: commaList(str(d, k)), choose: [] });
+/** Replace race `id` in the data with `change` of a copy, so the data it was copied from keeps its own (see mergeCustom). False: no such race. */
+function changeRace(data: Compendium, id: string, change: (r: RaceData) => void) {
+  const i = data.races.findIndex((r) => r.id === id);
+  if (i < 0) return false;
+  const copy = { ...data.races[i], traits: [...data.races[i].traits], subraces: [...data.races[i].subraces] };
+  change(copy);
+  data.races[i] = copy;
+  return true;
+}
+const raceChoices = (ctx: CustomContext): Choice[] => ctx.data.races.map((r) => ({ value: r.id, label: r.source === CUSTOM_SOURCE ? r.name : `${r.name} (${r.source})` }));
+/** A race-feature's parent: "raceId" or "raceId>subraceId" */
+const SUB = ">";
+/** The races and subraces of the rules data (not custom ones: their traits are in their own forms). */
+const dataRaceChoices = (ctx: CustomContext): Choice[] => ctx.data.races.filter((r) => r.source !== CUSTOM_SOURCE).flatMap((r) => [
+  { value: r.id, label: `${r.name} (${r.source})` },
+  ...r.subraces.filter((s) => s.source !== CUSTOM_SOURCE).map((s) => ({ value: `${r.id}${SUB}${s.id}`, label: `${r.name} (${s.name}, ${s.source})` })),
+]);
+/** "elf|phb" -> "Elf", "elf|high|phb" (a subrace: race, name, source) -> "High", for the list of entries when the race isn't loaded */
+const nameOfId = (id: string) => { const p = id.split("|"); return title((p.length > 2 ? p[1] : p[0]).replace(/-/g, " ")); };
+
+const race: KindDef = {
+  kind: "race", label: ["Race", "Races"], noteKind: "races",
+  fields: [
+    { key: "size", label: "Size", type: "multiselect", required: true, default: ["Medium"], options: plain(SIZES, (x) => x) },
+    ...raceSpeedFields,
+    { key: "darkvision", label: "Darkvision (feet)", help: "0: none.", type: "number", min: 0, step: 30 },
+    ...abilityFields,
+    ...skillFields,
+    { key: "tools", label: "Tool proficiencies", help: "Separated by commas.", type: "text" },
+    { key: "weapons", label: "Weapon proficiencies", help: "Separated by commas.", type: "text", placeholder: "Longsword, shortbow" },
+    { key: "armor", label: "Armour proficiencies", help: "Separated by commas.", type: "text", placeholder: "Light armor" },
+    { key: "languages", label: "Languages", help: "Separated by commas.", type: "text", placeholder: "Common, Elvish" },
+    traitsField,
+    { key: "subraceRequired", label: "A subrace must be chosen", help: "Character Creation asks for one while none is chosen.", type: "checkbox" },
+  ],
+  apply: (e, data) => {
+    const d = e.data, problem = clash(data.races, e);
+    if (problem) return problem;
+    const out: RaceData = {
+      id: e.id, name: e.name, source: CUSTOM_SOURCE, link: null, size: strs(d, "size").length ? strs(d, "size") : ["Medium"], speed: speedsOf(d, true),
+      ability: abilityOptions(d), darkvision: num(d, "darkvision") || null, skills: skillsOf(d), tools: fixedList(d, "tools"), weapons: fixedList(d, "weapons"),
+      armor: fixedList(d, "armor"), languages: commaList(str(d, "languages")), feats: null, traits: traitsOf(d), spells: null, subraces: [], subraceRequired: bool(d, "subraceRequired"),
+    };
+    data.races.push(out);
+    return null;
+  },
+  summary: (e) => [strs(e.data, "size").join("/"), `${num(e.data, "walk") || 30} ft.`].filter(Boolean).join(", "),
+  manual: { section: "race", label: "race", fill: (e, s) => {
+    s.manual.race = e.name;
+    for (const t of traitsOf(e.data)) if (!s.manual.raceFeatures.includes(t.name)) s.manual.raceFeatures.push(t.name);
+  } },
+};
+
+const subrace: KindDef = {
+  kind: "subrace", label: ["Subrace", "Subraces"], noteKind: "races", parentKey: "race",
+  noteName: (e, data) => `${data.races.find((r) => r.id === str(e.data, "race"))?.name ?? ""} (${e.name})`,
+  fields: [
+    { key: "race", label: "Race", help: "The race it is a subrace of: one of the rules data or your own.", type: "select", required: true, options: raceChoices },
+    ...abilityFields,
+    { key: "overwriteAbility", label: "Replaces the race's ability score increases", type: "checkbox" },
+    ...subraceSenseFields,
+    ...skillFields,
+    { key: "languages", label: "Extra languages", help: "Separated by commas.", type: "text" },
+    { key: "hpPerLevel", label: "Hit points per level", help: "Extra hit points at each level, as the hill dwarf's.", type: "number", min: 0, max: 5 },
+    traitsField,
+  ],
+  apply: (e, data) => {
+    const d = e.data, raceId = str(d, "race");
+    const sub: SubraceData = {
+      id: e.id, name: e.name, source: CUSTOM_SOURCE, link: null, ability: abilityOptions(d).length ? abilityOptions(d) : null, overwriteAbility: bool(d, "overwriteAbility"),
+      speed: Object.keys(speedsOf(d, false)).length ? speedsOf(d, false) : null, darkvision: num(d, "darkvision") || null, skills: skillsOf(d),
+      languages: commaList(str(d, "languages")), traits: traitsOf(d), spells: null, hpPerLevel: num(d, "hpPerLevel"),
+    };
+    let problem: string | null = null;
+    const found = changeRace(data, raceId, (r) => { if (r.subraces.some((x) => x.id === e.id)) problem = "another entry has the same id"; else r.subraces.push(sub); });
+    return found ? problem : `its race (${nameOfId(raceId) || "none"}) is not in the rules data`;
+  },
+  summary: (e) => `Subrace of ${nameOfId(str(e.data, "race"))}`,
+  manual: { section: "subrace", label: "subrace", fill: (e, s) => {
+    s.manual.subrace = e.name;
+    for (const t of traitsOf(e.data)) if (!s.manual.raceFeatures.includes(t.name)) s.manual.raceFeatures.push(t.name);
+  } },
+};
+
+const raceFeature: KindDef = {
+  // a trait for a race of the rules data (your own races have their traits in their forms); it is part of
+  // its race's note, so it has no note of its own
+  kind: "race-feature", label: ["Race trait", "Race traits"], noteKind: "", parentKey: "of",
+  available: (ctx) => (dataRaceChoices(ctx).length ? null : "Traits are added to races of the SRD or imported rules data; your own races have theirs in their form."),
+  fields: [
+    { key: "of", label: "Race or subrace", help: "A race or subrace of the rules data, to add the trait to. Your own races and subraces have their traits in their own form.", type: "select", required: true, options: dataRaceChoices },
+    { key: "text", label: "Text", type: "markdown", required: true },
+  ],
+  apply: (e, data) => {
+    const [raceId, subId] = str(e.data, "of").split(SUB);
+    const trait = { name: e.name, text: str(e.data, "text") };
+    let missing = false;
+    const found = changeRace(data, raceId, (r) => {
+      if (!subId) { r.traits.push(trait); return; }
+      const i = r.subraces.findIndex((x) => x.id === subId);
+      if (i < 0) { missing = true; return; }
+      r.subraces[i] = { ...r.subraces[i], traits: [...r.subraces[i].traits, trait] };
+    });
+    return !found || missing ? `its ${subId ? "subrace" : "race"} (${nameOfId(subId ?? raceId) || "none"}) is not in the rules data` : null;
+  },
+  summary: (e) => {
+    const [raceId, subId] = str(e.data, "of").split(SUB);
+    return `Trait of ${nameOfId(raceId)}${subId ? ` (${nameOfId(subId)})` : ""}`;
+  },
+  manual: { section: "race-features", label: "race trait", fill: (e, s) => { if (!s.manual.raceFeatures.includes(e.name)) s.manual.raceFeatures.push(e.name); } },
+};
+
 /** The custom entries of the 2014 rules, in the order they are added to the data (an entry's parent first). */
-export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: [background, feat, spell, item] };
+export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: [race, subrace, raceFeature, background, feat, spell, item] };

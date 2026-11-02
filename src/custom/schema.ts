@@ -11,7 +11,8 @@ export interface Choice { value: string; label: string; group?: string }
 export interface CustomContext { data: Compendium }
 
 /** `visible`: whether the field applies to an entry with this data (e.g. armour fields for armour only). */
-interface FieldBase { key: string; label: string; help?: string; required?: boolean; visible?: (data: Record<string, unknown>) => boolean }
+/** `default`: a new entry's value (else an empty one, see emptyValue); `help`: a line under the label, which may depend on the entry's other values */
+interface FieldBase { key: string; label: string; help?: string | ((data: Record<string, unknown>, ctx: CustomContext) => string); required?: boolean; default?: unknown; visible?: (data: Record<string, unknown>) => boolean }
 /**
  * A field of a kind's form. text: one line; markdown: several lines of Markdown; number; checkbox;
  * select: one of `options`; multiselect: any of them (a list of values); list: rows of the fields `of`
@@ -20,7 +21,7 @@ interface FieldBase { key: string; label: string; help?: string; required?: bool
 export type FieldDef = FieldBase & (
   | { type: "text"; placeholder?: string }
   | { type: "markdown"; placeholder?: string }
-  | { type: "number"; min?: number; max?: number; step?: number }
+  | { type: "number"; min?: number; max?: number; step?: number; placeholder?: string | ((data: Record<string, unknown>, ctx: CustomContext) => string) }
   | { type: "checkbox" }
   | { type: "select" | "multiselect"; options: Choice[] | ((ctx: CustomContext) => Choice[]) }
   | { type: "list"; of: FieldDef[]; addLabel: string }
@@ -33,14 +34,20 @@ export interface KindDef {
   kind: string;
   /** singular and plural, e.g. ["Feat", "Feats"] */
   label: [one: string, many: string];
-  /** the compendium folder of its notes (as the Linker finds notes), e.g. "feats" */
+  /** the compendium folder of its notes (as the Linker finds notes), e.g. "feats"; "": it has no note of its own */
   noteKind: string;
+  /** the name its note has, when not its own (a subrace's note is "Race (Subrace)") */
+  noteName?: (e: CustomEntry, data: Compendium) => string;
+  /** the field that holds what it belongs to (a subrace's race): two entries of the kind may share a name if they belong to different ones */
+  parentKey?: string;
   fields: FieldDef[];
   /** adds the entry (as `source` CUSTOM_SOURCE) to `data`, which is a copy it may change; a warning when it can't be */
   apply: (e: CustomEntry, data: Compendium) => string | null;
   /** a line about an entry for the list of entries, e.g. "1st-level evocation" */
   summary?: (e: CustomEntry) => string;
   manual?: ManualFill;
+  /** why entries of this kind can't be made with this data (null: they can), e.g. no races to add a trait to */
+  available?: (ctx: CustomContext) => string | null;
 }
 export interface Ruleset { id: string; label: string; kinds: KindDef[] }
 
@@ -51,6 +58,7 @@ export function emptyData(fields: FieldDef[]): Record<string, unknown> {
   return Object.fromEntries(fields.map((f) => [f.key, emptyValue(f)]));
 }
 export function emptyValue(f: FieldDef): unknown {
+  if (f.default !== undefined) return structuredClone(f.default);
   switch (f.type) {
     case "number": return f.min ?? 0;
     case "checkbox": return false;
