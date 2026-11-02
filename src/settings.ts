@@ -66,7 +66,7 @@ const T = {
   general: "Where new characters are created and how the sheets look.",
   rules: "Where races, classes, spells and items come from: typed in by you (manual mode), the SRD 5.1 included with the plugin, or your own 5etools data.",
   importData: "What was imported and from where. Remove entries, and open or change their compendium notes.",
-  customData: "Your own races, subraces, backgrounds, feats, spells and items, for any sheet: create, edit and remove them.",
+  customData: "Your own races, classes, subclasses, backgrounds, feats, spells, items and more, for any sheet: create, edit and remove them.",
   compendiumPage: "Optional. Links from the sheets to the notes of a compendium, with page previews.",
   step1: ["Step 1: Get the data", "What you need", "The \"data\" folder of a 5etools copy: JSON files with the races, classes, spells and items of the books. Use only content you are entitled to use; the plugin downloads nothing."],
   step2: ["Step 2: Put it in your vault", "Where to put it", "Copy that folder into this vault. A hidden folder such as .5etools/data keeps its files out of your file list and search. Then press Detect, or fill in the paths below."],

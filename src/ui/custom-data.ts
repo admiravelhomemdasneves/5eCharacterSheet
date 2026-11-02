@@ -33,7 +33,7 @@ export class CustomDataView {
         })());
       })
       .addButton((b) => b.setButtonText("Reload").onClick(async () => { await plugin.reloadData(); new Notice("Custom data reloaded."); this.redraw(); }));
-    new Setting(el).setName("New entry").setDesc("A race, subrace, race trait, background, feat, spell or item of your own.")
+    new Setting(el).setName("New entry").setDesc("A race, subrace, class, subclass, background, feat, spell or item of your own, or a trait or feature for a race or class of the rules data.")
       .addButton((b) => b.setButtonText("Create an entry").setCta().onClick(() => this.create()));
 
     if (plugin.customProblems.length) {

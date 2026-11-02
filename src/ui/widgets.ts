@@ -103,7 +103,7 @@ export function richSelect(parent: HTMLElement, opts: RichOpt[], value: string |
     draw("");
     search.addEventListener("input", () => draw(search.value));
     search.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape") { ev.preventDefault(); close(); }
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); close(); } // only the menu, not a modal it is in
       else if (ev.key === "ArrowDown") { ev.preventDefault(); setActive(Math.min(items.length - 1, active + 1)); }
       else if (ev.key === "ArrowUp") { ev.preventDefault(); setActive(Math.max(0, active - 1)); }
       else if (ev.key === "Enter") { ev.preventDefault(); const it = items[active] ?? items.find((x) => x.opt.value); if (it && !it.opt.disabled) pick(it.opt); }

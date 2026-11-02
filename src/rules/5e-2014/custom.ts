@@ -1,9 +1,9 @@
 // The custom entries of the 2014 rules: the kinds a player can make, their fields, and how each becomes
 // rules data (the types of src/rules/engine.ts) or fills the free text of manual mode.
-import { ABILITIES, ABILITY_NAMES, SKILLS, type Ability, type AbilityOption, type BackgroundData, type Compendium, type FeatData, type ItemData, type ProfList, type RaceData, type Speeds, type SpellData, type SubraceData } from "../engine.ts";
+import { ABILITIES, ABILITY_NAMES, SKILLS, type Ability, type AbilityOption, type BackgroundData, type ClassData, type Compendium, type FeatData, type Feature, type FeatureUses, type Spellcasting, type SubclassData, type ItemData, type ProfList, type RaceData, type Speeds, type SpellData, type SubraceData } from "../engine.ts";
 import { CUSTOM_SOURCE, type CustomEntry } from "../../custom/format.ts";
 import { bool, commaList, num, rows, str, strs, type Choice, type CustomContext, type FieldDef, type KindDef, type Ruleset } from "../../custom/schema.ts";
-import { title } from "../../text.ts";
+import { lc, title } from "../../text.ts";
 
 const ORDINAL = ["Cantrip", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
 const SCHOOLS = ["Abjuration", "Conjuration", "Divination", "Enchantment", "Evocation", "Illusion", "Necromancy", "Transmutation"];
@@ -214,14 +214,19 @@ function changeRace(data: Compendium, id: string, change: (r: RaceData) => void)
   data.races[i] = copy;
   return true;
 }
-const raceChoices = (ctx: CustomContext): Choice[] => ctx.data.races.map((r) => ({ value: r.id, label: r.source === CUSTOM_SOURCE ? r.name : `${r.name} (${r.source})` }));
+/** Options grouped by the book they come from (your own under "Custom data"), as the sheet's menus list them; `source`: each one's. */
+function bySource(ctx: CustomContext, list: (Choice & { source: string })[]): Choice[] {
+  const book = (s: string) => ctx.data.meta.sources[s] ?? s;
+  return list.map(({ source, ...c }) => ({ ...c, group: book(source) })).sort((a, b) => (a.group === b.group ? 0 : a.group.localeCompare(b.group)));
+}
+const raceChoices = (ctx: CustomContext): Choice[] => bySource(ctx, ctx.data.races.map((r) => ({ value: r.id, label: r.source === CUSTOM_SOURCE ? r.name : `${r.name} (${r.source})`, source: r.source })));
 /** A race-feature's parent: "raceId" or "raceId>subraceId" */
 const SUB = ">";
 /** The races and subraces of the rules data (not custom ones: their traits are in their own forms). */
-const dataRaceChoices = (ctx: CustomContext): Choice[] => ctx.data.races.filter((r) => r.source !== CUSTOM_SOURCE).flatMap((r) => [
-  { value: r.id, label: `${r.name} (${r.source})` },
-  ...r.subraces.filter((s) => s.source !== CUSTOM_SOURCE).map((s) => ({ value: `${r.id}${SUB}${s.id}`, label: `${r.name} (${s.name}, ${s.source})` })),
-]);
+const dataRaceChoices = (ctx: CustomContext): Choice[] => bySource(ctx, ctx.data.races.filter((r) => r.source !== CUSTOM_SOURCE).flatMap((r) => [
+  { value: r.id, label: `${r.name} (${r.source})`, source: r.source },
+  ...r.subraces.filter((s) => s.source !== CUSTOM_SOURCE).map((s) => ({ value: `${r.id}${SUB}${s.id}`, label: `${r.name} (${s.name}, ${s.source})`, source: r.source })),
+]));
 /** "elf|phb" -> "Elf", "elf|high|phb" (a subrace: race, name, source) -> "High", for the list of entries when the race isn't loaded */
 const nameOfId = (id: string) => { const p = id.split("|"); return title((p.length > 2 ? p[1] : p[0]).replace(/-/g, " ")); };
 
@@ -317,5 +322,203 @@ const raceFeature: KindDef = {
   manual: { section: "race-features", label: "race trait", fill: (e, s) => { if (!s.manual.raceFeatures.includes(e.name)) s.manual.raceFeatures.push(e.name); } },
 };
 
+// ---------------------------------------------------------------- classes, subclasses and their features
+/**
+ * A value for each level 1–20 from "1: 2, 4: 3, 10: 4" (from a level on; none before the first), or
+ * from 20 values separated by commas. Numbers are numbers, other values ("1d6") text.
+ */
+export function levelValues(text: string): (number | string | null)[] {
+  const value = (v: string) => (/^\d+$/.test(v) ? parseInt(v) : v);
+  const parts = text.split(",").map((x) => x.trim()).filter(Boolean);
+  if (!parts.some((p) => p.includes(":"))) return Array.from({ length: 20 }, (_, i) => (parts[i] != null ? value(parts[i]) : null));
+  const out = Array<number | string | null>(20).fill(null);
+  const steps = parts.map((p) => p.split(":").map((x) => x.trim())).filter(([l, v]) => parseInt(l) >= 1 && v).sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+  for (const [l, v] of steps) for (let i = Math.min(20, parseInt(l)) - 1; i < 20; i++) out[i] = value(v);
+  return out;
+}
+const numbersByLevel = (text: string) => (text.trim() ? levelValues(text).map((v) => (typeof v === "number" ? v : 0)) : null);
+const LEVELS_HELP = "By level: \"1: 2, 4: 3, 10: 4\" (from that level on), or 20 values separated by commas.";
+const USES: Choice[] = [
+  ...[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `${n}` })),
+  { value: "pb", label: "Proficiency bonus" }, ...ABILITIES.map((a) => ({ value: a, label: `${ABILITY_NAMES[a]} modifier` })),
+];
+function usesOf(d: Record<string, unknown>): FeatureUses | undefined {
+  const u = str(d, "uses");
+  if (!u) return undefined;
+  const rest = str(d, "rest") === "short" ? "short" : "long";
+  return { max: u === "pb" || isAbility(u) ? u : Math.max(1, parseInt(u) || 1), rest };
+}
+const restField: FieldDef = { key: "rest", label: "Uses come back", type: "select", default: "long", options: [{ value: "long", label: "Long rest" }, { value: "short", label: "Short or long rest" }] };
+const usesFields = (visible?: (d: Record<string, unknown>) => boolean): FieldDef[] => [
+  { key: "uses", label: "Uses", help: "Tracked with the class resources. None: not tracked.", type: "select", options: USES },
+  { ...restField, visible: (d) => !!str(d, "uses") && (!visible || visible(d)) },
+];
+const featuresField: FieldDef = { key: "features", label: "Features", help: "Shown in Class Features from their level on.", type: "list", addLabel: "+ Add a feature", of: [
+  { key: "name", label: "Name", type: "text" }, { key: "level", label: "Level", type: "number", min: 1, max: 20, default: 1 },
+  { key: "uses", label: "Uses", type: "select", options: USES }, restField, { key: "text", label: "Text", type: "markdown" },
+] };
+const featuresOf = (d: Record<string, unknown>): Feature[] => rows(d, "features").filter((r) => str(r, "name"))
+  .map((r) => ({ name: str(r, "name"), level: Math.max(1, Math.min(20, num(r, "level") || 1)), source: CUSTOM_SOURCE, text: str(r, "text"), link: null, ...(usesOf(r) ? { uses: usesOf(r) } : {}) }))
+  .sort((a, b) => a.level - b.level);
+
+const castsSpells = (d: Record<string, unknown>) => !!str(d, "castingAbility");
+const preparesSpells = (d: Record<string, unknown>) => castsSpells(d) && str(d, "preparation") === "prepared" && str(d, "progression") !== "pact";
+/** Spellcasting: the ability, how slots progress, prepared or known spells, cantrips and the spell list. `third`: a subclass's (one third caster) */
+const spellcastingFields = (third: boolean): FieldDef[] => [
+  { key: "castingAbility", label: "Spellcasting ability", help: "None: no spellcasting.", type: "select", options: abilityChoices },
+  ...(third ? [] : [{ key: "progression", label: "Spell slots", type: "select", default: "full", visible: castsSpells, options: [
+    { value: "full", label: "Full caster (as a wizard)" }, { value: "1/2", label: "Half caster (as a paladin)" }, { value: "1/3", label: "Third caster (as an eldritch knight)" },
+    { value: "pact", label: "Pact magic (as a warlock)" }] } as FieldDef]),
+  { key: "preparation", label: "Spells", type: "select", default: "known", visible: (d) => castsSpells(d) && str(d, "progression") !== "pact",
+    options: [{ value: "known", label: "Known (a set number)" }, { value: "prepared", label: "Prepared each day (from the whole list)" }] },
+  { key: "preparedCount", label: "Spells prepared", type: "select", default: "level", visible: preparesSpells,
+    options: [{ value: "level", label: "Level + ability modifier" }, { value: "half", label: "Half level + ability modifier" }] },
+  { key: "cantrips", label: "Cantrips known", help: LEVELS_HELP, type: "text", placeholder: "1: 2, 4: 3, 10: 4", visible: castsSpells },
+  { key: "known", label: "Spells known", help: LEVELS_HELP, type: "text", placeholder: "1: 2, 2: 3, 3: 4", visible: (d) => castsSpells(d) && !preparesSpells(d) },
+  { key: "spellList", label: "Spell list", help: third ? "The class whose spells it casts." : "Empty: its own (custom spells can be put on it).", type: "select", visible: castsSpells,
+    options: (ctx) => [...new Set(ctx.data.classes.map((c) => c.name))].sort().map((n) => ({ value: n, label: n })) },
+];
+/** The warlock's pact slots: how many, of which level, at each level */
+const PACT_SLOTS = [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4].map((slots, i) => ({ slots, level: Math.min(5, Math.ceil((i + 1) / 2)) }));
+function spellcastingOf(d: Record<string, unknown>, ownList: string, third: boolean): Spellcasting | null {
+  const ability = str(d, "castingAbility");
+  if (!isAbility(ability)) return null;
+  const progression = third ? "1/3" : str(d, "progression") || "full";
+  const prepared = preparesSpells(d) ? `<$level$>${str(d, "preparedCount") === "half" ? " / 2" : ""} + <$${ability}_mod$>` : null;
+  return { ability, progression, prepared, cantrips: numbersByLevel(str(d, "cantrips")), known: prepared ? null : numbersByLevel(str(d, "known")), knownFixed: null, list: str(d, "spellList") || ownList };
+}
+/** Replace class `id` in the data with `change` of a copy (see changeRace). False: no such class. */
+function changeClass(data: Compendium, id: string, change: (c: ClassData) => void) {
+  const i = data.classes.findIndex((c) => c.id === id);
+  if (i < 0) return false;
+  const copy = { ...data.classes[i], features: [...data.classes[i].features], subclasses: [...data.classes[i].subclasses] };
+  change(copy);
+  data.classes[i] = copy;
+  return true;
+}
+const classChoices = (ctx: CustomContext): Choice[] => bySource(ctx, ctx.data.classes.map((c) => ({ value: c.id, label: c.source === CUSTOM_SOURCE ? c.name : `${c.name} (${c.source})`, source: c.source })));
+/** The classes and subclasses of the rules data (custom ones have their features in their forms); a subclass is "classId>subclassId" */
+const dataClassChoices = (ctx: CustomContext): Choice[] => bySource(ctx, ctx.data.classes.filter((c) => c.source !== CUSTOM_SOURCE).flatMap((c) => [
+  { value: c.id, label: `${c.name} (${c.source})`, source: c.source },
+  ...c.subclasses.filter((s) => s.source !== CUSTOM_SOURCE).map((s) => ({ value: `${c.id}${SUB}${s.id}`, label: `${c.name}: ${s.name} (${s.source})`, source: c.source })),
+]));
+
+const klass: KindDef = {
+  kind: "class", label: ["Class", "Classes"], noteKind: "classes",
+  fields: [
+    { key: "hd", label: "Hit die", type: "select", required: true, default: "8", options: [6, 8, 10, 12].map((n) => ({ value: String(n), label: `d${n}` })) },
+    { key: "saves", label: "Saving throws", type: "multiselect", options: abilityChoices },
+    { key: "armor", label: "Armour proficiencies", help: "Separated by commas.", type: "text", placeholder: "light, medium, shield" },
+    { key: "weapons", label: "Weapon proficiencies", help: "Separated by commas.", type: "text", placeholder: "simple, martial" },
+    { key: "tools", label: "Tool proficiencies", help: "Separated by commas.", type: "text" },
+    { key: "skillChoices", label: "Skills to choose", type: "number", min: 0, max: 6, default: 2 },
+    { key: "skillChoiceFrom", label: "Skills to choose from", help: "None picked: any skill.", type: "multiselect", options: skillChoices, visible: (d) => num(d, "skillChoices") > 0 },
+    ...spellcastingFields(false),
+    { key: "subclassTitle", label: "Subclass title", help: "What its subclasses are called. Empty: it has none.", type: "text", default: "Subclass", placeholder: "Martial Archetype" },
+    { key: "subclassLevel", label: "Subclass level", type: "number", min: 1, max: 20, default: 3, visible: (d) => !!str(d, "subclassTitle") },
+    featuresField,
+    { key: "columns", label: "Class table", help: "Counts shown with the class resources, such as Ki Points or Rages. " + LEVELS_HELP, type: "list", addLabel: "+ Add a column", of: [
+      { key: "label", label: "Name", type: "text" }, { key: "values", label: "By level", type: "text" },
+    ] },
+    { key: "multiclass", label: "Multiclassing requirements", help: "The ability scores it takes to multiclass into it.", type: "list", addLabel: "+ Add a requirement", of: [
+      { key: "ability", label: "Ability", type: "select", options: abilityChoices }, { key: "score", label: "At least", type: "number", min: 1, max: 30, default: 13 },
+    ] },
+    { key: "multiclassArmor", label: "Armour proficiencies when multiclassing", help: "Separated by commas.", type: "text" },
+    { key: "multiclassWeapons", label: "Weapon proficiencies when multiclassing", help: "Separated by commas.", type: "text" },
+  ],
+  apply: (e, data) => {
+    const d = e.data, problem = clash(data.classes, e);
+    if (problem) return problem;
+    const title = str(d, "subclassTitle"), level = Math.max(1, Math.min(20, num(d, "subclassLevel") || 3));
+    const from = strs(d, "skillChoiceFrom").filter((k) => k in SKILLS), count = num(d, "skillChoices");
+    const spellcasting = spellcastingOf(d, e.name, false);
+    const requirements: Record<string, number> = {};
+    for (const r of rows(d, "multiclass")) { const a = str(r, "ability"); if (isAbility(a)) requirements[a] = num(r, "score") || 13; }
+    const features = featuresOf(d);
+    // where the subclass comes, as the classes of the data have it: the sheet shows the subclass's features there
+    if (title) features.push({ name: title, level, source: CUSTOM_SOURCE, text: `You choose a ${lc(title)}, which grants you features at certain levels.`, link: null, subclassFeature: true });
+    const out: ClassData = {
+      id: e.id, name: e.name, source: CUSTOM_SOURCE, link: null, hd: num(d, "hd") || 8, saves: strs(d, "saves").filter(isAbility),
+      armor: commaList(str(d, "armor")), weapons: commaList(str(d, "weapons")), tools: commaList(str(d, "tools")),
+      skills: count > 0 ? [{ from: from.length ? from : "any", count }] : [],
+      spellcasting, pactSlots: spellcasting?.progression === "pact" ? PACT_SLOTS : null,
+      tableCols: rows(d, "columns").filter((r) => str(r, "label")).map((r) => ({ label: str(r, "label"), rows: levelValues(str(r, "values")) })),
+      subclassTitle: title, subclassLevel: title ? level : 21, features: features.sort((a, b) => a.level - b.level),
+      multiclass: { requirements, armor: commaList(str(d, "multiclassArmor")), weapons: commaList(str(d, "multiclassWeapons")), skills: [] }, subclasses: [],
+    };
+    data.classes.push(out);
+    return null;
+  },
+  summary: (e) => [`d${num(e.data, "hd") || 8}`, str(e.data, "castingAbility") ? `${str(e.data, "castingAbility").toUpperCase()} caster` : ""].filter(Boolean).join(", "),
+  manual: { section: "class", label: "class", fill: (e, s) => {
+    s.manual.classes.push({ name: e.name, subclass: "", level: 1 });
+    for (const f of featuresOf(e.data)) if (f.level <= 1 && !s.manual.classFeatures.includes(f.name)) s.manual.classFeatures.push(f.name);
+  } },
+};
+
+const subclass: KindDef = {
+  kind: "subclass", label: ["Subclass", "Subclasses"], noteKind: "classes", parentKey: "class",
+  fields: [
+    { key: "class", label: "Class", help: "The class it is a subclass of: one of the rules data or your own.", type: "select", required: true, options: classChoices },
+    featuresField,
+    { key: "alwaysPrepared", label: "Spells always prepared", help: "Spells it grants at a class level (domain, oath or circle spells), by name, separated by commas.", type: "list", addLabel: "+ Add spells", of: [
+      { key: "level", label: "Class level", type: "number", min: 1, max: 20, default: 1 }, { key: "spells", label: "Spells", type: "text" },
+    ] },
+    ...spellcastingFields(true),
+  ],
+  apply: (e, data) => {
+    const d = e.data, classId = str(d, "class");
+    const prepared: Record<string, string[]> = {};
+    for (const r of rows(d, "alwaysPrepared")) { const names = commaList(str(r, "spells")).map(lc); if (names.length) (prepared[String(num(r, "level") || 1)] ??= []).push(...names); }
+    const parent = data.classes.find((c) => c.id === classId);
+    const sub: SubclassData = {
+      id: e.id, name: e.name, shortName: e.name, source: CUSTOM_SOURCE, link: null, features: featuresOf(d),
+      spellcasting: parent?.spellcasting ? null : spellcastingOf(d, "Wizard", true), additionalSpells: Object.keys(prepared).length ? [{ prepared }] : null,
+    };
+    let problem: string | null = null;
+    const found = changeClass(data, classId, (c) => { if (c.subclasses.some((x) => x.id === e.id)) problem = "another entry has the same id"; else c.subclasses.push(sub); });
+    return found ? problem : `its class (${nameOfId(classId) || "none"}) is not in the rules data`;
+  },
+  summary: (e) => `Subclass of ${nameOfId(str(e.data, "class"))}`,
+  manual: { section: "subclass", label: "subclass", fill: (e, s) => {
+    const cls = nameOfId(str(e.data, "class"));
+    const target = s.manual.classes.find((c) => lc(c.name) === lc(cls)) ?? s.manual.classes[s.manual.classes.length - 1];
+    if (target) target.subclass = e.name; else s.manual.classes.push({ name: cls, subclass: e.name, level: 1 });
+    for (const f of featuresOf(e.data)) if (!s.manual.classFeatures.includes(f.name) && f.level <= (target?.level ?? 1)) s.manual.classFeatures.push(f.name);
+  } },
+};
+
+const classFeature: KindDef = {
+  // a feature for a class of the rules data (your own classes have their features in their forms); it
+  // is part of its class's note, so it has no note of its own
+  kind: "class-feature", label: ["Class feature", "Class features"], noteKind: "", parentKey: "of",
+  available: (ctx) => (dataClassChoices(ctx).length ? null : "Features are added to classes of the SRD or imported rules data; your own classes have theirs in their form."),
+  fields: [
+    { key: "of", label: "Class or subclass", help: "A class or subclass of the rules data, to add the feature to. Your own classes and subclasses have their features in their own form.", type: "select", required: true, options: dataClassChoices },
+    { key: "level", label: "Level", type: "number", min: 1, max: 20, default: 1, required: true },
+    ...usesFields(),
+    { key: "text", label: "Text", type: "markdown", required: true },
+  ],
+  apply: (e, data) => {
+    const [classId, subId] = str(e.data, "of").split(SUB);
+    const uses = usesOf(e.data);
+    const f: Feature = { name: e.name, level: Math.max(1, Math.min(20, num(e.data, "level") || 1)), source: CUSTOM_SOURCE, text: str(e.data, "text"), link: null, ...(uses ? { uses } : {}) };
+    const byLevel = (a: Feature, b: Feature) => a.level - b.level;
+    let missing = false;
+    const found = changeClass(data, classId, (c) => {
+      if (!subId) { c.features = [...c.features, f].sort(byLevel); return; }
+      const i = c.subclasses.findIndex((x) => x.id === subId);
+      if (i < 0) { missing = true; return; }
+      c.subclasses[i] = { ...c.subclasses[i], features: [...c.subclasses[i].features, f].sort(byLevel) };
+    });
+    return !found || missing ? `its ${subId ? "subclass" : "class"} (${nameOfId(subId ?? classId) || "none"}) is not in the rules data` : null;
+  },
+  summary: (e) => {
+    const [classId, subId] = str(e.data, "of").split(SUB);
+    return `${nameOfId(classId)}${subId ? ` (${nameOfId(subId)})` : ""}, level ${num(e.data, "level") || 1}`;
+  },
+  manual: { section: "class-features", label: "class feature", fill: (e, s) => { if (!s.manual.classFeatures.includes(e.name)) s.manual.classFeatures.push(e.name); } },
+};
+
 /** The custom entries of the 2014 rules, in the order they are added to the data (an entry's parent first). */
-export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: [race, subrace, raceFeature, background, feat, spell, item] };
+export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: [race, subrace, raceFeature, klass, subclass, classFeature, background, feat, spell, item] };
