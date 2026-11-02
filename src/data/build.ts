@@ -53,10 +53,11 @@ const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
  * an older stamp makes the plugin ask the user to press "Import now" again.
  *   1 = 1.0.x (no stamp)   2 = Standard and Variant Human subraces   3 = copied entries completed (_copy, _mod)
  *   4 = homebrew subclass spell lists (subclassSpells)   5 = optional features and the choices of class features
+ *   6 = the spells feats grant
  */
-export const IMPORT_VERSION = 5;
+export const IMPORT_VERSION = 6;
 /** What an import with this importer brings to data imported before it (shown when it is out of date). */
-export const IMPORT_CHANGES = "adds the options of class features to choose from on the sheet, such as Fighting Styles, Eldritch Invocations, Metamagic and maneuvers";
+export const IMPORT_CHANGES = "adds the options of class features to choose from on the sheet, such as Fighting Styles, Eldritch Invocations, Metamagic and maneuvers, and the spells feats grant";
 /** Imported data made by an older importer (data from before the stamp counts as version 1). */
 export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
@@ -729,7 +730,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   for (const f of raw.feat) guard("feats", f, () => {
     if (!allowed("feats", f)) return;
     const prereq = (f.prerequisite || []).map(prereqText).join(" or ");
-    feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries) });
+    feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries), spells: f.additionalSpells || null });
     made.add(f);
   });
 

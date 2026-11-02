@@ -46,6 +46,8 @@ Attacks come from your equipped weapons. Race, background and class features are
 ### Spellcasting
 Spell save DC, spell attack, prepared and known counts, and slots per level that you can tick off or adjust. The ⓘ next to *Spell Slots* shows how many slots of each level the rules give and marks any level where the sheet differs, with a *Reset* to go back to them. Prepared spells stay at the top of the list.
 
+Spells your features grant are offered in **Character Creation**: *Add* one by name (Mage Armor from Armor of Shadows), or *Choose…* from the spells allowed (High Elf's Wizard cantrip, Magic Initiate, after picking its class's list). They are added always prepared, marked with what granted them. The same goes for natural weapons and breath weapons (in Attacks) and the uses of race traits such as Relentless Endurance (with the class resources). *Dismiss* hides a suggestion for good. If what granted an item goes (another race, an invocation swapped out), the item is flagged and Character Creation asks whether to remove it.
+
 <p align="center"><img src="https://raw.githubusercontent.com/admiravelhomemdasneves/5eCharacterSheet/main/docs/images/Sheet05.png" alt="Spellcasting: slots and spell list" width="720"></p>
 
 ### Inventory and proficiencies
@@ -66,7 +68,7 @@ Plain text when you read, a text box when you click. Type `[[` to link any note 
 - **Saves and skills** with proficiency/expertise, passive scores, Jack of All Trades.
 - **Race, background and class features** filled in by level, with class resources (Ki, Rage, Sorcery Points…) and the choices they give (Fighting Style, Eldritch Invocations with their prerequisites, Metamagic, maneuvers, Expertise, Draconic Ancestry…).
 - **Feats and Ability Score Improvements** counted against the ASIs your class levels grant.
-- **Spellcasting**: spell save DC, spell attack, prepared/known counts, spell slots for single and multiclass casters (Pact Magic separate), slots you can add or remove (and what the rules give, under the ⓘ), and a spell list with prepared spells first. Domain/oath/circle spells are added automatically.
+- **Spellcasting**: spell save DC, spell attack, prepared/known counts, spell slots for single and multiclass casters (Pact Magic separate), slots you can add or remove (and what the rules give, under the ⓘ), and a spell list with prepared spells first. Domain/oath/circle and racial spells are added automatically; those of feats, invocations and choices are offered to add.
 - **Inventory and coins**, attunement (max 3), carrying capacity, attacks from equipped weapons.
 - **Personality, appearance, biography, diary and events**: rendered Markdown with `[[links]]`; click to edit, type `[[` to pick a note.
 - **Rolls**: click any bonus to roll; Shift-click = advantage, Ctrl/Cmd-click = disadvantage. Uses the [Dice Roller](https://github.com/javalent/dice-roller) plugin when it is installed, a built-in roller otherwise.

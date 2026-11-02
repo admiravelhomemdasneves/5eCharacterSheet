@@ -357,6 +357,9 @@
 /* --------------------------------------------------------- creation list */
 .dnd-pending { margin: 0; padding-left: var(--dnd-s5); }
 .dnd-pending li { color: var(--text-warning); }
+/* a grant to add or dismiss: the text, then its buttons */
+.dnd-pending li.dnd-suggestion { color: var(--text-normal); margin-bottom: var(--dnd-s1); }
+.dnd-suggestion-btns { display: inline-flex; flex-wrap: wrap; gap: var(--dnd-s1); margin-left: var(--dnd-s2); vertical-align: middle; }
 
 /* ------------------------------------------- searchable dropdown (popover) */
 .dnd-sheet .dnd-rich-select {
