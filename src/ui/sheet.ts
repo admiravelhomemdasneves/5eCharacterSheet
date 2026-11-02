@@ -10,6 +10,7 @@ import { isD20, withAdvantage } from "../rules/roll";
 import { SECTIONS } from "../sections";
 import { richText } from "./richtext";
 import { header } from "./sections/header";
+import { creation } from "./sections/creation";
 import { abilities } from "./sections/abilities";
 import { combat } from "./sections/combat";
 import { skills } from "./sections/skills";
@@ -126,11 +127,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     this.applyTheme(root);
     this.hiddenSectionsMenu(root);
     header(this, root, d);
-    const pending = this.manual ? [] : d.pending;
-    if (pending.length) this.section(root, "creation", `Character Creation — ${pending.length} pending`, (el) => {
-      const ul = el.createEl("ul", { cls: "dnd-pending" });
-      pending.forEach((p) => ul.createEl("li", { text: p }));
-    });
+    creation(this, root, d);
     abilities(this, root, d);
     // Combat and Skills share a row; a hidden one leaves no empty column (see .dnd-combat-row)
     const grid = root.createDiv({ cls: "dnd-grid-2 dnd-combat-row" });

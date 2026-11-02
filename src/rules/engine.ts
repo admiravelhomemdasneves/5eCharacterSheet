@@ -36,7 +36,9 @@ export interface SubclassData { id: string; name: string; shortName: string; sou
   spells?: string[]; choices?: FeatureChoice[] }
 export interface ClassData { id: string; name: string; source: string; link: string | null; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number | null)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[]; choices?: FeatureChoice[] }
 export interface BackgroundData { id: string; name: string; source: string; link: string | null; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; heading?: string; text: string; link: string | null } | null; feats: unknown }
-export interface FeatData { id: string; name: string; source: string; link: string | null; prereq: string; ability: AbilityOption[]; text: string }
+export interface FeatData { id: string; name: string; source: string; link: string | null; prereq: string; ability: AbilityOption[]; text: string;
+  /** none in data imported before granted spells (importVersion 6) */
+  spells?: AdditionalSpells[] | null }
 export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; text: string }
 export interface ItemData { id: string; name: string; source: string; link: string | null; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number; baseItem: string | null }
 /** An option of a feature choice; `id` is what a pick saves. */
@@ -51,7 +53,8 @@ export interface FeatureChoice { name: string; feature: string | null; counts: n
 export interface OptionRequirement { level?: number; class?: string; pact?: string; spells?: string[] }
 /** An optional feature (optionalfeatures.json), offered by the choices whose types it has. `choices`: what picking it lets the character pick in turn. */
 export interface OptionalFeatureData extends ChoiceOption { types: string[]; prereq: string; requires: OptionRequirement[]; spells: AdditionalSpells[] | null; choices?: FeatureChoice[] }
-export type AdditionalSpells ={ ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
+/** 5etools `additionalSpells`; `name`: the variant (e.g. Magic Initiate's "Wizard Spells") when there are several to pick from */
+export type AdditionalSpells = { name?: string; ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
 export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string; importVersion?: number; /** the homebrew file each imported homebrew entry came from, by entry key (src/data/entries.ts) */ origins?: Record<string, string> }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[];
   /** none in data imported before choices (importVersion 5) */
   optionalFeatures?: OptionalFeatureData[] }
@@ -59,7 +62,10 @@ export interface Compendium { meta: { sources: Record<string, string>; srdOnly?:
 // ------------------------------------------------------------------ character state (stored in frontmatter `dnd`)
 export type ProfLevel = 0 | 1 | 2; // none / proficient / expertise
 export interface ClassEntry { id: string; subclass: string | null; level: number; hpRolls: (number | null)[]; skills: string[] }
-export interface SpellEntry { id: string; prepared: boolean; source?: string } // source: class id that grants it
+/** `source`: the class id it is cast with; `grant`/`from`: the grant it was added from and what gave it (see featureGrants) */
+export interface SpellEntry { id: string; prepared: boolean; source?: string; grant?: string; from?: string }
+/** An attack or resource added from a feature's grant (see featureGrants): `name` and `from` are kept for when the grant goes. */
+export interface AddedGrant { key: string; kind: "attack" | "resource"; name: string; from: string }
 export interface InventoryEntry { id: string | null; name: string; qty: number; weight: number | null; equipped: boolean; attuned: boolean; notes: string }
 export interface FeatEntry { id: string; picks: Ability[]; free?: boolean } // free: granted by race/background, not an ASI
 export interface CharState {
@@ -104,6 +110,10 @@ export interface CharState {
    * Kept when a class or level no longer gives the choice, so they come back with it.
    */
   choices: Record<string, string[]>;
+  /** attacks and resources added from what features grant (spells are added to `spells`) */
+  added: AddedGrant[];
+  /** grants the player dismissed, by key: not suggested again */
+  dismissed: string[];
   manual: ManualData; // used when no rules data is configured (manual mode)
   /** `hidden`: sections left out of this sheet (shown again from the "Hidden sections" menu) */
   ui: { hidden: Record<string, boolean> };
@@ -150,7 +160,7 @@ export function newCharacter(name = ""): CharState {
     proficiencies: { armor: "", weapons: "", tools: "", languages: "" },
     personality: { traits: "", ideals: "", bonds: "", flaws: "" },
     appearance: { age: "", height: "", weight: "", eyes: "", skin: "", hair: "" },
-    allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], removedFeatures: [], choices: {}, manual: emptyManual(),
+    allies: "", biography: "", diary: "", events: [], featureNotes: {}, customFeatures: [], hiddenFeatures: [], removedFeatures: [], choices: {}, added: [], dismissed: [], manual: emptyManual(),
     ui: { hidden: {} },
   };
 }
@@ -196,6 +206,9 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   const choices: unknown = out.choices;
   out.choices = choices && typeof choices === "object" && !Array.isArray(choices)
     ? Object.fromEntries(Object.entries(choices).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, (v as unknown[]).map(String)])) : {};
+  out.added = (Array.isArray(out.added) ? out.added : []).filter((a) => a && typeof a === "object" && a.key)
+    .map((a) => ({ key: String(a.key), kind: a.kind === "resource" ? "resource" : "attack", name: String(a.name ?? ""), from: String(a.from ?? "") }));
+  out.dismissed = Array.isArray(out.dismissed) ? out.dismissed.map(String) : [];
   out.manual = { ...emptyManual(), ...(s?.manual || {}) };
   out.manual.hitDice = manualHitDiceOf(s?.manual?.hitDice);
   out.feats = (out.feats || []).map((f) => ({ ...f, picks: f.picks || [] }));
@@ -689,8 +702,10 @@ export function classFeatures(r: Rules, s: CharState) {
   }
   return out;
 }
+/** A count the sheet tracks (key in CharState.resources): from a class table column, or added from a grant (`grant`, `from`; `gone`: no longer given). */
+export interface Resource { key: string; label: string; max: number | string; from?: string; grant?: string; gone?: boolean }
 export function classResources(r: Rules, s: CharState) {
-  const out: { key: string; label: string; max: number | string }[] = [];
+  const out: Resource[] = [];
   for (const e of s.classes) {
     const c = r.cls(e.id);
     if (!c) continue;
@@ -939,47 +954,232 @@ export function spellSlots(r: Rules, s: CharState) {
 export function slotsByRules(slots: ReturnType<typeof spellSlots>) {
   return slots.base.flatMap((rules, i) => (rules || slots.max[i] ? [{ level: i + 1, rules, sheet: slots.max[i], differs: rules !== slots.max[i] }] : []));
 }
-// Spells granted automatically (domain/oath/circle "prepared" lists, racial known spells)
+/** A spell as 5etools names it in additionalSpells: "hellish rebuke#2", "thaumaturgy#c", "mage armor|xphb" */
+function spellRef(r: Rules, raw: string) {
+  const [name, src] = String(raw).replace(/#\w*$/, "").split("|");
+  return r.spellNamed(name, src);
+}
+/** The spells of additionalSpells up to a level ("_": any level): a spell's 5etools name, or a filter to choose `count` from. `at`: where it is, for its key. */
+function spellLeaves(a: AdditionalSpells, upTo: number) {
+  const out: { block: string; at: string; spell?: string; choose?: string; count: number }[] = [];
+  for (const block of ["known", "innate", "prepared"] as const) for (const [lvl, list] of Object.entries(a[block] ?? {})) {
+    if (lvl !== "_" && !(parseInt(lvl) <= upTo)) continue;
+    let n = 0;
+    // innate spells are grouped by uses ({ daily: { "1e": [...] }, will: [...] }), which don't matter here
+    const walk = (x: unknown) => {
+      if (typeof x === "string") out.push({ block, at: `${block}${lvl}#${n++}`, spell: x, count: 1 });
+      else if (Array.isArray(x)) x.forEach(walk);
+      else if (x && typeof x === "object") {
+        const o = x as Record<string, unknown>;
+        if (typeof o.choose === "string") out.push({ block, at: `${block}${lvl}#${n++}`, choose: o.choose, count: Number(o.count) || 1 });
+        else if (!("choose" in o)) Object.values(o).forEach(walk);
+      }
+    };
+    walk(list);
+  }
+  return out;
+}
+/**
+ * The additionalSpells a character takes from `list`: its only one, or the variant picked (Magic
+ * Initiate's "Wizard Spells") under `${src}|list` in CharState.choices; `names`: the variants (null for one).
+ */
+function spellVariant(s: CharState, list: AdditionalSpells[], src: string) {
+  if (list.length < 2) return { a: list[0] ?? null, variant: "", names: null };
+  const names = list.map((x, i) => x.name || `List ${i + 1}`), i = names.indexOf(s.choices[`${src}|list`]?.[0] ?? "");
+  return { a: i < 0 ? null : list[i], variant: i < 0 ? "" : `${names[i]}|`, names };
+}
+// Spells granted automatically (domain/oath/circle "prepared" lists, racial known and innate spells)
 export function grantedSpells(r: Rules, s: CharState): { id: string; why: string }[] {
   const out: { id: string; why: string }[] = [];
-  const find = (raw: string) => {
-    const [name, src] = String(raw).replace(/#c$/, "").split("|");
-    return r.spellNamed(name, src);
-  };
-  const take = (block: Record<string, unknown> | undefined, upTo: number, why: string) => {
-    if (!block) return;
-    for (const [lvl, list] of Object.entries(block)) {
-      if (parseInt(lvl) > upTo) continue;
-      const arr = Array.isArray(list) ? list : Object.values(list as object).flat();
-      for (const x of arr as unknown[]) if (typeof x === "string") { const sp = find(x); if (sp) out.push({ id: sp.id, why }); }
-    }
+  const take = (list: AdditionalSpells[] | null | undefined, src: string, blocks: string[], upTo: number, why: string) => {
+    const a = spellVariant(s, list || [], src).a;
+    if (a) for (const x of spellLeaves(a, upTo)) if (x.spell && blocks.includes(x.block)) { const sp = spellRef(r, x.spell); if (sp) out.push({ id: sp.id, why }); }
   };
   for (const e of s.classes) {
     const sub = r.subclass(e);
-    if (sub) for (const a of sub.additionalSpells || []) take(a.prepared, e.level, sub.shortName);
+    if (sub) take(sub.additionalSpells, featureKey(sub.id, "spells"), ["prepared"], e.level, sub.shortName);
   }
-  const lvl = totalLevel(s);
-  const race = r.race(s), sub = r.subrace(s);
-  const owner = sub?.name ?? race?.name ?? "";
-  for (const a of sub?.spells || race?.spells || []) take({ ...a.known, ...a.innate }, lvl, owner);
+  const race = r.race(s), sub = r.subrace(s), owner = sub?.spells ? sub : race;
+  if (owner) take(owner.spells, featureKey(owner.id, "spells"), ["known", "innate"], totalLevel(s), sub?.name ?? race?.name ?? "");
   const seen = new Set<string>();
   return out.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
 }
-// Spell list sorted: prepared (and granted) first, then by level and name
-export function sortedSpells(r: Rules, s: CharState, grantedList = grantedSpells(r, s)) {
+/**
+ * Spell list sorted: prepared (and granted) first, then by level and name. `gone`: added from a grant
+ * that is no longer among `grantKeys` (the keys of featureGrants()).
+ */
+export function sortedSpells(r: Rules, s: CharState, grantedList = grantedSpells(r, s), grantKeys?: Set<string>) {
   const granted = new Map(grantedList.map((g) => [g.id, g.why]));
-  const rows = s.spells.map((e) => ({ entry: e, data: r.spell(e.id), granted: granted.get(e.id) || null }));
-  for (const [id, why] of granted) if (!s.spells.some((e) => e.id === id)) rows.push({ entry: { id, prepared: true }, data: r.spell(id), granted: why });
+  const rows = s.spells.map((e) => ({ entry: e, data: r.spell(e.id), granted: granted.get(e.id) || null, gone: !!e.grant && !!grantKeys && !grantKeys.has(e.grant) }));
+  for (const [id, why] of granted) if (!s.spells.some((e) => e.id === id)) rows.push({ entry: { id, prepared: true }, data: r.spell(id), granted: why, gone: false });
   const isPrep = (x: (typeof rows)[number]) => x.entry.prepared || !!x.granted || x.data?.level === 0;
   return rows.filter((x) => x.data).sort((a, b) => Number(isPrep(b)) - Number(isPrep(a)) || a.data!.level - b.data!.level || a.data!.name.localeCompare(b.data!.name));
 }
 
+// ------------------------------------------------------------------ feature grants
+// Spells, attacks and uses that features give the character, which the sheet suggests adding (the
+// player adds or dismisses them): spells of race, subclass, feat and optional feature data that are
+// not granted automatically (grantedSpells), or that the player chooses (High Elf's cantrip, Magic
+// Initiate), and natural weapons, breath weapons and limited uses read from race traits.
+/** What a granted spell may be, from a 5etools filter ("level=0|class=Wizard", "level=1|school=E;D"); null: any. */
+export interface SpellFilter { levels: number[] | null; classes: string[] | null; schools: string[] | null; ritual: boolean }
+const SCHOOL_CODES: Record<string, string> = { A: "Abjuration", C: "Conjuration", D: "Divination", E: "Enchantment", V: "Evocation", I: "Illusion", N: "Necromancy", T: "Transmutation" };
+export function spellFilter(text: string): SpellFilter {
+  const f: SpellFilter = { levels: null, classes: null, schools: null, ritual: false };
+  for (const part of text.split("|")) {
+    const [k, v = ""] = part.split("=").map((x) => x.trim());
+    const list = v.split(";").map((x) => x.trim()).filter(Boolean);
+    if (/^level$/i.test(k)) f.levels = list.map(Number).filter(Number.isFinite);
+    else if (/^class$/i.test(k)) f.classes = list;
+    else if (/^school$/i.test(k)) f.schools = list.map((x) => SCHOOL_CODES[x.toUpperCase()] ?? x);
+    else if (/ritual/i.test(v)) f.ritual = true;
+  }
+  return f;
+}
+const lc = (x: string) => x.toLowerCase();
+export const spellMatches = (sp: SpellData, f: SpellFilter) => (!f.levels || f.levels.includes(sp.level))
+  && (!f.classes || sp.classes.some((c) => f.classes!.some((x) => lc(x) === lc(c)))) && (!f.schools || f.schools.some((x) => lc(x) === lc(sp.school))) && (!f.ritual || sp.ritual);
+const ordinal = (n: number) => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
+/** "Wizard cantrip", "1st-level enchantment or divination spell", "1st-level Bard ritual spells", "cantrip or 1st–3rd-level spell" (`n` of them) */
+export function filterText(f: SpellFilter, n = 1) {
+  const s = n === 1 ? "" : "s", cantrip = !!f.levels?.includes(0), lv = f.levels?.filter((l) => l > 0) ?? [];
+  const words = [f.classes?.join(" or "), f.schools?.map(lc).join(" or "), f.ritual ? "ritual" : ""].filter(Boolean).join(" ");
+  if (cantrip && !lv.length) return [words, `cantrip${s}`].filter(Boolean).join(" ");
+  const run = lv.length > 2 && lv[lv.length - 1] - lv[0] === lv.length - 1;
+  const levels = lv.length ? `${run ? `${ordinal(lv[0])}–${ordinal(lv[lv.length - 1])}` : lv.map(ordinal).join(" or ")}-level` : "";
+  const spell = [levels, words, `spell${s}`].filter(Boolean).join(" ");
+  return cantrip ? `cantrip${s} or ${spell}` : spell;
+}
+/**
+ * Something a feature grants. `key`: where the player's answer is kept (SpellEntry.grant, AddedGrant.key,
+ * CharState.dismissed); `from`: what grants it. Kinds: "spell" (`spell`, its id), "spells" (`count`
+ * spells the player chooses, of `filter`), "variant" (the spell list to take, of `variants`: the pick is
+ * kept in CharState.choices under `key`), "attack" and "resource" (`max` uses, back on a `rest`).
+ */
+export interface Grant {
+  key: string; from: string; kind: "spell" | "spells" | "variant" | "attack" | "resource"; name: string;
+  spell?: string; filter?: SpellFilter; count?: number; variants?: string[]; attack?: Attack; max?: number; rest?: "short" | "long";
+}
+// e.g. "your claws are natural weapons … you deal slashing damage equal to 1d4 + your Strength modifier"
+const NATURAL_WEAPON = /natural weapons?\b[\s\S]*?deal (\w+) damage equal to (\d+d\d+) (?:\+|plus) your (Strength|Dexterity|Constitution) modifier/i;
+const BREATH_DC = /DC(?: for this saving throw equals| =) 8 \+ your (\w+) modifier \+ your proficiency bonus/i;
+const ONCE_PER_REST = /can't (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete) a (short or long|long) rest/i;
+const PB_PER_REST = /a number of times equal to your proficiency bonus[^.]*?when you finish a (short or long|long) rest/i;
+/**
+ * A breath weapon's save and damage at the character's `level`: "takes 2d6 damage … increases to 3d6 at
+ * 6th level" or "1d10 … when you reach 5th level (2d10)"; the damage type, area and save from the
+ * ancestry the character picked (`picked`: the text of the race's picked options, "Damage Type: Acid ·
+ * Breath Weapon: 5 by 30 ft. line (Dex. save)"), or from the trait's own text.
+ */
+function breathWeapon(name: string, text: string, level: number, scores: Record<Ability, AbilityBreakdown>, pb: number, picked: string): Attack | null {
+  const dc = BREATH_DC.exec(text), base = /takes (\d+d\d+)\b/i.exec(text);
+  const ability = dc && ABILITY_BY_NAME[dc[1].toLowerCase()];
+  if (!ability || !base) return null;
+  let dice = base[1];
+  for (const m of text.matchAll(/(\d+d\d+) at (\d+)(?:st|nd|rd|th) level/gi)) if (level >= parseInt(m[2])) dice = m[1];
+  for (const m of text.matchAll(/(\d+)(?:st|nd|rd|th) level \((\d+d\d+)\)/gi)) if (level >= parseInt(m[1])) dice = m[2];
+  const type = /Damage Type: (\w+)/i.exec(picked)?.[1];
+  const save = /\((\w+)\.? save\)/i.exec(picked)?.[1] ?? /make an? (\w+) saving throw/i.exec(text)?.[1];
+  const area = /Breath Weapon: ([^(·]+)/i.exec(picked)?.[1].trim();
+  return { name, toHit: null, save: `DC ${8 + mod(scores[ability].total) + pb}${save ? ` ${save.slice(0, 3)}` : ""}`, damage: `${dice}${type ? ` ${type.toLowerCase()}` : ""}`,
+    notes: [area, "half on a successful save"].filter(Boolean).join(", "), link: null };
+}
+/**
+ * What the character's race, subclasses, feats and picked optional features grant (see Grant).
+ * `choices`/`scores`: characterChoices()/abilityScores(), when known.
+ */
+export function featureGrants(r: Rules, s: CharState, choices = characterChoices(r, s), scores = abilityScores(r, s)): Grant[] {
+  const out: Grant[] = [];
+  const level = totalLevel(s), pb = proficiencyBonus(level);
+  // `auto`: the blocks whose spells grantedSpells() already gives
+  const spells = (list: AdditionalSpells[] | null | undefined, src: string, from: string, upTo: number, auto: string[] = []) => {
+    if (!list?.length) return;
+    const { a, variant, names } = spellVariant(s, list, src);
+    if (!a) { out.push({ key: `${src}|list`, from, kind: "variant", name: `${from} spell list`, variants: names! }); return; }
+    for (const x of spellLeaves(a, upTo)) {
+      if (x.choose != null) {
+        const filter = spellFilter(x.choose);
+        out.push({ key: `${src}|${variant}${x.at}`, from, kind: "spells", name: filterText(filter), filter, count: x.count });
+      } else if (!auto.includes(x.block)) {
+        const sp = spellRef(r, x.spell!);
+        if (sp) out.push({ key: `${src}|${sp.id}`, from, kind: "spell", name: sp.name, spell: sp.id });
+      }
+    }
+  };
+  const race = r.race(s), subrace = r.subrace(s);
+  const raceName = race ? (subrace ? `${race.name} (${subrace.name})` : race.name) : "";
+  const raceOwner = subrace?.spells ? subrace : race;
+  if (raceOwner) spells(raceOwner.spells, featureKey(raceOwner.id, "spells"), raceName, level, ["known", "innate"]);
+  for (const e of s.classes) {
+    const c = r.cls(e.id), sub = r.subclass(e);
+    if (c && sub) spells(sub.additionalSpells, featureKey(sub.id, "spells"), `${c.name} (${sub.name})`, e.level, ["prepared"]);
+  }
+  for (const fe of s.feats) { const f = r.feat(fe.id); if (f) spells(f.spells, featureKey(f.id, "spells"), f.name, level); }
+  for (const c of choices) for (const id of c.picked) { const o = r.optionalFeature(id); if (o) spells(o.spells, featureKey(o.id, "spells"), o.name, level); }
+  if (race) {
+    const picked = choices.filter((c) => c.group === race.id).flatMap((c) => c.picked.map((id) => c.options.find((o) => o.id === id)?.text ?? "")).join(" · ");
+    const traits = [...race.traits.map((t) => [t, race.id] as const), ...(subrace?.traits || []).map((t) => [t, subrace!.id] as const)];
+    for (const [t, owner] of traits) {
+      if (RACE_TRAIT_SKIP.has(t.name)) continue;
+      const src = featureKey(owner, t.name), text = untoken(t.text || "");
+      const nat = NATURAL_WEAPON.exec(text);
+      if (nat) {
+        const m = mod(scores[ABILITY_BY_NAME[nat[3].toLowerCase()]].total);
+        out.push({ key: `${src}|attack`, from: raceName, kind: "attack", name: t.name,
+          attack: { name: t.name, toHit: m + pb, damage: `${nat[2]}${m ? fmtMod(m) : ""} ${nat[1].toLowerCase()}`, notes: "natural weapon", link: null } });
+      }
+      const breath = /breath weapon/i.test(t.name) ? breathWeapon(t.name, text, level, scores, pb, picked) : null;
+      if (breath) out.push({ key: `${src}|attack`, from: raceName, kind: "attack", name: t.name, attack: breath });
+      // uses of a trait; spells cast with a trait are in Spellcasting
+      const uses = /⟦spells\|/.test(t.text || "") ? null : PB_PER_REST.exec(text) ?? ONCE_PER_REST.exec(text);
+      if (uses) out.push({ key: `${src}|uses`, from: raceName, kind: "resource", name: t.name, max: uses[0].startsWith("a number") ? pb : 1, rest: uses[1].startsWith("short") ? "short" : "long" });
+    }
+  }
+  return out;
+}
+/**
+ * A line of Character Creation for a grant: to add it ("Add Mage Armor (from Armor of Shadows)"), choose
+ * its spells or spell list; or for an added item whose grant is gone (`gone`: the spell's id, or the
+ * AddedGrant), for the player to remove or keep it.
+ */
+export interface Suggestion { key: string; text: string; grant?: Grant; left?: number; gone?: { spell: string } | { added: AddedGrant } }
+/** Suggestions for the grants the player hasn't added or dismissed, and the added items no grant gives any more. `auto`: grantedSpells() */
+export function grantSuggestions(r: Rules, s: CharState, grants: Grant[], auto: { id: string }[] = grantedSpells(r, s)): Suggestion[] {
+  const out: Suggestion[] = [];
+  const have = new Set([...s.spells.map((x) => x.id), ...auto.map((x) => x.id)]);
+  const a = (t: string) => `${/^[aeiou]/i.test(t) ? "an" : "a"} ${t}`;
+  for (const g of grants) {
+    if (s.dismissed.includes(g.key)) continue;
+    if (g.kind === "spell" && !have.has(g.spell!)) out.push({ key: g.key, text: `Add ${g.name} (from ${g.from})`, grant: g });
+    else if (g.kind === "spells") {
+      const left = g.count! - s.spells.filter((x) => x.grant === g.key).length;
+      if (left > 0) out.push({ key: g.key, text: `Choose ${left === 1 ? a(g.name) : `${left} ${filterText(g.filter!, left)}`} (from ${g.from})`, grant: g, left });
+    } else if (g.kind === "variant") out.push({ key: g.key, text: `Choose the spell list of ${g.from}`, grant: g });
+    else if ((g.kind === "attack" || g.kind === "resource") && !s.added.some((x) => x.key === g.key))
+      out.push({ key: g.key, text: g.kind === "attack" ? `Add the ${g.name} attack (from ${g.from})` : `Track the uses of ${g.name} (from ${g.from})`, grant: g });
+  }
+  const keys = new Set(grants.map((g) => g.key));
+  for (const e of s.spells) if (e.grant && !keys.has(e.grant)) out.push({ key: `${e.grant}#${e.id}`, text: `${r.spell(e.id)?.name ?? e.id} is no longer granted by ${e.from || "a feature"}`, gone: { spell: e.id } });
+  for (const x of s.added) if (!keys.has(x.key)) out.push({ key: x.key, text: `${x.name} is no longer granted by ${x.from || "a feature"}`, gone: { added: x } });
+  return out;
+}
+/** The uses of the resources the player added from grants, as classResources() gives them; one whose grant is gone has `gone` set. */
+export function grantResources(s: CharState, grants: Grant[]): Resource[] {
+  return s.added.filter((x) => x.kind === "resource").map((x) => {
+    const g = grants.find((y) => y.key === x.key);
+    return { key: `grant:${x.key}`, label: g ? `${g.name} (${g.rest === "short" ? "short or long rest" : "long rest"})` : x.name, max: g?.max ?? 0, from: g?.from ?? x.from, grant: x.key, gone: !g };
+  });
+}
+
 // ------------------------------------------------------------------ attacks
-export function attacks(r: Rules, s: CharState, scores = abilityScores(r, s)) {
+/** `toHit` null: a saving throw (`save`, "DC 13 Dex") instead of an attack roll. `grant`/`from`: added from a grant (`gone`: no longer given). */
+export interface Attack { name: string; toHit: number | null; save?: string; damage: string; notes: string; link: string | null; grant?: string; from?: string; gone?: boolean }
+/** `grants`: featureGrants(), for the attacks the player added from them */
+export function attacks(r: Rules, s: CharState, scores = abilityScores(r, s), grants: Grant[] = featureGrants(r, s, undefined, scores)) {
   const pb = proficiencyBonus(totalLevel(s));
   const str = mod(scores.str.total), dex = mod(scores.dex.total);
   const profText = s.classes.flatMap((e) => [...(r.cls(e.id)?.weapons || [])]).join(" ").toLowerCase() + " " + s.proficiencies.weapons.toLowerCase();
-  const out: { name: string; toHit: number; damage: string; notes: string; link: string | null }[] = [];
+  const out: Attack[] = [];
   for (const inv of s.inventory.filter((i) => i.equipped)) {
     const it = r.item(inv.id);
     if (!it || it.kind !== "weapon" || !it.dmg1) continue;
@@ -995,6 +1195,10 @@ export function attacks(r: Rules, s: CharState, scores = abilityScores(r, s)) {
       notes: [...it.properties, it.range ? `range ${it.range}` : ""].filter(Boolean).join(", ") + (prof ? "" : " (not proficient)"),
       link: it.link,
     });
+  }
+  for (const x of s.added) if (x.kind === "attack") {
+    const g = grants.find((y) => y.key === x.key);
+    out.push(g?.attack ? { ...g.attack, grant: x.key, from: g.from } : { name: x.name, toHit: null, damage: "", notes: "", link: null, grant: x.key, from: x.from, gone: true });
   }
   return out;
 }
@@ -1062,6 +1266,7 @@ export function derive(r: Rules, s: CharState) {
   const skillProf = skillProficiencies(r, s, skillSources, expertiseSkills(choices));
   const casterList = casters(r, s, scores);
   const asi = { slots: asiSlots(r, s), taken: asiTaken(s) };
+  const grants = featureGrants(r, s, choices, scores);
   return {
     scores, level, pb: proficiencyBonus(level),
     saves: saveProficiencies(r, s),
@@ -1069,12 +1274,13 @@ export function derive(r: Rules, s: CharState) {
     skills: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, skillBonus(r, s, k, scores, skillProf, features)])) as Record<string, number>,
     hp: hpBreakdown(r, s, scores, features), ac: armorClass(r, s, scores, features), initiative: initiative(r, s, scores),
     speeds: speeds(r, s, features), hitDice: hitDice(r, s), darkvision: darkvision(r, s),
-    features, choices, resources: classResources(r, s), asi,
+    features, choices, asi, grants, suggestions: grantSuggestions(r, s, grants, granted),
+    resources: [...classResources(r, s), ...grantResources(s, grants)],
     casters: casterList,
     /** casterSpellCounts() of each caster, by class id */
     spellCounts: new Map(casterList.map((c) => [c.classId, casterSpellCounts(r, s, c.classId)])),
-    slots: spellSlots(r, s), granted, spells: sortedSpells(r, s, granted),
-    attacks: attacks(r, s, scores),
+    slots: spellSlots(r, s), granted, spells: sortedSpells(r, s, granted, new Set(grants.map((g) => g.key))),
+    attacks: attacks(r, s, scores, grants),
     pending: pendingChoices(r, s, { asiSlots: asi.slots, casters: casterList, choices }),
   };
 }

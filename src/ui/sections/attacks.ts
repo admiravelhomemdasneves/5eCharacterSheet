@@ -1,7 +1,8 @@
-// Attacks: the equipped weapons' attack and damage rolls.
+// Attacks: the equipped weapons' attack and damage rolls, and the attacks added from what features grant.
 import * as E from "../../rules/engine";
 import { fmtMod } from "../../rules/engine";
 import { d20 } from "../dice";
+import { iconButton } from "../widgets";
 import type { CharacterSheet } from "../sheet";
 
 export function attacks(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
@@ -15,15 +16,22 @@ export function attacks(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) 
       return;
     }
     const t = el.createDiv({ cls: "dnd-table-wrap" }).createEl("table", { cls: "dnd-table" });
-    const h = t.createEl("tr"); ["Weapon", "To Hit", "Damage", "Notes"].forEach((x) => h.createEl("th", { text: x }));
+    const h = t.createEl("tr"); ["Weapon", "To Hit", "Damage", "Notes", ""].forEach((x) => h.createEl("th", { text: x }));
     for (const a of atk) {
       const tr = t.createEl("tr");
-      sheet.link(tr.createEl("td"), a.name, a.link);
-      sheet.rollable(tr.createEl("td"), fmtMod(a.toHit), d20(a.toHit), `${a.name} attack`);
+      const name = tr.createEl("td");
+      sheet.link(name, a.name, a.link);
+      if (a.from) name.createSpan({ cls: `dnd-tag${a.gone ? " is-pending" : ""}`, text: a.gone ? `no longer granted by ${a.from}` : `from ${a.from}` });
+      // a saving throw (breath weapon) instead of an attack roll
+      if (a.toHit == null) tr.createEl("td", { text: a.save ?? "" });
+      else sheet.rollable(tr.createEl("td"), fmtMod(a.toHit), d20(a.toHit), `${a.name} attack`);
       const dmgCell = tr.createEl("td");
       const formula = a.damage.split(" ")[0];
-      sheet.rollable(dmgCell, a.damage, formula, `${a.name} damage`);
+      if (formula) sheet.rollable(dmgCell, a.damage, formula, `${a.name} damage`);
       tr.createEl("td", { text: a.notes });
+      const del = tr.createEl("td");
+      // removed while still granted: not suggested again
+      if (a.grant) iconButton(del, "x", `Remove ${a.name}`, () => sheet.change((x) => { x.added = x.added.filter((y) => y.key !== a.grant); if (!a.gone) x.dismissed.push(a.grant!); }));
     }
   });
 }

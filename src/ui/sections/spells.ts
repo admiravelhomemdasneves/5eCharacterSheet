@@ -51,7 +51,8 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
     spellRows(t, 9, rows, (row) => row.entry.prepared || !!row.granted || row.data!.level === 0, (tr, row) => {
       const sp = row.data!;
       const pc = tr.createEl("td");
-      if (row.granted) pc.createSpan({ text: "★", attr: { "aria-label": `Always prepared (${row.granted})` } });
+      const from = row.granted ?? row.entry.from;
+      if (row.granted || row.entry.grant) pc.createSpan({ text: "★", attr: { "aria-label": `Always prepared (${from})` } });
       else if (sp.level === 0) pc.createSpan({ text: "∞", attr: { "aria-label": "Cantrip" } });
       else checkbox(pc, row.entry.prepared, (v) => sheet.change((x) => { const e = x.spells.find((y) => y.id === sp.id); if (e) e.prepared = v; }));
       const nameCell = tr.createEl("td");
@@ -63,12 +64,15 @@ export function spellcasting(sheet: CharacterSheet, root: HTMLElement, d: E.Deri
       const cr = tr.createEl("td");
       if (sp.concentration) cr.createSpan({ text: "C ", attr: { "aria-label": "Concentration" } });
       if (sp.ritual) cr.createSpan({ text: "R", attr: { "aria-label": "Ritual" } });
-      const from = tr.createEl("td");
-      if (row.granted) from.setText(row.granted);
-      else if (casters.length > 1) select(from, casters.map((c) => ({ value: c.classId, label: c.name })), row.entry.source || "", (v) => sheet.change((x) => { const e = x.spells.find((y) => y.id === sp.id); if (e) e.source = v; }), "—");
-      else from.setText(casters.find((c) => c.classId === row.entry.source)?.name || "");
+      const fromCell = tr.createEl("td");
+      if (row.granted) fromCell.setText(row.granted);
+      else if (row.entry.grant) fromCell.createSpan({ cls: `dnd-tag${row.gone ? " is-pending" : ""}`, text: row.gone ? `no longer granted by ${from}` : `from ${from}` });
+      else if (casters.length > 1) select(fromCell, casters.map((c) => ({ value: c.classId, label: c.name })), row.entry.source || "", (v) => sheet.change((x) => { const e = x.spells.find((y) => y.id === sp.id); if (e) e.source = v; }), "—");
+      else fromCell.setText(casters.find((c) => c.classId === row.entry.source)?.name || "");
       const del = tr.createEl("td");
-      if (!row.granted) iconButton(del, "x", "Remove spell", () => sheet.change((x) => { x.spells = x.spells.filter((y) => y.id !== sp.id); }));
+      // a spell granted by name and removed while still granted is not suggested again (one chosen from a grant is: to choose another)
+      const grant = row.entry.grant, dismiss = !!grant && !row.gone && d.grants.some((g) => g.key === grant && g.kind === "spell");
+      if (!row.granted) iconButton(del, "x", "Remove spell", () => sheet.change((x) => { x.spells = x.spells.filter((y) => y.id !== sp.id); if (dismiss) x.dismissed.push(grant); }));
     });
   });
 }

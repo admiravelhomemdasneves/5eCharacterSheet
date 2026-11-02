@@ -7,7 +7,6 @@ import { srdData } from "./helpers.ts";
 const srd = srdData();
 const r = new E.Rules(srd);
 const id = (list: { id: string; name: string }[], name: string) => list.find((x) => x.name === name)!.id;
-const classId = (name: string) => id(srd.classes, name);
 /** a character of one class, `skills` its class skills, with the subclass named `sub` */
 function char(cls: string, level: number, sub: string | null = null, skills: string[] = []) {
   const s = E.newCharacter("C");

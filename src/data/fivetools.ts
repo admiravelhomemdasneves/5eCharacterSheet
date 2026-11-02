@@ -150,7 +150,7 @@ export interface RawOptionalFeature extends RawBase {
   /** options it lets the character pick in turn (e.g. Superior Technique: one maneuver) */
   optionalfeatureProgression?: RawOptionalProgression[];
 }
-export interface RawFeat extends RawBase { prerequisite?: Record<string, unknown>[]; ability?: RawAbility[] }
+export interface RawFeat extends RawBase { prerequisite?: Record<string, unknown>[]; ability?: RawAbility[]; additionalSpells?: RawAdditionalSpells[] }
 
 // ---------------------------------------------------------------- spells
 export interface RawSpell extends RawBase {

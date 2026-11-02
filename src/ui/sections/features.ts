@@ -69,7 +69,13 @@ export function classFeaturesSection(sheet: CharacterSheet, root: HTMLElement, d
       const rr = el.createDiv({ cls: "dnd-resources" });
       for (const x of res) {
         const box = rr.createDiv({ cls: "dnd-resource" });
-        box.createDiv({ cls: "dnd-label", text: x.label });
+        const label = box.createDiv({ cls: "dnd-label", text: x.label });
+        if (x.grant) {
+          // added from a race trait's grant (see E.featureGrants); removed while still granted, it is not suggested again
+          label.createSpan({ cls: `dnd-tag${x.gone ? " is-pending" : ""}`, text: x.gone ? `no longer granted by ${x.from}` : `from ${x.from}` });
+          iconButton(label, "x", `Remove ${x.label}`, () => sheet.change((st) => { st.added = st.added.filter((y) => y.key !== x.grant); delete st.resources[x.key]; if (!x.gone) st.dismissed.push(x.grant!); }), "dnd-feature-btn");
+          if (x.gone) continue;
+        }
         const max = typeof x.max === "number" ? x.max : parseInt(String(x.max));
         if (Number.isFinite(max) && String(x.max) === String(max) && max > 0 && max <= 30) {
           const left = max - (s.resources[x.key] || 0);
