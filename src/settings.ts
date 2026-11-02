@@ -7,6 +7,7 @@ import { IMPORT_CHANGES } from "./data/build";
 import type { RemovedEntry } from "./data/entries";
 import { DetectModal } from "./ui/detect";
 import { ImportDataView } from "./ui/import-data";
+import { CustomDataView } from "./ui/custom-data";
 
 export interface SheetSettings {
   /** optional fixed folder for new characters; empty = last used folder (vault root the first time) */
@@ -31,11 +32,13 @@ export interface SheetSettings {
   customAccent: string;
   /** sections left out of new sheets (Sheet template); empty = all sections */
   hiddenSections: string[];
+  /** vault path of the custom data file ("Custom data"); empty = the default, in a hidden folder */
+  customDataPath: string;
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
   charactersFolder: "", lastFolder: "", dataSource: "none", compendiumFolder: "",
   fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "", removedEntries: [], noteLinks: {},
-  theme: "plugin", customAccent: "#922610", hiddenSections: [],
+  theme: "plugin", customAccent: "#922610", hiddenSections: [], customDataPath: "",
 };
 const THEME_KEYS = ["theme", "customAccent"];
 // Sheet template toggles use "section:<key>" control keys, stored as the list of hidden sections
@@ -63,6 +66,7 @@ const T = {
   general: "Where new characters are created and how the sheets look.",
   rules: "Where races, classes, spells and items come from: typed in by you (manual mode), the SRD 5.1 included with the plugin, or your own 5etools data.",
   importData: "What was imported and from where. Remove entries, and open or change their compendium notes.",
+  customData: "Your own feats, spells, items and backgrounds, for any sheet: create, edit and remove them.",
   compendiumPage: "Optional. Links from the sheets to the notes of a compendium, with page previews.",
   step1: ["Step 1: Get the data", "What you need", "The \"data\" folder of a 5etools copy: JSON files with the races, classes, spells and items of the books. Use only content you are entitled to use; the plugin downloads nothing."],
   step2: ["Step 2: Put it in your vault", "Where to put it", "Copy that folder into this vault. A hidden folder such as .5etools/data keeps its files out of your file list and search. Then press Detect, or fill in the paths below."],
@@ -201,6 +205,7 @@ export class SheetSettingTab extends PluginSettingTab {
         ] },
       ] },
       drawnPage({ name: "Import data", desc: T.importData, visible: imported, view: () => new ImportDataView(this.plugin) }),
+      drawnPage({ name: "Custom data", desc: T.customData, visible: () => true, view: () => new CustomDataView(this.plugin) }),
       { type: "page", name: "Compendium", desc: T.compendiumPage, items: [
         { type: "group", items: [
           { name: T.compendium[0], desc: withLinks(T.compendium[1], L.compendium), control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },

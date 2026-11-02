@@ -55,7 +55,7 @@ export interface OptionRequirement { level?: number; class?: string; pact?: stri
 export interface OptionalFeatureData extends ChoiceOption { types: string[]; prereq: string; requires: OptionRequirement[]; spells: AdditionalSpells[] | null; choices?: FeatureChoice[] }
 /** 5etools `additionalSpells`; `name`: the variant (e.g. Magic Initiate's "Wizard Spells") when there are several to pick from */
 export type AdditionalSpells = { name?: string; ability?: unknown; known?: Record<string, unknown>; prepared?: Record<string, unknown>; innate?: Record<string, unknown>; expanded?: Record<string, unknown> };
-export interface Compendium { meta: { sources: Record<string, string>; srdOnly?: boolean; attribution?: string; generated?: string; importVersion?: number; /** the homebrew file each imported homebrew entry came from, by entry key (src/data/entries.ts) */ origins?: Record<string, string> }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[];
+export interface Compendium { meta: { sources: Record<string, string>; /** the rules it is for (none: "5e-2014") */ ruleset?: string; srdOnly?: boolean; attribution?: string; generated?: string; importVersion?: number; /** the homebrew file each imported homebrew entry came from, by entry key (src/data/entries.ts) */ origins?: Record<string, string> }; races: RaceData[]; classes: ClassData[]; backgrounds: BackgroundData[]; feats: FeatData[]; spells: SpellData[]; items: ItemData[];
   /** none in data imported before choices (importVersion 5) */
   optionalFeatures?: OptionalFeatureData[] }
 

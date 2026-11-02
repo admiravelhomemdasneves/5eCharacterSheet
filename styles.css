@@ -460,6 +460,22 @@
 .dnd-import-data .dnd-import-data-actions .mod-warning { color: var(--text-error); }
 .dnd-import-data .dnd-import-data-removed li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); margin-bottom: var(--size-4-1); }
 
+/* ------------------------------------------- custom data: the form of an entry (modal) */
+.dnd-entry-modal { width: min(46em, 95vw); }
+.dnd-entry-modal .dnd-entry-wide { flex-wrap: wrap; }
+.dnd-entry-modal .dnd-entry-wide .setting-item-info { flex: 1 1 100%; }
+.dnd-entry-modal .dnd-entry-wide .setting-item-control { flex: 1 1 100%; justify-content: flex-start; }
+.dnd-entry-modal .dnd-entry-wide textarea { width: 100%; min-height: 8em; font-family: var(--font-monospace); }
+.dnd-entry-modal .dnd-entry-list { border-bottom: none; }
+.dnd-entry-modal .dnd-entry-rows { display: flex; flex-direction: column; gap: var(--size-4-2); padding-bottom: var(--size-4-3); border-bottom: 1px solid var(--background-modifier-border); }
+.dnd-entry-modal .dnd-entry-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--size-4-3); padding: var(--size-4-2); background: var(--background-secondary); border-radius: var(--radius-s); }
+.dnd-entry-modal .dnd-entry-cell { display: flex; flex-direction: column; gap: var(--size-2-1); }
+.dnd-entry-modal .dnd-entry-cell .dnd-label { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.dnd-entry-modal .dnd-entry-cell input[type="number"] { width: 5em; }
+.dnd-entry-modal .dnd-entry-chips { display: flex; flex-wrap: wrap; gap: var(--size-2-2); }
+.dnd-entry-modal .dnd-entry-chips button { height: auto; padding: var(--size-2-1) var(--size-4-2); font-size: var(--font-ui-smaller); }
+.dnd-entry-modal .dnd-entry-chips button.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
+
 /* ------------------------------------------------- settings tabs (Obsidian before 1.13) */
 .dnd-settings-tabs { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin-bottom: var(--size-4-4); }
 .dnd-settings-tabs .is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
