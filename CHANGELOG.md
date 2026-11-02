@@ -2,6 +2,22 @@
 
 What each version of 5e Character Sheet brings. The release of each version on GitHub uses its section as its notes.
 
+## 1.4.0
+
+### New
+- **Custom data.** A new *Custom data* settings page where you make your own races, subraces, classes, subclasses, backgrounds, feats, spells and items, and add traits and features to the races and classes of your rules data. Press *Create an entry*, choose what to create, and fill in its form; the list has a search, and each entry can be edited, copied or deleted and linked to a note. With the SRD or imported data your entries are in the sheets' menus under *Custom data*; in manual mode, *From custom data…* fills a sheet's fields with them. They are kept in `.5e-character-sheet/custom-data.json` in your vault (you can set another file), and importing again doesn't touch them. (#19, #20–#27)
+- **Feature choices.** Fighting Styles, Eldritch Invocations (with their prerequisites), Pact Boon, Metamagic, maneuvers, Totem Spirit, Expertise, Favored Enemy, Draconic Ancestry and other features with a choice show their options inside the feature, with the text of what you picked. *Character Creation* reminds you while a pick is missing or there are too many, and your picks are kept when you change level. Expertise picks count as expertise in skills. (#16)
+- **What features grant.** *Character Creation* suggests what your features give, to add or dismiss: spells of feats, invocations and subclasses (*Add Mage Armor*), spells to choose (High Elf's cantrip, Magic Initiate after picking its list), natural weapons and breath weapons as attacks, and the uses of race traits such as Relentless Endurance. Added items are tagged with what granted them, and flagged if that goes. (#17)
+
+### Fixes
+- **Racial spells with limited uses are granted**: a tiefling gets *Hellish Rebuke* at 3rd level and *Darkness* at 5th. (#17)
+- **Circle of the Land** gets the spells of the land you pick, not of every land. (#17)
+- **Open features stay open** after a change on the sheet. (#16)
+
+### After updating
+- **If you import your own 5etools data,** press **Import now** in the plugin settings: it brings in the options of class features (Fighting Styles, invocations…) and the spells feats grant. The plugin reminds you until you do. The SRD data included with the plugin has them already.
+- **Obsidian Sync doesn't sync hidden folders,** so custom data in the default `.5e-character-sheet` folder stays on each device. To sync it, set a file in a normal folder on the *Custom data* page.
+
 ## 1.3.1
 
 ### Fixes
