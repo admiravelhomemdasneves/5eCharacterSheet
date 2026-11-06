@@ -2,6 +2,7 @@
 // rules data (the types of src/rules/engine.ts) or fills the free text of manual mode.
 import { ABILITIES, ABILITY_NAMES, SKILLS, type Ability, type AbilityOption, type BackgroundData, type ClassData, type Compendium, type FeatData, type Feature, type FeatureUses, type Spellcasting, type SubclassData, type ItemData, type ProfList, type RaceData, type Speeds, type SpellData, type SubraceData } from "../engine.ts";
 import { CUSTOM_SOURCE, type CustomEntry } from "../../custom/format.ts";
+import { PROFILE_2014 } from "../engine.ts";
 import { bool, commaList, num, rows, str, strs, type Choice, type CustomContext, type FieldDef, type KindDef, type Ruleset } from "../../custom/schema.ts";
 import { lc, title } from "../../text.ts";
 
@@ -521,4 +522,4 @@ const classFeature: KindDef = {
 };
 
 /** The custom entries of the 2014 rules, in the order they are added to the data (an entry's parent first). */
-export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: [race, subrace, raceFeature, klass, subclass, classFeature, background, feat, spell, item] };
+export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: [race, subrace, raceFeature, klass, subclass, classFeature, background, feat, spell, item], profile: PROFILE_2014 };

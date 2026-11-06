@@ -62,6 +62,7 @@ export type RawProf = Record<string, boolean | number | { from: string[]; count?
 export type RawProfItem = string | { proficiency?: string; full?: string };
 export interface RawSkillChoice { choose?: { from: string[]; count: number }; any?: number }
 export interface RawAdditionalSpells {
+  name?: string;
   ability?: unknown;
   known?: Record<string, unknown>;
   prepared?: Record<string, unknown>;
@@ -70,7 +71,10 @@ export interface RawAdditionalSpells {
 }
 
 // ---------------------------------------------------------------- races
+/** A version of a race (a 2024 lineage): what it changes, or `_abstract` with one implementation per `_variables`. */
+export interface RawRaceVersion { name?: string; source?: string; _mod?: Record<string, RawMod | RawMod[]>; _abstract?: Record<string, unknown>; _implementations?: Record<string, unknown>[] }
 export interface RawRace extends RawBase {
+  _versions?: RawRaceVersion[];
   size?: string[];
   speed?: RawSpeed;
   ability?: RawAbility[];
@@ -143,6 +147,7 @@ export interface RawBackground extends RawBase {
   toolProficiencies?: RawProf[];
   languageProficiencies?: RawProf[];
   feats?: unknown;
+  ability?: RawAbility[];
 }
 /** An optional feature: a Fighting Style, Eldritch Invocation, Metamagic option, maneuver… (optionalfeatures.json) */
 export interface RawOptionalFeature extends RawBase {
@@ -154,7 +159,7 @@ export interface RawOptionalFeature extends RawBase {
   /** options it lets the character pick in turn (e.g. Superior Technique: one maneuver) */
   optionalfeatureProgression?: RawOptionalProgression[];
 }
-export interface RawFeat extends RawBase { prerequisite?: Record<string, unknown>[]; ability?: RawAbility[]; additionalSpells?: RawAdditionalSpells[] }
+export interface RawFeat extends RawBase { category?: string; prerequisite?: Record<string, unknown>[]; ability?: RawAbility[]; additionalSpells?: RawAdditionalSpells[] }
 
 // ---------------------------------------------------------------- spells
 export interface RawSpell extends RawBase {

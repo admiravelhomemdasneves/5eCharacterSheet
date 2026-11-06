@@ -40,7 +40,7 @@ export function feats(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
     const add = el.createDiv({ cls: "dnd-row" });
     button(add, "+ Ability Score Improvement", () => sheet.change((x) => { x.feats.push({ id: E.ASI_ID, picks: [] }); }));
     // Variant Human / Custom Lineage style bonus feats don't use up an ASI
-    const bonusFeat = !!r.race(s)?.feats && !s.feats.some((f) => f.free);
+    const bonusFeat = !r.profile.originFeats && !!r.race(s)?.feats && !s.feats.some((f) => f.free);
     button(add, bonusFeat ? "+ Add feat (racial bonus feat)" : "+ Add feat", () => new Picker(sheet.app, r.data.feats, (f) => `${f.name} (${f.source})`, (f) => sheet.change((x) => { x.feats.push({ id: f.id, picks: [], free: bonusFeat || undefined }); }), "Search feats…", (f) => f.prereq ? `Prerequisite: ${f.prereq}` : "").open());
   });
 }

@@ -24,7 +24,7 @@ export function abilities(sheet: CharacterSheet, root: HTMLElement, d: E.Derived
       }
       // one editor for the whole score: each step goes to base or Adjust (see E.stepAbility)
       stepper(edit, b.total, (v) => sheet.change((x) => E.setAbilityScore(x, a, b.total, v)), { title: `${ABILITY_NAMES[a]} score` });
-      const terms: [number, string][] = [[b.race, "race"], [b.asi, "ASI"], [b.feat, "feat"], [b.feature, "class"], [b.adjust, "adj."]];
+      const terms: [number, string][] = [[b.race, "race"], [b.background ?? 0, "background"], [b.asi, "ASI"], [b.feat, "feat"], [b.feature, "class"], [b.adjust, "adj."]];
       const formula = terms.filter(([n]) => n).map(([n, label]) => ` ${n > 0 ? "+" : "−"} ${Math.abs(n)} ${label}`).join("");
       box.createDiv({ cls: "dnd-breakdown", text: `${b.base} base${formula} · max ${b.max}` });
       if (b.over) box.createDiv({ cls: "dnd-warn", text: `Above the maximum of ${b.max}` });
@@ -48,6 +48,18 @@ export function abilities(sheet: CharacterSheet, root: HTMLElement, d: E.Derived
   });
 }
 
+/** The option and picks of a race's or background's ability increases; `held`: where the state keeps them. */
+function abilityChoice(sheet: CharacterSheet, el: HTMLElement, label: string, opts: E.AbilityOption[], chosen: CharState["raceAbility"], held: (x: CharState) => CharState["raceAbility"]) {
+  if (!opts.length) return;
+  const rc = el.createDiv({ cls: "dnd-row dnd-race-ability" });
+  const optIdx = Math.min(chosen.option, opts.length - 1);
+  if (opts.length > 1) select(labeled(rc, label), opts.map((o, i) => ({ value: String(i), label: o.label })), String(optIdx), (v) => sheet.change((x) => { Object.assign(held(x), { option: parseInt(v) || 0, picks: [] }); }));
+  else labeled(rc, label).setText(opts[0].label || "—");
+  for (const { from, amount, index } of E.pickSlots(opts[optIdx].choose)) {
+    select(labeled(rc, `+${amount}`), from.map((a) => ({ value: a, label: ABILITY_NAMES[a], disabled: chosen.picks.includes(a) && chosen.picks[index] !== a })), chosen.picks[index] || "", (v) => sheet.change((x) => { held(x).picks[index] = v as Ability; }), "Choose…");
+  }
+}
+
 // Generation method, point buy and racial bonus choices: only shown in edit mode
 export function abilityEditor(sheet: CharacterSheet, el: HTMLElement, d: E.Derived) {
   const s = sheet.v, r = sheet.r;
@@ -68,18 +80,9 @@ export function abilityEditor(sheet: CharacterSheet, el: HTMLElement, d: E.Deriv
       x.abilities.base = E.rollAbilityScores();
       new Notice(`Rolled: ${ABILITIES.map((a) => `${a.toUpperCase()} ${x.abilities.base[a]}`).join(", ")}`);
     }));
-    // racial ability choice
-    const opts = E.raceAbilityOptions(r, s);
-    if (opts.length) {
-      const rc = el.createDiv({ cls: "dnd-row dnd-race-ability" });
-      const optIdx = Math.min(s.raceAbility.option, opts.length - 1);
-      if (opts.length > 1) select(labeled(rc, "Racial bonus"), opts.map((o, i) => ({ value: String(i), label: o.label })), String(optIdx), (v) => sheet.change((x) => { x.raceAbility = { option: parseInt(v) || 0, picks: [] }; }));
-      else labeled(rc, "Racial bonus").setText(opts[0].label || "—");
-      const opt = opts[optIdx];
-      for (const { from, amount, index } of E.pickSlots(opt.choose)) {
-        select(labeled(rc, `+${amount}`), from.map((a) => ({ value: a, label: ABILITY_NAMES[a], disabled: s.raceAbility.picks.includes(a) && s.raceAbility.picks[index] !== a })), s.raceAbility.picks[index] || "", (v) => sheet.change((x) => { x.raceAbility.picks[index] = v as Ability; }), "Choose…");
-      }
-    }
+    // racial and background ability choices
+    abilityChoice(sheet, el, "Racial bonus", E.raceAbilityOptions(r, s), s.raceAbility, (x) => x.raceAbility);
+    abilityChoice(sheet, el, "Background bonus", E.backgroundAbilityOptions(r, s), s.backgroundAbility, (x) => x.backgroundAbility);
     const { slots, taken } = d.asi;
     if (slots) el.createDiv({ cls: taken > slots ? "dnd-warn" : "dnd-hint", text: `Ability Score Improvements: ${taken}/${slots} used — add them (or feats) in the Feats section.` });
   }
