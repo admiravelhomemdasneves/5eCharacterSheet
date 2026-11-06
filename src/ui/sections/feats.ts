@@ -41,6 +41,6 @@ export function feats(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
     button(add, "+ Ability Score Improvement", () => sheet.change((x) => { x.feats.push({ id: E.ASI_ID, picks: [] }); }));
     // Variant Human / Custom Lineage style bonus feats don't use up an ASI
     const bonusFeat = !r.profile.originFeats && !!r.race(s)?.feats && !s.feats.some((f) => f.free);
-    button(add, bonusFeat ? "+ Add feat (racial bonus feat)" : "+ Add feat", () => new Picker(sheet.app, r.data.feats, (f) => `${f.name} (${f.source})`, (f) => sheet.change((x) => { x.feats.push({ id: f.id, picks: [], free: bonusFeat || undefined }); }), "Search feats…", (f) => f.prereq ? `Prerequisite: ${f.prereq}` : "").open());
+    button(add, bonusFeat ? "+ Add feat (racial bonus feat)" : "+ Add feat", () => new Picker(sheet.app, r.data.feats.filter((f) => !r.profile.originFeats || f.name !== "Ability Score Improvement"), (f) => `${f.name} (${f.source})`, (f) => sheet.change((x) => { x.feats.push({ id: f.id, picks: [], free: bonusFeat || undefined }); }), "Search feats…", (f) => f.prereq ? `Prerequisite: ${f.prereq}` : "").open());
   });
 }

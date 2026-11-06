@@ -6,7 +6,7 @@ import * as E from "../rules/engine";
 import { CharState } from "../rules/engine";
 import { button, iconButton, labeled, RichOpt, richSelect } from "./widgets";
 import { roll } from "./dice";
-import { isD20, withAdvantage } from "../rules/roll";
+import { isD20, withAdvantage, withPenalty } from "../rules/roll";
 import { sheetConflicts } from "../rules/conflicts";
 import { SECTIONS } from "../sections";
 import { richText } from "./richtext";
@@ -205,7 +205,8 @@ export class CharacterSheet extends MarkdownRenderChild {
       e.stopPropagation();
       // Shift = advantage, Ctrl/Cmd = disadvantage (d20 rolls only)
       const mode = !isD20(formula) ? "normal" : e.shiftKey ? "adv" : e.ctrlKey || e.metaKey ? "dis" : "normal";
-      void roll(this.app, withAdvantage(formula, mode), label + (mode === "adv" ? " (advantage)" : mode === "dis" ? " (disadvantage)" : ""));
+      const penalty = isD20(formula) ? E.exhaustionPenalty(this.r, this.s) : 0;
+      void roll(this.app, withAdvantage(withPenalty(formula, penalty), mode), label + (mode === "adv" ? " (advantage)" : mode === "dis" ? " (disadvantage)" : "") + (penalty ? ` (exhaustion −${penalty})` : ""));
     };
     return b;
   }

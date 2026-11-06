@@ -102,6 +102,8 @@ export type RawClassFeatureRef = string | { classFeature: string; gainSubclassFe
  * level, or { "<level>": total } (from that level on; "*": at every level).
  */
 export interface RawOptionalProgression { name: string; featureType: string[]; progression: number[] | Record<string, number> }
+/** A weapon mastery's rule (items-base.json) */
+export type RawItemMastery = RawBase;
 export interface RawClass extends RawBase {
   hd?: { faces: number };
   proficiency?: Ability[];
@@ -109,9 +111,17 @@ export interface RawClass extends RawBase {
   casterProgression?: string;
   spellcastingAbility?: Ability;
   preparedSpells?: string;
+  /** 2024: prepared spells by level, instead of a formula */
+  preparedSpellsProgression?: number[];
   cantripProgression?: number[];
   spellsKnownProgression?: number[];
   spellsKnownProgressionFixed?: number[];
+  /** 2024: feats the class gives at some levels */
+  featProgression?: { name: string; category?: string[]; progression?: Record<string, number> }[];
+  /** 2024: how many weapons the class has mastery of, from each level */
+  itemMasteriesProgression?: Record<string, number>;
+  /** 2024: the scores of 13 multiclassing asks: any of these objects, all of the abilities in it */
+  primaryAbility?: Record<string, boolean>[];
   classTableGroups?: RawTableGroup[];
   classFeatures?: RawClassFeatureRef[];
   subclassTitle?: string;
@@ -133,6 +143,7 @@ export interface RawSubclass extends RawBase {
   spellcastingAbility?: Ability;
   cantripProgression?: number[];
   spellsKnownProgression?: number[];
+  preparedSpellsProgression?: number[];
   additionalSpells?: RawAdditionalSpells[];
   /** homebrew: spells added to the class's list for this subclass only, written like classSpells */
   subclassSpells?: (string | { name?: string; source?: string })[];
@@ -179,6 +190,8 @@ export type SpellSourcesFile = Record<string, Record<string, { class?: { name: s
 // ---------------------------------------------------------------- items
 export interface RawItem extends RawBase {
   type?: string;
+  /** 2024: as "name|source" */
+  mastery?: string[];
   weapon?: boolean;
   weaponCategory?: string;
   ac?: number;
@@ -206,6 +219,7 @@ export interface AdventuresFile { adventure: { id: string; name: string }[] }
 // ---------------------------------------------------------------- loaded data
 /** The collections the importer reads, each gathered from all the files it is spread over. */
 export interface RawData {
+  itemMastery: RawItemMastery[];
   race: RawRace[];
   subrace: RawSubrace[];
   class: RawClass[];
