@@ -37,7 +37,7 @@ export interface ProfList { fixed: string[]; choose: { from: string[] | "any"; c
 /** `uses`: how often it can be used before a rest (custom features): a number, the proficiency bonus, or an ability's modifier (at least 1) */
 export interface FeatureUses { max: number | "pb" | Ability; rest: "short" | "long" }
 export interface Feature { name: string; level: number; source: string; text: string; link: string | null; optional?: boolean; subclassFeature?: boolean; uses?: FeatureUses }
-export interface Spellcasting { ability: Ability; progression: string; prepared?: string | null; cantrips?: number[] | null; known?: number[] | null; knownFixed?: number[] | null; list: string | null }
+export interface Spellcasting { ability: Ability; progression: string; prepared?: string | null; /** 2024: prepared spells by level, instead of `prepared`'s formula */ preparedTable?: number[]; cantrips?: number[] | null; known?: number[] | null; knownFixed?: number[] | null; list: string | null }
 /** speeds in feet; "walk" means "equal to your walking speed" */
 export type Speeds = Record<string, number | string>;
 export interface SubraceData { id: string; name: string; source: string; link: string | null; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Speeds | null; darkvision: number | null; skills: ProfList; languages: string[]; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; hpPerLevel: number;
@@ -61,7 +61,7 @@ export interface FeatData { id: string; name: string; source: string; link: stri
   /** none in data imported before granted spells (importVersion 6) */
   spells?: AdditionalSpells[] | null }
 export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; text: string }
-export interface ItemData { id: string; name: string; source: string; link: string | null; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number; baseItem: string | null }
+export interface ItemData { id: string; name: string; source: string; link: string | null; kind: "armor" | "weapon" | "gear"; armorType: string | null; ac: number | null; strength: number | null; stealth: boolean; weaponCategory: string | null; ranged: boolean; dmg1: string | null; dmg2: string | null; dmgType: string | null; properties: string[]; range: string | null; weight: number | null; value: number | null; magic: boolean; rarity: string | null; attunement: boolean; bonusAc: number; bonusWeapon: number; baseItem: string | null; /** 2024: the weapon's masteries */ mastery?: string[] }
 /** An option of a feature choice; `id` is what a pick saves. */
 export interface ChoiceOption { id: string; name: string; source: string; text: string; link: string | null }
 /**
@@ -391,11 +391,13 @@ export interface AbilityBreakdown { base: number; race: number; /** from the bac
 export const ABILITY_MAX = 20;
 // e.g. Primal Champion: "Your Strength and Constitution scores increase by 4. Your maximum for those scores is now 24."
 const SCORE_BOOST = /your ([a-z ,]+?) scores? increases? by (\d+)\.\s*your maximum for (?:those|that|these) scores? is now (\d+)/i;
+// and in the 2024 rules: "Your Strength and Constitution scores increase by 4, to a maximum of 25."
+const SCORE_BOOST_2024 = /your ([a-z ,]+?) scores? increases? by (\d+), to a maximum of (\d+)/i;
 /** Ability increases and higher maximums granted by the character's class and subclass features. */
 export function featureAbilityBoosts(r: Rules, s: CharState, features = classFeatures(r, s)) {
   const bonus = zeroAbilities(), max = zeroAbilities();
   for (const c of features) for (const f of c.features) {
-    const m = SCORE_BOOST.exec(f.text || "");
+    const m = SCORE_BOOST.exec(f.text || "") ?? SCORE_BOOST_2024.exec(f.text || "");
     if (!m) continue;
     for (const a of ABILITIES) if (m[1].toLowerCase().includes(ABILITY_NAMES[a].toLowerCase())) {
       bonus[a] += parseInt(m[2]);
@@ -483,7 +485,9 @@ export function pointBuySpent(base: Record<Ability, number>) {
 // Ability Score Improvements available from class levels (each = 2 points)
 export function asiSlots(r: Rules, s: CharState) {
   let n = 0;
-  for (const e of s.classes) n += (r.cls(e.id)?.features || []).filter((f) => f.name === "Ability Score Improvement" && f.level <= e.level).length;
+  // the 2024 Epic Boon is a feat taken the same way
+  const names = r.profile.originFeats ? ["Ability Score Improvement", "Epic Boon"] : ["Ability Score Improvement"];
+  for (const e of s.classes) n += (r.cls(e.id)?.features || []).filter((f) => names.includes(f.name) && f.level <= e.level).length;
   return n;
 }
 
@@ -509,22 +513,28 @@ const jackOfAllTrades = (groups: FeatureGroups) => featuresNamed(groups, "Jack o
  * says "not wielding a shield" doesn't count with a shield.
  */
 const UNARMORED_AC = /(?:AC|Armor Class) equals (\d+) \+ your Dexterity modifier(?: \+ your (\w+) modifier)?/i;
+// and in the 2024 rules: "your base Armor Class equals 10 plus your Dexterity and Constitution modifiers"
+const UNARMORED_AC_2024 = /(?:AC|Armor Class) equals (\d+) plus your Dexterity(?: and (\w+))? modifiers?/i;
 function unarmoredDefenses(groups: FeatureGroups) {
   return ["Unarmored Defense", "Draconic Resilience"].flatMap((name) => featuresNamed(groups, name)).flatMap(({ f }) => {
-    const m = UNARMORED_AC.exec(f.text || "");
+    const text = untoken(f.text || ""), m = UNARMORED_AC.exec(f.text || "") ?? UNARMORED_AC_2024.exec(text);
     if (!m) return [];
-    return [{ name: f.name, base: parseInt(m[1]), plus: m[2] ? ABILITY_BY_NAME[m[2].toLowerCase()] ?? null : null, noShield: /not wielding a shield/i.test(f.text) }];
+    return [{ name: f.name, base: parseInt(m[1]), plus: m[2] ? ABILITY_BY_NAME[m[2].toLowerCase()] ?? null : null, noShield: /not wielding a shield|wearing armor or wielding a shield/i.test(text) }];
   });
 }
 /** Hit points from features that add 1 per level of their class (Draconic Resilience) */
 const HP_PER_CLASS_LEVEL = /hit point maximum increases by 1 and increases by 1 again whenever you gain a level in this class/i;
-const featureHpPerLevel = (groups: FeatureGroups) => groups.filter((g) => g.features.some((f) => HP_PER_CLASS_LEVEL.test(f.text || ""))).reduce((a, g) => a + g.level, 0);
+// and in the 2024 rules, from level 3: "increases by 3, and it increases by 1 whenever you gain another Sorcerer level"
+const HP_PER_CLASS_LEVEL_2024 = /hit point maximum increases by \d+, and it increases by 1 whenever you gain another \w+ level/i;
+const featureHpPerLevel = (groups: FeatureGroups) => groups.filter((g) => g.features.some((f) => HP_PER_CLASS_LEVEL.test(f.text || "") || HP_PER_CLASS_LEVEL_2024.test(untoken(f.text || "")))).reduce((a, g) => a + g.level, 0);
 /** Walking speed from Fast Movement ("your speed increases by 10 feet") */
 const fastMovement = (groups: FeatureGroups) => featuresNamed(groups, "Fast Movement").reduce((a, { f }) => a + (parseInt(/speed increases by (\d+) feet/i.exec(f.text || "")?.[1] ?? "") || 10), 0);
 /** Feats with a rule: Tough (+2 hit points per level) and Alert (a bonus to initiative, +5) */
 const hasFeat = (r: Rules, s: CharState, name: string) => s.feats.some((f) => r.feat(f.id)?.name === name);
 const alertBonus = (r: Rules, s: CharState) => {
   const f = s.feats.map((x) => r.feat(x.id)).find((x) => x?.name === "Alert");
+  // the 2024 Alert adds the proficiency bonus
+  if (f && r.profile.originFeats) return proficiencyBonus(totalLevel(s));
   return f ? parseInt(/\+(\d+) bonus to initiative/i.exec(f.text || "")?.[1] ?? "") || 5 : 0;
 };
 
@@ -625,13 +635,13 @@ export function flatKeys(r: Rules, s0: CharState, manual: boolean, trusted: bool
 }
 /**
  * A long rest: hit points to `maxHp` and no temporary ones, spell slots and class resources back,
- * half the character's hit dice back (at least one; `hitDiceTotal` of them), death saves cleared and
- * one level of exhaustion gone.
+ * half the character's hit dice back (at least one; `hitDiceTotal` of them), or all by the `profile`,
+ * death saves cleared and one level of exhaustion gone.
  */
-export function longRest(s: CharState, maxHp: number, hitDiceTotal: number) {
+export function longRest(s: CharState, maxHp: number, hitDiceTotal: number, profile = PROFILE_2014) {
   s.hp.current = maxHp; s.hp.temp = 0;
   s.slots.used = Array<number>(9).fill(0); s.slots.pactUsed = 0;
-  s.hitDiceUsed = Math.max(0, s.hitDiceUsed - Math.max(1, Math.floor(hitDiceTotal / 2)));
+  s.hitDiceUsed = profile.longRestHitDice === "all" ? 0 : Math.max(0, s.hitDiceUsed - Math.max(1, Math.floor(hitDiceTotal / 2)));
   s.resources = {};
   s.deathSaves = { success: 0, fail: 0 };
   if (s.exhaustion > 0) s.exhaustion -= 1;
@@ -708,8 +718,11 @@ export function speeds(r: Rules, s: CharState, features = classFeatures(r, s)) {
     if (v) out.walk += v;
   }
   out.walk += fastMovement(features);
+  if (r.profile.exhaustion === "penalties") for (const k of Object.keys(out)) out[k] = Math.max(0, out[k] - 5 * s.exhaustion);
   return out;
 }
+/** What exhaustion takes from d20 tests (2024); applied when they are rolled, as the bonuses on the sheet stay what they are. */
+export const exhaustionPenalty = (r: Rules, s: CharState) => (r.profile.exhaustion === "penalties" ? 2 * s.exhaustion : 0);
 export const initiative = (r: Rules, s: CharState, scores = abilityScores(r, s)) => mod(scores.dex.total) + (s.initiativeAdjust || 0) + alertBonus(r, s);
 export const darkvision = (r: Rules, s: CharState) => r.subrace(s)?.darkvision ?? r.race(s)?.darkvision ?? null;
 /** A character can be attuned to at most this many magic items at once. */
@@ -997,7 +1010,7 @@ export function casters(r: Rules, s: CharState, scores = abilityScores(r, s)): C
     if (sc.progression === "1/2" && e.level < 2) continue;
     if (sc.progression === "1/3" && e.level < 3) continue;
     const m = mod(scores[sc.ability].total);
-    let prepared: number | null = null;
+    let prepared: number | null = sc.preparedTable?.[e.level - 1] ?? null;
     if (sc.prepared) {
       const expr = sc.prepared.replace(/<\$level\$>/g, String(e.level)).replace(/<\$(\w+)_mod\$>/g, (_m: string, a: string) => String(mod(scores[a as Ability]?.total ?? 10)));
       const v = evalFormula(expr);
@@ -1005,7 +1018,7 @@ export function casters(r: Rules, s: CharState, scores = abilityScores(r, s)): C
     }
     const cantrips = sc.cantrips?.[e.level - 1] ?? null;
     const known = sc.known?.[e.level - 1] ?? sc.knownFixed?.slice(0, e.level).reduce((a, b) => a + b, 0) ?? null;
-    out.push({ key: e.id, name: sub?.spellcasting ? `${c.name} (${sub.shortName})` : c.name, ability: sc.ability, dc: 8 + pb + m, attack: pb + m, prepared, cantrips, known: sc.prepared && sc.knownFixed ? known : (sc.prepared ? null : known), list: sc.list, classId: e.id, spells: sub?.spells || [] });
+    out.push({ key: e.id, name: sub?.spellcasting ? `${c.name} (${sub.shortName})` : c.name, ability: sc.ability, dc: 8 + pb + m, attack: pb + m, prepared, cantrips, known: (sc.prepared || sc.preparedTable) && sc.knownFixed ? known : (sc.prepared || sc.preparedTable ? null : known), list: sc.list, classId: e.id, spells: sub?.spells || [] });
   }
   return out;
 }
@@ -1150,6 +1163,7 @@ export interface Grant {
 // e.g. "your claws are natural weapons … you deal slashing damage equal to 1d4 + your Strength modifier"
 const NATURAL_WEAPON = /natural weapons?\b[\s\S]*?deal (\w+) damage equal to (\d+d\d+) (?:\+|plus) your (Strength|Dexterity|Constitution) modifier/i;
 const BREATH_DC = /DC(?: for this saving throw equals| =) 8 \+ your (\w+) modifier \+ your proficiency bonus/i;
+const BREATH_DC_2024 = /DC 8 plus your (\w+) modifier and proficiency bonus/i;
 const ONCE_PER_REST = /can't (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete) a (short or long|long) rest/i;
 const PB_PER_REST = /a number of times equal to your proficiency bonus[^.]*?when you finish a (short or long|long) rest/i;
 /**
@@ -1159,12 +1173,14 @@ const PB_PER_REST = /a number of times equal to your proficiency bonus[^.]*?when
  * Breath Weapon: 5 by 30 ft. line (Dex. save)"), or from the trait's own text.
  */
 function breathWeapon(name: string, text: string, level: number, scores: Record<Ability, AbilityBreakdown>, pb: number, picked: string): Attack | null {
-  const dc = BREATH_DC.exec(text), base = /takes (\d+d\d+)\b/i.exec(text);
+  const dc = BREATH_DC.exec(text) ?? BREATH_DC_2024.exec(text), base = /takes (\d+d\d+)\b/i.exec(text);
   const ability = dc && ABILITY_BY_NAME[dc[1].toLowerCase()];
   if (!ability || !base) return null;
   let dice = base[1];
   for (const m of text.matchAll(/(\d+d\d+) at (\d+)(?:st|nd|rd|th) level/gi)) if (level >= parseInt(m[2])) dice = m[1];
   for (const m of text.matchAll(/(\d+)(?:st|nd|rd|th) level \((\d+d\d+)\)/gi)) if (level >= parseInt(m[1])) dice = m[2];
+  // "when you reach character levels 5 (2d10), 11 (3d10), and 17 (4d10)"
+  for (const m of text.matchAll(/\b(\d+) \((\d+d\d+)\)/g)) if (level >= parseInt(m[1])) dice = m[2];
   const type = /Damage Type: (\w+)/i.exec(picked)?.[1];
   const save = /\((\w+)\.? save\)/i.exec(picked)?.[1] ?? /make an? (\w+) saving throw/i.exec(text)?.[1];
   const area = /Breath Weapon: ([^(·]+)/i.exec(picked)?.[1].trim();
@@ -1292,7 +1308,12 @@ export interface Attack { name: string; toHit: number | null; save?: string; dam
 export function attacks(r: Rules, s: CharState, scores = abilityScores(r, s), grants: Grant[] = featureGrants(r, s, undefined, scores)) {
   const pb = proficiencyBonus(totalLevel(s));
   const str = mod(scores.str.total), dex = mod(scores.dex.total);
-  const profText = s.classes.flatMap((e) => [...(r.cls(e.id)?.weapons || [])]).join(" ").toLowerCase() + " " + s.proficiencies.weapons.toLowerCase();
+  // "Martial weapons that have the Finesse or Light property" (2024) is about those weapons, not all martial ones
+  const weapons = s.classes.flatMap((e) => [...(r.cls(e.id)?.weapons || [])]).map(lc), limited = weapons.filter((w) => w.includes("that have"));
+  const profText = weapons.filter((w) => !limited.includes(w)).join(" ") + " " + s.proficiencies.weapons.toLowerCase();
+  // the weapons picked in Weapon Mastery, as their ids start: "longsword|xphb"
+  const mastered = new Set(s.classes.flatMap((e) => s.choices[featureKey(e.id, "Weapon Mastery")] ?? []).map((id) => id.split("|")[0]));
+  const slug = (name: string) => lc(name).replace(/[^a-z0-9]+/g, "-");
   const out: Attack[] = [];
   for (const inv of s.inventory.filter((i) => i.equipped)) {
     const it = r.item(inv.id);
@@ -1300,13 +1321,15 @@ export function attacks(r: Rules, s: CharState, scores = abilityScores(r, s), gr
     const finesse = it.properties.includes("finesse");
     const m = it.ranged ? dex : finesse ? Math.max(str, dex) : str;
     const base = it.name.replace(/^\+\d\s+/, "").toLowerCase();
-    const prof = profText.includes(it.weaponCategory || "@@") || profText.includes(base) || profText.includes(base + "s");
+    const prof = profText.includes(it.weaponCategory || "@@") || profText.includes(base) || profText.includes(base + "s")
+      || limited.some((w) => w.includes(it.weaponCategory || "@@") && it.properties.some((p) => w.includes(p)));
+    const mastery = it.mastery?.length && mastered.has(slug(it.baseItem ?? it.name)) ? `mastery: ${it.mastery.join(", ")}` : "";
     const bonus = it.bonusWeapon || 0;
     const dmg = (d: string) => `${d}${m + bonus ? fmtMod(m + bonus) : ""}`;
     out.push({
       name: inv.name || it.name, toHit: m + (prof ? pb : 0) + bonus,
       damage: dmg(it.dmg1) + (it.dmg2 ? ` (${dmg(it.dmg2)} two-handed)` : "") + (it.dmgType ? ` ${it.dmgType}` : ""),
-      notes: [...it.properties, it.range ? `range ${it.range}` : ""].filter(Boolean).join(", ") + (prof ? "" : " (not proficient)"),
+      notes: [...it.properties, it.range ? `range ${it.range}` : "", mastery].filter(Boolean).join(", ") + (prof ? "" : " (not proficient)"),
       link: it.link,
     });
   }

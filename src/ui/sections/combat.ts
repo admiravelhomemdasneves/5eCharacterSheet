@@ -42,6 +42,7 @@ export function combat(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
     else stepper(labeled(hpGrid, "Max HP"), hp.max, (v) => sheet.change((x) => { x.hp.adjust += v - hp.max; }), { min: 1, title: "Adjusts the computed maximum" });
     stepper(labeled(hpGrid, "Temp HP"), s.hp.temp, (v) => sheet.change((x) => { x.hp.temp = v; }), { min: 0 });
     stepper(labeled(hpGrid, "Exhaustion"), s.exhaustion, (v) => sheet.change((x) => { x.exhaustion = v; }), { min: 0, max: 6 });
+    if (E.exhaustionPenalty(sheet.r, s)) hpEl.createDiv({ cls: "dnd-warn", text: s.exhaustion >= 6 ? "Exhaustion 6: the character dies." : `Exhaustion: −${E.exhaustionPenalty(sheet.r, s)} to d20 tests (taken off when rolling), −${5 * s.exhaustion} ft of speed.` });
     checkbox(labeled(hpGrid, "Inspiration"), s.inspiration, (v) => sheet.change((x) => { x.inspiration = v; }));
     const dsRow = labeled(hpGrid, "Death Saves").createDiv({ cls: "dnd-death" });
     // ︎ asks for the text glyph, not the emoji, so the icons take the accent colour
@@ -59,7 +60,7 @@ export function combat(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
     const editing = man && !!sheet.view.editing["hit-dice"];
     if (man) iconButton(hdEl, editing ? "check" : "pencil", editing ? "Done editing" : "Edit hit dice", () => sheet.changeView((v) => { v.editing["hit-dice"] = !editing; }), `dnd-hd-edit${editing ? " is-active" : ""}`);
     // back to a maximum the rules can't work out now would lose hit points
-    if (sheet.trusted) button(labeled(hpGrid, "Rest"), "Long Rest", () => sheet.change((x) => E.longRest(x, hp.max, hdTotal)), "dnd-rest-btn");
+    if (sheet.trusted) button(labeled(hpGrid, "Rest"), "Long Rest", () => sheet.change((x) => E.longRest(x, hp.max, hdTotal, sheet.r.profile)), "dnd-rest-btn");
     if (editing) hitDiceEditor(sheet, hpEl, d.level);
     // roll a hit die (one button per die type when multiclassed)
     const hdRoll = hpEl.createDiv({ cls: "dnd-row dnd-hd-roll" });

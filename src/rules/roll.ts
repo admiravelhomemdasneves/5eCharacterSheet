@@ -9,6 +9,8 @@ export function withAdvantage(formula: string, mode: RollMode) {
   return formula.trim().replace(/^1d20/i, mode === "adv" ? "2d20kh1" : "2d20kl1");
 }
 export const isD20 = (formula: string) => /^1d20(?![\d])/i.test(formula.trim());
+/** A d20 roll with `penalty` taken from it; others as they are. */
+export const withPenalty = (formula: string, penalty: number) => (penalty && isD20(formula) ? `${formula.trim()}-${penalty}` : formula);
 
 export function builtInRoll(formula: string, rand: () => number = Math.random) {
   const parts = formula.replace(/\s+/g, "").match(/[+-]?[^+-]+/g) || [];

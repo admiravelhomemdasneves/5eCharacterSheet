@@ -6,7 +6,7 @@
 // and entity links are attached at runtime by Linker (src/data/links.ts), depending on whether
 // and where the user keeps a compendium of notes.
 import type {
-  AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell, RawRace,
+  AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell, RawClass, RawItemMastery, RawRace,
   HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawEntryObject, RawMod, RawFeat, RawItem, RawOptionalFeature, RawOptionalProgression, RawProf, RawProfItem,
   RawSkillChoice, RawSpeed, RawSpell, RawSubclass, RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
@@ -199,6 +199,11 @@ function abilityOf(ab: RawAbility[] | undefined, lineage?: string | boolean): Ab
     opt.label = [...Object.entries(opt.fixed).map(([k, v]) => `${k.toUpperCase()} ${v > 0 ? "+" : ""}${v}`), ...opt.choose.map((c) => `+${c.amount} to ${c.count} of ${c.from.length === 6 ? "any" : c.from.map((x) => x.toUpperCase()).join("/")}`)].join(", ");
     return opt;
   });
+}
+/** Multiclassing asks for 13 in a class's primary abilities (2024): [{ str: true }, { dex: true }] is either, [{ dex: true, wis: true }] both. */
+function primaryRequirements(primary: Record<string, boolean>[] | undefined): Record<string, unknown> {
+  const alternatives = (primary || []).map((o) => Object.fromEntries(Object.keys(o).filter((k) => o[k]).map((k) => [k, 13])));
+  return alternatives.length > 1 ? { or: alternatives } : alternatives[0] ?? {};
 }
 /** The feats a 2024 background gives: "magic initiate; cleric|xphb" is Magic Initiate, with the Cleric spell list. */
 function originFeatsOf(feats: unknown): OriginFeat[] {
@@ -473,7 +478,7 @@ export async function loadData(readJson: ReadJson | undefined, homebrew: Homebre
     background: (await read<{ background: RawBackground[] }>("backgrounds.json")).background,
     feat: (await read<{ feat: RawFeat[] }>("feats.json")).feat,
     spell: [],
-    baseitem: (await read<{ baseitem: RawItem[] }>("items-base.json")).baseitem,
+    ...await read<{ baseitem: RawItem[]; itemMastery?: RawItemMastery[] }>("items-base.json").then((j) => ({ baseitem: j.baseitem, itemMastery: j.itemMastery ?? [] })),
     item: (await read<{ item: RawItem[] }>("items.json")).item,
     // a copy of 5etools without it still imports, with no options for class features to choose from
     optionalfeature: await read<{ optionalfeature?: RawOptionalFeature[] }>("optionalfeatures.json").then((j) => j?.optionalfeature || [], () => {
@@ -691,6 +696,22 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     }
     return list;
   };
+  // 2024: feats a class offers as a choice (Fighting Style). An Epic Boon is taken in the Feats section instead, as it has ability increases.
+  const featChoices = (c: RawClass): FeatureChoice[] => (c.featProgression || []).filter((p) => !p.category?.includes("EB")).flatMap((p) => {
+    const options = raw.feat.filter((f) => p.category?.includes(f.category ?? "") && !filteredBy("feats", f, f.name, false))
+      .map((f): ChoiceOption => ({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, text: renderEntries(f.entries), link: null }));
+    return options.length ? [{ name: p.name, feature: null, counts: choiceCounts(p.progression), options }] : [];
+  });
+  // 2024: the weapons the character masters, each option with the mastery's rule
+  const masteryRule = new Map(raw.itemMastery.map((m) => [lc(m.name), m]));
+  const masteryChoice = (c: RawClass): FeatureChoice[] => {
+    if (!c.itemMasteriesProgression) return [];
+    const options = raw.baseitem.filter((w) => w.mastery?.length && !filteredBy("items", w, w.name, false)).map((w): ChoiceOption => {
+      const mastery = (w.mastery ?? [])[0].split("|")[0];
+      return { id: idOf(w.name, w.source), name: `${nameOf(w)} (${mastery})`, source: w.source, text: renderEntries(masteryRule.get(lc(mastery))?.entries), link: null };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    return options.length ? [{ name: "Weapon Mastery", feature: null, counts: choiceCounts(c.itemMasteriesProgression), options }] : [];
+  };
   // spells on the lists of imported homebrew classes: "name|source" -> class names
   const classSpells = new Map<string, string[]>();
   // the subclassSpells of each subclass, as keys; they become spell ids once the spells are converted
@@ -716,6 +737,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       (g.colLabels || []).forEach((lab, i) => {
         const label = plain(renderStr(lab));
         if (/cantrips known|spells known|spell slots|slot level|prepared/i.test(label)) return;
+        // 2024 tables name these shorter, and they are counts of what is chosen, not uses
+        if (only2024 && /^(cantrips|invocations|weapon mastery)$/i.test(label)) return;
         tableCols.push({ label, rows: (g.rows || []).map((row) => tableValue(row[i])) });
       });
     }
@@ -749,7 +772,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       const sub: SubclassData = {
         id: idOf(c.name, sc.shortName, sc.source), name: nameOf(sc), shortName: sc.shortName, source: sc.source, link: null,
         features: sfeats.sort((a, b) => a.level - b.level),
-        spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard" } : null,
+        spellcasting: sc.casterProgression && sc.spellcastingAbility ? { ability: sc.spellcastingAbility, progression: sc.casterProgression, cantrips: sc.cantripProgression || null, known: sc.spellsKnownProgression || null, list: "Wizard", ...only2024 && sc.preparedSpellsProgression ? { preparedTable: sc.preparedSpellsProgression } : {} } : null,
         additionalSpells: sc.additionalSpells || null,
       };
       const choices = placeChoices(choicesOf(sc.optionalfeatureProgression), sub.features, c.name);
@@ -770,21 +793,21 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       })[0] || null
       : null;
     const mc = c.multiclassing;
-    const choices = placeChoices(choicesOf(c.optionalfeatureProgression), features, c.name);
+    const choices = placeChoices([...choicesOf(c.optionalfeatureProgression), ...only2024 ? [...featChoices(c), ...masteryChoice(c)] : []], features, c.name);
     classes.push({
       ...choices.length ? { choices } : {},
       id: idOf(c.name, c.source), name: nameOf(c), source: c.source, link: null,
       hd: c.hd?.faces || 8, saves: c.proficiency || [],
       armor: (sp.armor || []).map(profText), weapons: (sp.weapons || []).map(profText), tools: (sp.tools || []).map(profText),
       skills: skillChoices(sp.skills),
-      spellcasting: c.casterProgression && c.spellcastingAbility ? { ability: c.spellcastingAbility, progression: c.casterProgression, prepared: c.preparedSpells || null, cantrips: c.cantripProgression || null, known: c.spellsKnownProgression || null, knownFixed: c.spellsKnownProgressionFixed || null, list: c.name } : null,
+      spellcasting: c.casterProgression && c.spellcastingAbility ? { ability: c.spellcastingAbility, progression: c.casterProgression, prepared: c.preparedSpells || null, cantrips: c.cantripProgression || null, known: c.spellsKnownProgression || null, knownFixed: c.spellsKnownProgressionFixed || null, list: c.name, ...only2024 && c.preparedSpellsProgression ? { preparedTable: c.preparedSpellsProgression } : {} } : null,
       pactSlots: pact,
       tableCols,
       subclassTitle: c.subclassTitle || "Subclass",
       subclassLevel: features.find((f) => f.subclassFeature)?.level || 3,
       features,
       multiclass: mc ? {
-        requirements: mc.requirements || {},
+        requirements: mc.requirements || (only2024 ? primaryRequirements(c.primaryAbility) : {}),
         armor: (mc.proficienciesGained?.armor || []).map(profText),
         weapons: (mc.proficienciesGained?.weapons || []).map(profText),
         skills: (mc.proficienciesGained?.skills || []).flatMap((s) => (s.choose ? [{ from: s.choose.from, count: s.choose.count }] : [])),
@@ -889,13 +912,14 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       magic, rarity: it.rarity && it.rarity !== "none" ? it.rarity : null, attunement: !!it.reqAttune,
       bonusAc: it.bonusAc ? parseInt(it.bonusAc) : 0, bonusWeapon: it.bonusWeapon ? parseInt(it.bonusWeapon) : 0,
       baseItem: it.baseItem ? it.baseItem.split("|")[0] : null,
+      ...only2024 && it.mastery?.length ? { mastery: it.mastery.map((m) => m.split("|")[0]) } : {},
     });
     made.add(it);
   };
   raw.baseitem.forEach((i) => guard("items", i, () => pushItem(i, false)));
   raw.item.forEach((i) => guard("items", i, () => pushItem(i, true)));
   // magic armour and weapons inherit the stats of their base item
-  const inherited = ["kind", "armorType", "ac", "strength", "stealth", "weaponCategory", "ranged", "dmg1", "dmg2", "dmgType", "properties", "range"] as const;
+  const inherited = ["kind", "armorType", "ac", "strength", "stealth", "weaponCategory", "ranged", "dmg1", "dmg2", "dmgType", "properties", "range", "mastery"] as const;
   const baseItems = indexBy(items.filter((b) => !b.magic), (b) => lc(b.name));
   for (const it of items) {
     if (!it.baseItem) continue;
