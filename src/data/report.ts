@@ -33,8 +33,6 @@ export interface ImportReport {
   total: Counts;
   /** what the import said that is not about one file */
   messages: string[];
-  /** homebrew entries left out for being for rules that were not imported */
-  otherRules: BrewEntry[];
 }
 
 const zero = (): Counts => Object.fromEntries(ENTRY_KINDS.map((k) => [k, 0])) as Counts;
@@ -57,14 +55,6 @@ function unusedCollections(json: unknown) {
     .map(([collection, v]) => ({ collection, count: (v as unknown[]).length }));
 }
 
-/** The data of several imports as one, to count it. */
-export function joinedData(list: Compendium[]): Compendium {
-  const [first, ...rest] = list;
-  return rest.reduce((a, b) => ({
-    ...a, races: [...a.races, ...b.races], classes: [...a.classes, ...b.classes], backgrounds: [...a.backgrounds, ...b.backgrounds],
-    feats: [...a.feats, ...b.feats], spells: [...a.spells, ...b.spells], items: [...a.items, ...b.items],
-  }), first);
-}
 /** What became of homebrew entries over the imports of several editions: imported by one of them is imported. */
 export function mergedEntries(lists: BrewEntry[][]): BrewEntry[] {
   const seen = new Map<string, BrewEntry>();
@@ -74,6 +64,8 @@ export function mergedEntries(lists: BrewEntry[][]): BrewEntry[] {
   }
   return [...seen.values()];
 }
+/** The homebrew entries for rules that weren't imported: left out of every edition imported, for being of another. */
+export const forOtherRules = (lists: BrewEntry[][]) => mergedEntries(lists).filter((e) => e.reason === REASON_2024 || e.reason === REASON_2014);
 export function importReport(o: { data: Compendium; dataFolder: string | null; files: ReportFile[]; entries: BrewEntry[]; messages: string[] }): ImportReport {
   const total = countData(o.data);
   const order = (e: BrewEntry) => ENTRY_KINDS.indexOf(e.kind);
@@ -92,6 +84,5 @@ export function importReport(o: { data: Compendium; dataFolder: string | null; f
   const official = zero();
   for (const k of ENTRY_KINDS) official[k] = Math.max(0, total[k] - files.reduce((a, f) => a + f.imported[k], 0));
   const own = new Set(o.files.map((f) => `${f.file}: `));
-  const otherRules = o.entries.filter((e) => e.reason === REASON_2024 || e.reason === REASON_2014);
-  return { dataFolder: o.dataFolder, official, files, total, messages: o.messages.filter((m) => ![...own].some((p) => m.startsWith(p))), otherRules };
+  return { dataFolder: o.dataFolder, official, files, total, messages: o.messages.filter((m) => ![...own].some((p) => m.startsWith(p))) };
 }

@@ -3,14 +3,14 @@ import * as E from "./rules/engine";
 import { CharState, Compendium, Rules, SheetView, newCharacter } from "./rules/engine";
 import { EMPTY_DATA, RulesContext, emptyContext } from "./rules/context";
 import { CharacterSheet } from "./ui/sheet";
-import { Linker, NoteInfo, sourceOfTag } from "./data/links";
-import { BrewEntry, HomebrewFile, IMPORT_CHANGES, buildCompendium, importOptions, importOutdated, summarize } from "./data/build";
+import { Linker, NoteInfo, sourceOfTag, sourceTag } from "./data/links";
+import { BrewEntry, HomebrewFile, IMPORT_CHANGES, SOURCES_2024, buildCompendium, importOptions, importOutdated, summarize } from "./data/build";
 import { SKIP_FOLDERS, detect } from "./data/detect";
-import { ReportFile, importReport, joinedData, mergedEntries } from "./data/report";
+import { ReportFile, forOtherRules, importReport, type ImportReport } from "./data/report";
 import { RemovedEntry, entryKey, removedFrom, removedKeys, withoutEntries } from "./data/entries";
 import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
-import { compendiumFor, editionsApart, importedRulesets, isMixedData } from "./data/editions";
+import { RULESET_2024_ID, compendiumFor, editionsApart, fivetoolsFor, importedRulesets, isMixedData } from "./data/editions";
 import { dataConflicts } from "./rules/conflicts";
 import { fileNameProblem, renamedPath } from "./files";
 import { loadSrd } from "./data/srd";
@@ -165,6 +165,8 @@ export default class CharacterSheetPlugin extends Plugin {
   buildLinker(extra: Record<string, string> = {}, ruleset = DEFAULT_RULESET) {
     const linker = this.linkerOf(extra, ruleset);
     linker.sameSourceOnly = ruleset !== DEFAULT_RULESET;
+    // with the 2024 rules in use, a compendium can have both editions
+    if (ruleset === DEFAULT_RULESET && this.settings.dataSource2024 !== "none") linker.notFrom = new Set([...SOURCES_2024].map(sourceTag));
     return linker;
   }
   private linkerOf(extra: Record<string, string>, ruleset: string) {
@@ -214,21 +216,21 @@ export default class CharacterSheetPlugin extends Plugin {
    */
   async importFiveTools() {
     const adapter = this.app.vault.adapter;
-    const folder = this.settings.fivetoolsPath.trim();
-    const base = folder ? normalizePath(folder) : null;
+    const rulesets = importedRulesets(this.settings);
+    const baseOf = (ruleset: string) => { const folder = fivetoolsFor(this.settings, ruleset); return folder ? normalizePath(folder) : null; };
     const brewPaths = this.settings.homebrewFiles.map((p) => p.trim()).filter(Boolean);
-    if (base != null && (base === "/" || !(await adapter.exists(`${base}/races.json`)))) {
-      new Notice(`"${folder}" is not a 5etools "data" folder (the one that contains races.json). Correct it, or leave it empty to import only the homebrew files.`);
+    for (const base of new Set(rulesets.map(baseOf))) if (base != null && (base === "/" || !(await adapter.exists(`${base}/races.json`)))) {
+      new Notice(`"${base}" is not a 5etools "data" folder (the one that contains races.json). Correct it, or leave it empty to import only the homebrew files.`);
       return;
     }
-    if (base == null && !brewPaths.length) {
+    if (rulesets.every((r) => baseOf(r) == null) && !brewPaths.length) {
       new Notice("Nothing to import: set the 5etools \"data\" folder, homebrew files, or both.");
       return;
     }
-    const notice = new Notice(base ? "Importing 5etools data…" : "Importing homebrew…", 0);
+    const notice = new Notice(rulesets.some(baseOf) ? "Importing 5etools data…" : "Importing homebrew…", 0);
     try {
       // homebrew files, and entries in them, that can't be read are left out and reported; the rest is imported
-      const homebrew: HomebrewFile[] = [], files: ReportFile[] = [], leftOut: string[] = [];
+      const homebrew: HomebrewFile[] = [], files: ReportFile[] = [];
       for (const path of brewPaths) {
         const file = normalizePath(path);
         try {
@@ -240,10 +242,10 @@ export default class CharacterSheetPlugin extends Plugin {
           files.push({ file, error: (e as Error).message });
         }
       }
-      const results: { data: Compendium; entries: BrewEntry[] }[] = [];
-      const brew = !base ? ` (${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"} only, no 5etools data)` : homebrew.length ? ` (with ${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"})` : "";
-      for (const ruleset of importedRulesets(this.settings)) {
-        const entries: BrewEntry[] = [];
+      const reports: { label: string; report: ImportReport }[] = [], entryLists: BrewEntry[][] = [];
+      for (const ruleset of rulesets) {
+        const entries: BrewEntry[] = [], leftOut: string[] = [], base = baseOf(ruleset);
+        const brew = !base ? ` (${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"} only, no 5etools data)` : homebrew.length ? ` (with ${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"})` : "";
         const linker = this.settings.importOnlyWithNotes ? this.buildLinker({}, ruleset) : null;
         if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
         const built = await buildCompendium({
@@ -269,12 +271,13 @@ export default class CharacterSheetPlugin extends Plugin {
         // only the rules imported change: their data source, not the one of the other rules
         if (ruleset === DEFAULT_RULESET) { this.settings.lastImport = last; this.settings.dataSource = "imported"; }
         else { this.settings.lastImport2024 = last; this.settings.dataSource2024 = "imported"; }
-        results.push({ data, entries });
+        if (leftOut.length) console.warn(`5e Character Sheet: left out of the ${ruleset} import:\n${leftOut.join("\n")}`);
+        reports.push({ label: rulesetById(ruleset).label, report: importReport({ data, dataFolder: base, files, entries, messages: leftOut }) });
+        entryLists.push(entries);
       }
       await this.saveSettings();
       notice.hide();
-      if (leftOut.length) console.warn(`5e Character Sheet: left out of the import:\n${[...new Set(leftOut)].join("\n")}`);
-      new ImportReportModal(this.app, importReport({ data: joinedData(results.map((x) => x.data)), dataFolder: base, files, entries: mergedEntries(results.map((x) => x.entries)), messages: [...new Set(leftOut)] })).open();
+      new ImportReportModal(this.app, reports, forOtherRules(entryLists)).open();
     } catch (e) {
       notice.hide();
       console.error("5e Character Sheet: import failed", e);
@@ -424,7 +427,7 @@ export default class CharacterSheetPlugin extends Plugin {
   }
   /** Separate imported data with both editions in it: the data as it was is kept in a backup, then each edition is imported into its own. */
   async splitMixedImport() {
-    if (!this.settings.fivetoolsPath.trim() && !this.settings.homebrewFiles.length) { new Notice("Set the 5etools \"data\" folder first, so each edition can be imported."); return; }
+    if (!fivetoolsFor(this.settings, DEFAULT_RULESET) && !fivetoolsFor(this.settings, RULESET_2024_ID) && !this.settings.homebrewFiles.length) { new Notice("Set the 5etools \"data\" folder first, so each edition can be imported."); return; }
     const adapter = this.app.vault.adapter, file = this.importedFile(DEFAULT_RULESET);
     if (await adapter.exists(file)) await adapter.write(normalizePath(`${this.manifest.dir}/data/imported-mixed-backup.json`), await adapter.read(file));
     Object.assign(this.settings, { splitEditions: true, importRules2014: true, dataSource2024: "imported" });

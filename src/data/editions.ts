@@ -10,6 +10,10 @@ type Sources = { dataSource: string; dataSource2024: string };
 /** The rules "Import now" imports: each of those whose data source is the imported data. */
 export const importedRulesets = (st: Sources) => [...st.dataSource === "imported" ? [DEFAULT_RULESET] : [], ...st.dataSource2024 === "imported" ? [RULESET_2024_ID] : []];
 
+/** The 5etools folder of some rules: a copy of 5etools has both editions, so the 2024 rules use the same folder unless they have their own. */
+export const fivetoolsFor = (st: { fivetoolsPath: string; fivetoolsPath2024: string }, ruleset: string) =>
+  (ruleset === RULESET_2024_ID && st.fivetoolsPath2024.trim()) || st.fivetoolsPath.trim();
+
 /** The compendium of some rules: the 2024 rules have their own folder if one is set, else they use the same one. */
 export const compendiumFor = (st: { compendiumFolder: string; compendiumFolder2024: string }, ruleset: string) =>
   (ruleset === RULESET_2024_ID && st.compendiumFolder2024.trim()) || st.compendiumFolder.trim();

@@ -35,7 +35,8 @@ function namesOf(kind: string, alias: string): string[] {
 
 export class Linker {
   private exact = new Map<string, string>();
-  private byName = new Map<string, string>();
+  /** the notes of each name, by "kind|name" */
+  private byName = new Map<string, { path: string; source: string }[]>();
   root: string | null;
   /**
    * `chosen`: notes the user picked for some entries, by "kind|name|source" (as noteKey in
@@ -51,19 +52,24 @@ export class Linker {
       if (!m) continue;
       for (const name of namesOf(m[1], n.alias)) {
         this.exact.set(`${m[1]}|${lc(name)}|${sourceTag(n.source)}`, n.path);
-        if (!this.byName.has(`${m[1]}|${lc(name)}`)) this.byName.set(`${m[1]}|${lc(name)}`, n.path);
+        const key = `${m[1]}|${lc(name)}`;
+        this.byName.set(key, [...this.byName.get(key) ?? [], { path: n.path, source: sourceTag(n.source) }]);
       }
     }
   }
   /** no note of the same name from another source: with 2024 data, that would be the note of the 2014 entry */
   sameSourceOnly = false;
+  /** sources a note of the same name isn't taken from (source tags): a 2014 entry doesn't link to a 2024 note in a shared compendium */
+  notFrom = new Set<string>();
   get enabled() { return !!this.root && this.exact.size > 0; }
   /** note for an entity of a kind (spells, races, classes, …), preferring the same source */
   note(kind: string, name: string, source?: string): string | null {
     const key = `${kind}|${lc(name)}|${sourceTag(source)}`;
     const own = this.chosen.get(key);
     if (own != null) return own || null;
-    return this.exact.get(key) ?? (this.sameSourceOnly ? null : this.byName.get(`${kind}|${lc(name)}`)) ?? null;
+    if (this.exact.has(key)) return this.exact.get(key)!;
+    if (this.sameSourceOnly) return null;
+    return this.byName.get(`${kind}|${lc(name)}`)?.find((n) => !this.notFrom.has(n.source))?.path ?? null;
   }
   /** heading inside a rules note, e.g. rule("conditions", "Blinded") */
   rule(file: string, heading: string): string | null {

@@ -15,17 +15,15 @@ const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 export class CustomDataView {
   private query = "";
   private kind = "";
-  /** the rules whose entries are made here */
-  private rules: string;
-  constructor(private plugin: CharacterSheetPlugin) { this.rules = plugin.settings.defaultRuleset; }
-  private get context() { return this.plugin.contextById(this.rules); }
+  /** the rules of the entries listed ("": all) */
+  private rules = "";
+  constructor(private plugin: CharacterSheetPlugin) {}
 
   draw(el: HTMLElement) {
     el.empty();
     el.addClass("dnd-report", "dnd-import-data", "dnd-custom-data");
-    const { plugin } = this, c = this.context, ruleset = c.ruleset!, file = plugin.customFile;
-    new Setting(el).setName("Rules").setDesc("New entries are for these rules, and only sheets using them see them.").addDropdown((d) => d.addOptions(Object.fromEntries(RULESETS.map((r) => [r.id, r.label]))).setValue(this.rules).onChange((v) => { this.rules = v; this.redraw(); }));
-    el.createEl("p", { cls: "dnd-hint", text: `Your own entries for ${ruleset.label}. With the SRD or imported rules data they are in the sheets' menus, under "Custom data"; in manual mode, "From custom data…" fills a sheet's fields with them.` });
+    const { plugin } = this, file = plugin.customFile;
+    el.createEl("p", { cls: "dnd-hint", text: "Your own entries. Each is for one set of rules, chosen in its form: sheets with those rules list it in their menus, and in manual mode a button fills a sheet's fields with it." });
 
     new Setting(el).setName("File").setDesc(`Where they are kept, in this vault. A folder starting with a dot is hidden from the file list and search. After editing the file by hand, load it again.`)
       .addText((t) => {
@@ -40,26 +38,32 @@ export class CustomDataView {
     new Setting(el).setName("New entry").setDesc("A race, subrace, class, subclass, background, feat, spell or item of your own, or a trait or feature for a race or class of the rules data.")
       .addButton((b) => b.setButtonText("Create an entry").setCta().onClick(() => this.create()));
 
-    if (c.customProblems.length) {
+    const problems = [...new Set(RULESETS.flatMap((r) => plugin.contextById(r.id).customProblems))];
+    if (problems.length) {
       const d = el.createEl("details", { cls: "dnd-report-messages", attr: { open: "" } });
-      d.createEl("summary", { text: `Problems (${c.customProblems.length})` });
+      d.createEl("summary", { text: `Problems (${problems.length})` });
       const ul = d.createEl("ul");
-      for (const m of c.customProblems) ul.createEl("li", { text: m });
+      for (const m of problems) ul.createEl("li", { text: m });
     }
-    if (c.customOther) el.createEl("p", { cls: "dnd-hint", text: `${c.customOther} entr${c.customOther === 1 ? "y is" : "ies are"} for other rules, so not used with this rules data.` });
 
     if (!file.entries.length) { el.createEl("p", { cls: "dnd-hint", text: "No custom entries yet." }); return; }
     const bar = el.createDiv({ cls: "dnd-import-data-bar" });
     const search = bar.createEl("input", { type: "search", attr: { placeholder: "Search entries", "aria-label": "Search entries" } });
     search.value = this.query;
+    const rules = bar.createEl("select", { cls: "dropdown", attr: { "aria-label": "Rules" } });
+    rules.createEl("option", { value: "", text: "All rules" });
+    for (const r of RULESETS) rules.createEl("option", { value: r.id, text: r.label });
+    rules.value = this.rules;
     const kinds = bar.createEl("select", { cls: "dropdown", attr: { "aria-label": "Kind" } });
     kinds.createEl("option", { value: "", text: "All kinds" });
-    for (const k of ruleset.kinds) kinds.createEl("option", { value: k.kind, text: k.label[1] });
+    // the same kind can have another name under other rules (races and species)
+    for (const k of RULESETS[0].kinds) kinds.createEl("option", { value: k.kind, text: [...new Set(RULESETS.flatMap((r) => r.kinds.filter((x) => x.kind === k.kind).map((x) => x.label[1])))].join(" / ") });
     kinds.value = this.kind;
     const list = el.createDiv();
     const fill = () => this.table(list);
     search.oninput = () => { this.query = search.value; fill(); };
     kinds.onchange = () => { this.kind = kinds.value; fill(); };
+    rules.onchange = () => { this.rules = rules.value; fill(); };
     fill();
   }
 
@@ -67,24 +71,24 @@ export class CustomDataView {
   private table(el: HTMLElement) {
     el.empty();
     const { plugin } = this, q = lc(this.query.trim());
-    const kindOf = (e: CustomEntry) => rulesetById(e.ruleset).kinds.find((k) => k.kind === e.kind) ?? null;
-    const order = (e: CustomEntry) => this.context.ruleset!.kinds.findIndex((k) => k.kind === e.kind);
-    const entries = plugin.customFile.entries.filter((e) => (!this.kind || e.kind === this.kind) && (!q || lc(e.name).includes(q)))
+    const kindOf = (e: CustomEntry) => RULESETS.find((r) => r.id === e.ruleset)?.kinds.find((k) => k.kind === e.kind) ?? null;
+    const order = (e: CustomEntry) => RULESETS[0].kinds.findIndex((k) => k.kind === e.kind);
+    const entries = plugin.customFile.entries.filter((e) => (!this.rules || e.ruleset === this.rules) && (!this.kind || e.kind === this.kind) && (!q || lc(e.name).includes(q)))
       .sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
     if (!entries.length) { el.createEl("p", { cls: "dnd-hint", text: "No entries match." }); return; }
     const t = el.createDiv({ cls: "dnd-report-scroll" }).createEl("table", { cls: "dnd-report-entries" });
     const h = t.createEl("thead").createEl("tr");
-    for (const label of ["Name", "Type", "Details", "Note", ""]) h.createEl("th", { text: label });
+    for (const label of ["Name", "Rules", "Type", "Details", "Note", ""]) h.createEl("th", { text: label });
     const body = t.createEl("tbody");
     for (const e of entries) this.row(body, e, kindOf(e));
   }
 
   private row(body: HTMLElement, e: CustomEntry, def: KindDef | null) {
     const { plugin } = this;
-    const other = e.ruleset !== this.rules;
-    const tr = body.createEl("tr", { cls: other || !def ? "is-left-out" : "" });
+    const tr = body.createEl("tr", { cls: def ? "" : "is-left-out" });
     tr.createEl("td", { text: e.name });
-    tr.createEl("td", { text: (def?.label[0] ?? e.kind) + (other ? ` (${rulesetById(e.ruleset).label})` : "") });
+    tr.createEl("td", { text: RULESETS.find((r) => r.id === e.ruleset)?.label ?? e.ruleset });
+    tr.createEl("td", { text: def?.label[0] ?? e.kind });
     tr.createEl("td", { text: def?.summary?.(e) ?? "" });
     const note = tr.createEl("td", { cls: "dnd-import-data-note" });
     if (e.link) {
@@ -99,8 +103,8 @@ export class CustomDataView {
       b.onclick = run;
     };
     if (def) {
-      act("pencil", "Edit", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw(), false, this.rules).open());
-      act("copy", "Make a copy", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw(), true, this.rules).open());
+      act("pencil", "Edit", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw(), false, e.ruleset).open());
+      act("copy", "Make a copy", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw(), true, e.ruleset).open());
     }
     act("trash-2", "Delete", () => new ConfirmModal(plugin.app, `Delete ${e.name}?`,
       "Sheets that use it keep it by name only, and lose what it gave them. This can't be undone.", "Delete", async () => {
@@ -110,15 +114,18 @@ export class CustomDataView {
       }).open(), "mod-warning");
   }
 
-  /** "+ New entry": the kind first, then its form. */
+  /** "+ New entry": the kind first, then its form, which starts with the rules of new characters or else rules it can be made with. */
   private create() {
-    const { plugin } = this, c = this.context;
-    const ctx = { data: c.manual ? c.customOnly : c.rules.data };
-    new Picker(plugin.app, c.ruleset!.kinds, (k) => k.label[0], (k) => {
-      const why = k.available?.(ctx);
-      if (why) { new Notice(why); return; }
-      window.setTimeout(() => new EntryModal(plugin.app, plugin, k, null, () => this.redraw(), false, this.rules).open(), 0);
-    }, "What do you want to create?", (k) => k.available?.(ctx) ?? "").open();
+    const { plugin } = this, main = plugin.settings.defaultRuleset;
+    const order = [...RULESETS].sort((a, b) => Number(b.id === main) - Number(a.id === main));
+    const ctxOf = (id: string) => { const c = plugin.contextById(id); return { data: c.manual ? c.customOnly : c.rules.data }; };
+    const startingRules = (kind: string) => order.find((r) => !r.kinds.find((k) => k.kind === kind)?.available?.(ctxOf(r.id)));
+    new Picker(plugin.app, rulesetById(main).kinds, (k) => k.label[0], (k) => {
+      const rules = startingRules(k.kind);
+      if (!rules) { new Notice(k.available?.(ctxOf(main)) ?? ""); return; }
+      const def = rules.kinds.find((x) => x.kind === k.kind)!;
+      window.setTimeout(() => new EntryModal(plugin.app, plugin, def, null, () => this.redraw(), false, rules.id).open(), 0);
+    }, "What do you want to create?", (k) => (startingRules(k.kind) ? "" : k.available?.(ctxOf(main)) ?? "")).open();
   }
 
   /** set by the page that shows this view: draws it again after a change */

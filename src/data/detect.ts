@@ -55,9 +55,9 @@ export function homebrewFolders(files: DetectedHomebrew[]) {
   return out;
 }
 
-export interface ImportPaths { fivetoolsPath: string; compendiumFolder: string; homebrewFiles: string[] }
+export interface ImportPaths { fivetoolsPath: string; compendiumFolder: string; homebrewFiles: string[]; fivetoolsPath2024?: string; compendiumFolder2024?: string }
 /** The choices of the Detect dialog: a folder for each setting (null = none) and the checked homebrew files. */
-export interface DetectPicks { data: string | null; compendium: string | null; homebrew: Set<string> }
+export interface DetectPicks { data: string | null; compendium: string | null; homebrew: Set<string>; data2024?: string | null; compendium2024?: string | null }
 /**
  * The import settings after "Use these". An unchecked data or compendium folder leaves the setting
  * empty. The homebrew list keeps its order: unchecked files leave it, new checked ones go at the
@@ -68,6 +68,8 @@ export function applyDetected(cur: ImportPaths, found: Detected, picks: DetectPi
   return {
     fivetoolsPath: picks.data ?? "",
     compendiumFolder: picks.compendium ?? "",
+    ...picks.data2024 !== undefined ? { fivetoolsPath2024: picks.data2024 ?? "" } : {},
+    ...picks.compendium2024 !== undefined ? { compendiumFolder2024: picks.compendium2024 ?? "" } : {},
     homebrewFiles: [
       ...cur.homebrewFiles.filter((p) => !scanned.has(vaultPath(p)) || picks.homebrew.has(vaultPath(p))),
       ...found.homebrew.map((h) => h.path).filter((p) => picks.homebrew.has(p) && !listed.has(p)),

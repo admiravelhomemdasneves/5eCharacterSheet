@@ -22,15 +22,17 @@ export class DetectModal extends Modal {
       return;
     }
     contentEl.createEl("p", { cls: "dnd-hint", text: "Check what to use. A data or compendium folder left unchecked is cleared in the settings." });
-    const data = this.folderChoice(contentEl, "5etools data folder", "The folder of a 5etools copy, with races.json.", dataFolders, st.fivetoolsPath);
+    const data = this.folderChoice(contentEl, "5etools data folder (2014 rules)", "The folder of a 5etools copy, with races.json.", dataFolders, st.fivetoolsPath);
+    const data2024 = this.folderChoice(contentEl, "5etools data folder (2024 rules)", "Only if it isn't the same folder: a 5etools copy has both editions.", dataFolders, st.fivetoolsPath2024, false);
     const brew = this.homebrewChoice(contentEl);
-    const comp = this.folderChoice(contentEl, "Compendium folder", "A ttrpg-convert-cli compendium, for links to its notes.", compendiums, st.compendiumFolder);
+    const comp = this.folderChoice(contentEl, "Compendium folder (2014 rules)", "A ttrpg-convert-cli compendium, for links to its notes.", compendiums, st.compendiumFolder);
+    const comp2024 = this.folderChoice(contentEl, "Compendium folder (2024 rules)", "Only if it isn't the same folder.", compendiums, st.compendiumFolder2024, false);
 
     new Setting(contentEl)
       .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
       .addButton((b) => b.setButtonText("Use these").setCta().onClick(async () => {
-        const next = applyDetected(st, this.found, { data: data.value, compendium: comp.value, homebrew: brew });
-        const compendiumChanged = next.compendiumFolder !== st.compendiumFolder;
+        const next = applyDetected(st, this.found, { data: data.value, compendium: comp.value, homebrew: brew, data2024: data2024.value, compendium2024: comp2024.value });
+        const compendiumChanged = next.compendiumFolder !== st.compendiumFolder || next.compendiumFolder2024 !== st.compendiumFolder2024;
         Object.assign(st, next);
         // a new compendium changes the sheets' links, so it reloads the data
         if (compendiumChanged) await this.plugin.saveSettings(); else await this.plugin.saveData(st);
@@ -60,10 +62,11 @@ export class DetectModal extends Modal {
 
   /**
    * The folders found for one setting, at most one checked; `value` is the checked one (null = none).
-   * The folder set now is listed too when the scan did not find it.
+   * The folder set now is listed too when the scan did not find it. `firstFound`: with none set, the first is checked.
    */
-  private folderChoice(el: HTMLElement, title: string, desc: string, found: string[], setting: string) {
-    const { options, current, initial } = folderOptions(found, setting);
+  private folderChoice(el: HTMLElement, title: string, desc: string, found: string[], setting: string, firstFound = true) {
+    const { options, current, initial: suggested } = folderOptions(found, setting);
+    const initial = firstFound ? suggested : current || null;
     const pick: { value: string | null } = { value: initial };
     if (!options.length) return pick;
     const { body } = this.part(el, title, desc);
