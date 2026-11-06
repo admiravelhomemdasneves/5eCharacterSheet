@@ -1,0 +1,306 @@
+{
+ "level": 15,
+ "pb": 5,
+ "scores": {
+  "str": {
+   "base": 15,
+   "race": 1,
+   "feat": 0,
+   "asi": 0,
+   "feature": 0,
+   "adjust": 0,
+   "total": 16,
+   "max": 20,
+   "over": false
+  },
+  "dex": {
+   "base": 14,
+   "race": 1,
+   "feat": 0,
+   "asi": 0,
+   "feature": 0,
+   "adjust": 0,
+   "total": 15,
+   "max": 20,
+   "over": false
+  },
+  "con": {
+   "base": 13,
+   "race": 1,
+   "feat": 0,
+   "asi": 0,
+   "feature": 0,
+   "adjust": 0,
+   "total": 14,
+   "max": 20,
+   "over": false
+  },
+  "int": {
+   "base": 12,
+   "race": 1,
+   "feat": 0,
+   "asi": 0,
+   "feature": 0,
+   "adjust": 0,
+   "total": 13,
+   "max": 20,
+   "over": false
+  },
+  "wis": {
+   "base": 10,
+   "race": 1,
+   "feat": 0,
+   "asi": 0,
+   "feature": 0,
+   "adjust": 0,
+   "total": 11,
+   "max": 20,
+   "over": false
+  },
+  "cha": {
+   "base": 8,
+   "race": 1,
+   "feat": 0,
+   "asi": 0,
+   "feature": 0,
+   "adjust": 0,
+   "total": 9,
+   "max": 20,
+   "over": false
+  }
+ },
+ "saves": {
+  "str": 0,
+  "dex": 0,
+  "con": 0,
+  "int": 0,
+  "wis": 1,
+  "cha": 1
+ },
+ "skills": {
+  "acrobatics": 2,
+  "animal handling": 0,
+  "arcana": 1,
+  "athletics": 3,
+  "deception": -1,
+  "history": 1,
+  "insight": 5,
+  "intimidation": -1,
+  "investigation": 1,
+  "medicine": 0,
+  "nature": 1,
+  "perception": 0,
+  "performance": -1,
+  "persuasion": -1,
+  "religion": 6,
+  "sleight of hand": 2,
+  "stealth": 2,
+  "survival": 0
+ },
+ "hp": {
+  "dice": 85,
+  "con": 30,
+  "racial": 0,
+  "tough": 0,
+  "draconic": 0,
+  "adjust": 0,
+  "max": 115
+ },
+ "ac": {
+  "value": 18,
+  "how": "Chain Mail + shield",
+  "stealthDisadvantage": true,
+  "strengthRequired": 13
+ },
+ "initiative": 2,
+ "speeds": {
+  "walk": 30
+ },
+ "hitDice": {
+  "d10": 9,
+  "d8": 3,
+  "d6": 3
+ },
+ "darkvision": null,
+ "features": [
+  "Paladin 1 Divine Sense",
+  "Paladin 1 Lay on Hands",
+  "Paladin 2 Divine Smite",
+  "Paladin 2 Fighting Style",
+  "Paladin 2 Spellcasting",
+  "Paladin 3 Divine Health",
+  "Paladin 3 Sacred Oath",
+  "Paladin 3 Tenets of Devotion",
+  "Paladin 3 Oath Spells",
+  "Paladin 3 Channel Divinity",
+  "Paladin 4 Ability Score Improvement",
+  "Paladin 5 Extra Attack",
+  "Warlock 1 Pact Magic",
+  "Warlock 1 Otherworldly Patron",
+  "Warlock 1 Dark One's Blessing",
+  "Warlock 2 Eldritch Invocations",
+  "Warlock 3 Pact Boon",
+  "Wizard 1 Arcane Recovery",
+  "Wizard 1 Spellcasting",
+  "Wizard 2 Arcane Tradition",
+  "Wizard 2 Evocation Savant",
+  "Wizard 2 Sculpt Spells",
+  "Ranger 1 Favored Enemy",
+  "Ranger 1 Natural Explorer",
+  "Ranger 2 Fighting Style",
+  "Ranger 2 Spellcasting",
+  "Ranger 3 Ranger Archetype",
+  "Ranger 3 Primeval Awareness",
+  "Ranger 3 Hunter's Prey",
+  "Ranger 4 Ability Score Improvement"
+ ],
+ "asi": {
+  "slots": 2,
+  "taken": 0
+ },
+ "resources": [
+  {
+   "key": "Warlock:Invocations Known",
+   "label": "Invocations Known",
+   "max": 2
+  }
+ ],
+ "casters": [
+  {
+   "key": "paladin|phb",
+   "name": "Paladin",
+   "ability": "cha",
+   "dc": 12,
+   "attack": 4,
+   "prepared": 1,
+   "cantrips": null,
+   "known": null,
+   "list": "Paladin",
+   "classId": "paladin|phb",
+   "spells": []
+  },
+  {
+   "key": "warlock|phb",
+   "name": "Warlock",
+   "ability": "cha",
+   "dc": 12,
+   "attack": 4,
+   "prepared": null,
+   "cantrips": 2,
+   "known": 4,
+   "list": "Warlock",
+   "classId": "warlock|phb",
+   "spells": []
+  },
+  {
+   "key": "wizard|phb",
+   "name": "Wizard",
+   "ability": "int",
+   "dc": 14,
+   "attack": 6,
+   "prepared": 4,
+   "cantrips": 3,
+   "known": 10,
+   "list": "Wizard",
+   "classId": "wizard|phb",
+   "spells": []
+  },
+  {
+   "key": "ranger|phb",
+   "name": "Ranger",
+   "ability": "wis",
+   "dc": 13,
+   "attack": 5,
+   "prepared": null,
+   "cantrips": null,
+   "known": 3,
+   "list": "Ranger",
+   "classId": "ranger|phb",
+   "spells": []
+  }
+ ],
+ "spellCounts": {
+  "paladin|phb": {
+   "cantrips": 0,
+   "levelled": 0,
+   "prepared": 0
+  },
+  "warlock|phb": {
+   "cantrips": 0,
+   "levelled": 0,
+   "prepared": 0
+  },
+  "wizard|phb": {
+   "cantrips": 0,
+   "levelled": 0,
+   "prepared": 0
+  },
+  "ranger|phb": {
+   "cantrips": 0,
+   "levelled": 0,
+   "prepared": 0
+  }
+ },
+ "slots": {
+  "casterLevel": 7,
+  "base": [
+   4,
+   3,
+   3,
+   1,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "max": [
+   4,
+   3,
+   3,
+   1,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "pact": {
+   "slots": 2,
+   "level": 2
+  }
+ },
+ "attacks": [
+  {
+   "name": "Longsword",
+   "toHit": 8,
+   "damage": "1d8+3 (1d10+3 two-handed) slashing",
+   "notes": "versatile"
+  },
+  {
+   "name": "Longbow",
+   "toHit": 7,
+   "damage": "1d8+2 piercing",
+   "notes": "ammunition, heavy, two-handed, range 150/600"
+  }
+ ],
+ "pending": [
+  "Pick 2 Paladin skill proficiency(ies)",
+  "Pick 1 Ranger skill proficiency(ies)",
+  "Choose a Fighting Style for Paladin",
+  "Choose 2 Eldritch Invocations for Warlock",
+  "Choose a Pact Boon for Warlock",
+  "Choose a Fighting Style for Ranger",
+  "Choose a Hunter's Prey for Ranger (Hunter)",
+  "Choose a Favored Enemy for Ranger",
+  "Choose a Natural Explorer for Ranger",
+  "2 Ability Score Improvement(s) available — add an ASI or a feat in Feats",
+  "Paladin: prepare 1 more spell(s)",
+  "Warlock: choose 2 more cantrip(s)",
+  "Warlock: learn 4 more spell(s)",
+  "Wizard: choose 3 more cantrip(s)",
+  "Wizard: learn 10 more spell(s)",
+  "Wizard: prepare 4 more spell(s)",
+  "Ranger: learn 3 more spell(s)"
+ ]
+}

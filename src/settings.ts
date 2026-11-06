@@ -1,7 +1,7 @@
 import * as obsidian from "obsidian";
 import { App, PluginSettingTab, Setting, SettingDefinitionItem } from "obsidian";
 import type CharacterSheetPlugin from "./main";
-import { SRD_ATTRIBUTION } from "./data/srd";
+import { SRD_ATTRIBUTION } from "./data/attribution";
 import { SECTIONS } from "./sections";
 import { IMPORT_CHANGES } from "./data/build";
 import type { RemovedEntry } from "./data/entries";

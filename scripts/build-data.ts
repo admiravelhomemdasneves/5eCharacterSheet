@@ -4,20 +4,26 @@
 // `import` keeps only entries that have a note in the compendium folder of a vault (VAULT and
 // COMPENDIUM env vars, or local.config.json),
 // which reproduces the menus of a ttrpg-convert-cli compendium.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { buildCompendium, summarize } from "../src/data/build.ts";
 import { Linker } from "../src/data/links.ts";
-import { SRD_ATTRIBUTION } from "../src/data/srd.ts";
+import { SRD_ATTRIBUTION } from "../src/data/attribution.ts";
 import { ROOT, compendiumNotes, personalPaths } from "./local.ts";
 
 const DATA = process.env.FIVETOOLS_DATA || path.join(ROOT, "vendor", "5etools-data");
 const read = async (rel: string) => JSON.parse(fs.readFileSync(path.join(DATA, rel), "utf8"));
 const mode = process.argv[2] || "srd";
+/** the 5etools commit the data comes from: FIVETOOLS_COMMIT, or the data folder's own git checkout */
+function dataCommit() {
+  if (process.env.FIVETOOLS_COMMIT) return process.env.FIVETOOLS_COMMIT;
+  try { return execFileSync("git", ["-C", DATA, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return undefined; }
+}
 
 if (mode === "srd") {
   const data = await buildCompendium({ read, srdOnly: true, rules2014Only: true });
-  const out = { ...data, meta: { ...data.meta, attribution: SRD_ATTRIBUTION } };
+  const out = { ...data, meta: { ...data.meta, attribution: SRD_ATTRIBUTION, dataCommit: dataCommit() } };
   fs.mkdirSync(path.join(ROOT, "data"), { recursive: true });
   fs.writeFileSync(path.join(ROOT, "data", "srd-5.1.json"), JSON.stringify(out));
   console.log("SRD:", summarize(data));
