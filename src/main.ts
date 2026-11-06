@@ -132,7 +132,7 @@ export default class CharacterSheetPlugin extends Plugin {
       id, ruleset, importIsOutdated, manual, linker,
       // a source is chosen but gave nothing: the sheets must not take that for rules that say nothing
       status: source !== "none" && data === EMPTY_DATA ? "unavailable" : "ready",
-      rules: new Rules(linker.attach(manual ? data : merged.data)),
+      rules: new Rules(linker.attach(manual ? data : merged.data), ruleset.profile),
       baseData: data, customOnly: linker.attach(alone.data),
       customProblems: [...(custom.error ? [custom.error] : []), ...custom.warnings, ...merged.warnings], customOther: merged.other,
     };

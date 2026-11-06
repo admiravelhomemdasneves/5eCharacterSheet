@@ -33,19 +33,20 @@ export function header(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
   if (sheet.manual) { manualHeader(sheet, info, d); return; }
 
   const row2 = info.createDiv({ cls: "dnd-row dnd-fill" });
-  const raceEl = labeled(row2, "Race");
+  const labels = r.profile.labels;
+  const raceEl = labeled(row2, labels.race);
   sheet.pick(raceEl, r.data.races.map((x) => ({ value: x.id, label: `${x.name} (${x.source})`, group: sheet.sourceName(x.source), link: x.link })), s.race,
-    (v) => sheet.change((x) => { x.race = v || null; x.subrace = null; x.raceAbility = { option: 0, picks: [] }; x.raceSkills = []; }), "Choose race…");
+    (v) => sheet.change((x) => { x.race = v || null; x.subrace = null; x.raceAbility = { option: 0, picks: [] }; x.raceSkills = []; }), `Choose ${labels.race.toLowerCase()}…`);
   const race = r.race(s);
   if (race) sheet.link(raceEl, "📖", race.link, "dnd-book");
   if (race?.subraces.length) {
-    const subEl = labeled(row2, "Subrace");
-    sheet.pick(subEl, race.subraces.map((x) => ({ value: x.id, label: `${x.name} (${x.source})`, link: x.link })), s.subrace, (v) => sheet.change((x) => { x.subrace = v || null; x.raceAbility = { option: 0, picks: [] }; }), race.subraceRequired ? "Choose subrace…" : "None");
+    const subEl = labeled(row2, labels.subrace);
+    sheet.pick(subEl, race.subraces.map((x) => ({ value: x.id, label: `${x.name} (${x.source})`, link: x.link })), s.subrace, (v) => sheet.change((x) => { x.subrace = v || null; x.raceAbility = { option: 0, picks: [] }; }), race.subraceRequired ? `Choose ${labels.subrace.toLowerCase()}…` : "None");
     const sub = r.subrace(s);
     if (sub) sheet.link(subEl, "📖", sub.link, "dnd-book");
   }
   const bgEl = labeled(row2, "Background");
-  sheet.pick(bgEl, r.data.backgrounds.map((x) => ({ value: x.id, label: `${x.name} (${x.source})`, group: sheet.sourceName(x.source), link: x.link })), s.background, (v) => sheet.change((x) => { x.background = v || null; }), "Choose background…");
+  sheet.pick(bgEl, r.data.backgrounds.map((x) => ({ value: x.id, label: `${x.name} (${x.source})`, group: sheet.sourceName(x.source), link: x.link })), s.background, (v) => sheet.change((x) => { x.background = v || null; x.backgroundAbility = { option: 0, picks: [] }; }), "Choose background…");
   const bg = r.background(s);
   if (bg) sheet.link(bgEl, "📖", bg.link, "dnd-book");
 

@@ -16,7 +16,7 @@ type FeatureCtx = { own: Set<string>; hidden: { key: string; name: string }[] };
 
 // Manual mode: the features are a list the player types
 export function manualRaceFeatures(sheet: CharacterSheet, root: HTMLElement) {
-  sheet.section(root, "race-features", "Race & Background Features", (el) => {
+  sheet.section(root, "race-features", `${sheet.r.profile.labels.race} & Background Features`, (el) => {
     bulletList(sheet, el, "race-features", (x) => x.manual.raceFeatures, "Feature or trait…", "+ Add feature");
     fromCustom(sheet, el.createDiv({ cls: "dnd-row" }), "race-features");
   });
@@ -44,12 +44,13 @@ function choicesByFeature(all: E.CharChoice[], group: string, features: { name: 
 export function raceFeatures(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
   const s = sheet.v, r = sheet.r;
   const race = r.race(s), sub = r.subrace(s), bg = r.background(s);
-  sheet.section(root, "race-features", "Race & Background Features", (el) => {
+  const raceLabel = r.profile.labels.race;
+  sheet.section(root, "race-features", `${raceLabel} & Background Features`, (el) => {
     const ctx: FeatureCtx = { own: new Set(), hidden: [] };
-    if (!race && !bg) el.createDiv({ cls: "dnd-hint", text: "Choose a race and a background to see their features." });
+    if (!race && !bg) el.createDiv({ cls: "dnd-hint", text: `Choose a ${raceLabel.toLowerCase()} and a background to see their features.` });
     if (race) {
       const h = el.createDiv({ cls: "dnd-subtitle" }); sheet.link(h, sub ? `${race.name} (${sub.name})` : race.name, sub?.link || race.link);
-      const traits = [...race.traits.map((t) => ({ t, owner: race.id })), ...(sub?.traits || []).map((t) => ({ t, owner: sub!.id }))].filter(({ t }) => !E.RACE_TRAIT_SKIP.has(t.name));
+      const traits = E.raceTraits(race, sub).filter(({ t }) => !E.RACE_TRAIT_SKIP.has(t.name));
       const { by, loose } = choicesByFeature(d.choices, race.id, traits.map(({ t }) => t));
       for (const { t, owner } of traits) {
         const choices = by.get(t) ?? [];

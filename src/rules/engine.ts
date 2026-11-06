@@ -3,6 +3,14 @@
 import { DEFAULT_RULESET } from "../custom/format.ts";
 
 export type Ability = "str" | "dex" | "con" | "int" | "wis" | "cha";
+/**
+ * Where rules differ in how a character works, rather than in their data. `labels`: what the sheet calls
+ * races and subraces. `originFeats`: backgrounds and races give feats (the sheet offers them as grants).
+ * `longRestHitDice`: hit dice back on a long rest. `exhaustion`: "levels" counts them, "penalties" also applies them.
+ */
+export interface RulesProfile { labels: { race: string; subrace: string }; originFeats: boolean; longRestHitDice: "half" | "all"; exhaustion: "levels" | "penalties" }
+export const PROFILE_2014: RulesProfile = { labels: { race: "Race", subrace: "Subrace" }, originFeats: false, longRestHitDice: "half", exhaustion: "levels" };
+export const PROFILE_2024: RulesProfile = { labels: { race: "Species", subrace: "Lineage" }, originFeats: true, longRestHitDice: "all", exhaustion: "penalties" };
 export const ABILITIES: Ability[] = ["str", "dex", "con", "int", "wis", "cha"];
 export const ABILITY_NAMES: Record<Ability, string> = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" };
 
@@ -32,14 +40,24 @@ export interface Feature { name: string; level: number; source: string; text: st
 export interface Spellcasting { ability: Ability; progression: string; prepared?: string | null; cantrips?: number[] | null; known?: number[] | null; knownFixed?: number[] | null; list: string | null }
 /** speeds in feet; "walk" means "equal to your walking speed" */
 export type Speeds = Record<string, number | string>;
-export interface SubraceData { id: string; name: string; source: string; link: string | null; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Speeds | null; darkvision: number | null; skills: ProfList; languages: string[]; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; hpPerLevel: number }
-export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Speeds; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean }
+export interface SubraceData { id: string; name: string; source: string; link: string | null; ability: AbilityOption[] | null; overwriteAbility: boolean; speed: Speeds | null; darkvision: number | null; skills: ProfList; languages: string[]; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; hpPerLevel: number;
+  /** the race's traits this one takes the place of (a 2024 lineage) */
+  replaces?: string[] }
+export interface RaceData { id: string; name: string; source: string; link: string | null; size: string[]; speed: Speeds; ability: AbilityOption[]; darkvision: number | null; skills: ProfList; tools: ProfList; weapons: ProfList; armor: ProfList; languages: string[]; feats: unknown; traits: { name: string; text: string }[]; spells: AdditionalSpells[] | null; subraces: SubraceData[]; subraceRequired: boolean;
+  /** hit points per level the race itself gives (2024; before, only subraces did) */
+  hpPerLevel?: number }
 export interface SubclassData { id: string; name: string; shortName: string; source: string; link: string | null; features: Feature[]; spellcasting: Spellcasting | null; additionalSpells: AdditionalSpells[] | null;
   /** ids of spells added to the class's spell list for this subclass only (homebrew `subclassSpells`) */
   spells?: string[]; choices?: FeatureChoice[] }
 export interface ClassData { id: string; name: string; source: string; link: string | null; hd: number; saves: Ability[]; armor: string[]; weapons: string[]; tools: string[]; skills: { from: string[] | "any"; count: number }[]; spellcasting: Spellcasting | null; pactSlots: { slots: number; level: number }[] | null; tableCols: { label: string; rows: (string | number | null)[] }[]; subclassTitle: string; subclassLevel: number; features: Feature[]; multiclass: { requirements: Record<string, unknown>; armor: string[]; weapons: string[]; skills: { from: string[]; count: number }[] } | null; subclasses: SubclassData[]; choices?: FeatureChoice[] }
-export interface BackgroundData { id: string; name: string; source: string; link: string | null; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; heading?: string; text: string; link: string | null } | null; feats: unknown }
+/** A feat a background gives; `list`: the spell list it comes with (Magic Initiate). */
+export interface OriginFeat { id: string; list?: string }
+export interface BackgroundData { id: string; name: string; source: string; link: string | null; skills: ProfList; tools: ProfList; languages: string[]; feature: { name: string; heading?: string; text: string; link: string | null } | null; feats: unknown;
+  /** 2024: the ability score increases and feats of the background */
+  ability?: AbilityOption[]; originFeats?: OriginFeat[] }
 export interface FeatData { id: string; name: string; source: string; link: string | null; prereq: string; ability: AbilityOption[]; text: string;
+  /** 2024: O (origin), G (general), FS (fighting style), EB (epic boon) */
+  category?: string;
   /** none in data imported before granted spells (importVersion 6) */
   spells?: AdditionalSpells[] | null }
 export interface SpellData { id: string; name: string; source: string; link: string | null; level: number; school: string; time: string; range: string; components: string; duration: string; concentration: boolean; ritual: boolean; classes: string[]; text: string }
@@ -70,7 +88,8 @@ export interface SpellEntry { id: string; prepared: boolean; source?: string; gr
 /** An attack or resource added from a feature's grant (see featureGrants): `name` and `from` are kept for when the grant goes. */
 export interface AddedGrant { key: string; kind: "attack" | "resource"; name: string; from: string }
 export interface InventoryEntry { id: string | null; name: string; qty: number; weight: number | null; equipped: boolean; attuned: boolean; notes: string }
-export interface FeatEntry { id: string; picks: Ability[]; free?: boolean } // free: granted by race/background, not an ASI
+/** free: granted by race/background, not an ASI; `grant`/`from`: the grant it was added from and what gave it (see featureGrants) */
+export interface FeatEntry { id: string; picks: Ability[]; free?: boolean; grant?: string; from?: string }
 export interface CharState {
   version: number;
   /** the rules of this character (a ruleset id, src/rules/rulesets.ts); older notes have none and are for the 2014 rules */
@@ -80,6 +99,8 @@ export interface CharState {
   raceAbility: { option: number; picks: Ability[] };
   raceSkills: string[];
   background: string | null;
+  /** the option and picks of the background's ability increases (2024) */
+  backgroundAbility: { option: number; picks: Ability[] };
   classes: ClassEntry[];
   abilities: { method: "manual" | "standard" | "pointbuy" | "roll"; base: Record<Ability, number>; asi: Record<Ability, number>; adjust: Record<Ability, number> };
   feats: FeatEntry[];
@@ -154,7 +175,7 @@ export function newCharacter(name = ""): CharState {
   return {
     version: STATE_VERSION, ruleset: DEFAULT_RULESET, name, player: "", image: "", alignment: "", xp: 0,
     race: null, subrace: null, raceAbility: { option: 0, picks: [] }, raceSkills: [],
-    background: null, classes: [],
+    background: null, backgroundAbility: { option: 0, picks: [] }, classes: [],
     abilities: { method: "pointbuy", base: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 }, asi: zeroAbilities(), adjust: zeroAbilities() },
     feats: [], skills: {}, saves: {},
     hp: { current: null, temp: 0, adjust: 0, override: null }, hitDiceUsed: 0,
@@ -186,6 +207,7 @@ export function normalize(s: Partial<CharState> | null | undefined): CharState {
   out.ruleset = typeof s?.ruleset === "string" && s.ruleset ? s.ruleset : DEFAULT_RULESET;
   const merge = <T extends object>(base: T, saved: Partial<T> | undefined): T => ({ ...base, ...(saved ?? {}) });
   out.raceAbility = merge(d.raceAbility, s?.raceAbility);
+  out.backgroundAbility = merge(d.backgroundAbility, s?.backgroundAbility);
   out.hp = merge(d.hp, s?.hp);
   out.ac = merge(d.ac, s?.ac);
   out.deathSaves = merge(d.deathSaves, s?.deathSaves);
@@ -291,8 +313,12 @@ export class Rules {
   private spellsByName: Map<string, SpellData>;
   private spellsByNameSource: Map<string, SpellData>;
   private options: Map<string, OptionalFeatureData>;
-  constructor(data: Compendium) {
+  /** how these rules work */
+  readonly profile: RulesProfile;
+  /** `profile`: the 2014 rules unless said otherwise */
+  constructor(data: Compendium, profile: RulesProfile = PROFILE_2014) {
     this.data = data;
+    this.profile = profile;
     this.races = byId(data.races);
     this.backgrounds = byId(data.backgrounds);
     this.classes = byId(data.classes);
@@ -337,6 +363,13 @@ export function raceAbilityOptions(r: Rules, s: CharState): AbilityOption[] {
   if (sub.overwriteAbility || !raceOpts.length) return sub.ability;
   return raceOpts.flatMap((ro) => sub.ability!.map((so) => combineAbilityOptions(ro, so)));
 }
+/** The ability increases of the character's background (2024). */
+export const backgroundAbilityOptions = (r: Rules, s: CharState): AbilityOption[] => r.background(s)?.ability ?? [];
+/** The traits of a race and subrace, each with whose it is: a subrace can take the place of some of the race's (`replaces`). */
+export function raceTraits(race: RaceData | null, sub: SubraceData | null) {
+  const gone = new Set(sub?.replaces ?? []);
+  return [...(race?.traits ?? []).filter((t) => !gone.has(t.name)).map((t) => ({ t, owner: race!.id })), ...(sub?.traits ?? []).map((t) => ({ t, owner: sub!.id }))];
+}
 /** A race's ability option and one of its subrace's as one: fixed bonuses added, the subrace's choices after the race's. */
 export function combineAbilityOptions(ro: AbilityOption, so: AbilityOption): AbilityOption {
   const fixed = { ...ro.fixed };
@@ -354,7 +387,7 @@ export function pickSlots(choose: AbilityOption["choose"]): { from: Ability[]; a
 }
 /** `feature` = increases from class features. Scores are not capped: `max` is the ability's maximum
  *  (20, or more from features like Primal Champion) and `over` flags a total above it. */
-export interface AbilityBreakdown { base: number; race: number; feat: number; asi: number; feature: number; adjust: number; total: number; max: number; over: boolean }
+export interface AbilityBreakdown { base: number; race: number; /** from the background (2024): none when there is no such increase */ background?: number; feat: number; asi: number; feature: number; adjust: number; total: number; max: number; over: boolean }
 export const ABILITY_MAX = 20;
 // e.g. Primal Champion: "Your Strength and Constitution scores increase by 4. Your maximum for those scores is now 24."
 const SCORE_BOOST = /your ([a-z ,]+?) scores? increases? by (\d+)\.\s*your maximum for (?:those|that|these) scores? is now (\d+)/i;
@@ -381,6 +414,9 @@ export function abilityScores(r: Rules, s: CharState, features = classFeatures(r
     for (const [k, v] of Object.entries(opt.fixed)) raceBonus[k as Ability] += v || 0;
     for (const p of pickSlots(opt.choose)) { const a = s.raceAbility.picks[p.index]; if (a) raceBonus[a] += p.amount; }
   }
+  const backgroundBonus = zeroAbilities();
+  const bgOpts = backgroundAbilityOptions(r, s), bgOpt = bgOpts[Math.min(s.backgroundAbility.option, Math.max(0, bgOpts.length - 1))];
+  if (bgOpt) for (const p of pickSlots(bgOpt.choose)) { const a = s.backgroundAbility.picks[p.index]; if (a) backgroundBonus[a] += p.amount; }
   const featBonus = zeroAbilities();
   const asiBonus = zeroAbilities();
   for (const fe of s.feats) {
@@ -396,8 +432,8 @@ export function abilityScores(r: Rules, s: CharState, features = classFeatures(r
   for (const a of ABILITIES) {
     const base = s.abilities.base[a] ?? 10, asi = (s.abilities.asi[a] || 0) + asiBonus[a], adjust = s.abilities.adjust[a] || 0;
     const max = Math.max(ABILITY_MAX, boosts.max[a]), feature = boosts.bonus[a];
-    const total = base + raceBonus[a] + featBonus[a] + asi + feature + adjust;
-    out[a] = { base, race: raceBonus[a], feat: featBonus[a], asi, feature, adjust, total, max, over: total > max };
+    const total = base + raceBonus[a] + backgroundBonus[a] + featBonus[a] + asi + feature + adjust;
+    out[a] = { base, race: raceBonus[a], ...backgroundBonus[a] ? { background: backgroundBonus[a] } : {}, feat: featBonus[a], asi, feature, adjust, total, max, over: total > max };
   }
   return out;
 }
@@ -539,7 +575,7 @@ export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s)
       dice += roll != null ? roll : hd / 2 + 1;
     }
   });
-  const racial = (r.subrace(s)?.hpPerLevel || 0) * level;
+  const racial = ((r.subrace(s)?.hpPerLevel || 0) + (r.race(s)?.hpPerLevel || 0)) * level;
   const tough = hasFeat(r, s, "Tough") ? 2 * level : 0;
   // Draconic Resilience, and any feature that adds 1 hit point per level of its class
   const draconic = featureHpPerLevel(features);
@@ -1103,11 +1139,13 @@ export function filterText(f: SpellFilter, n = 1) {
  * Something a feature grants. `key`: where the player's answer is kept (SpellEntry.grant, AddedGrant.key,
  * CharState.dismissed); `from`: what grants it. Kinds: "spell" (`spell`, its id), "spells" (`count`
  * spells the player chooses, of `filter`), "variant" (the spell list to take, of `variants`: the pick is
- * kept in CharState.choices under `key`), "attack" and "resource" (`max` uses, back on a `rest`).
+ * kept in CharState.choices under `key`), "attack" and "resource" (`max` uses, back on a `rest`), and "feat".
  */
 export interface Grant {
-  key: string; from: string; kind: "spell" | "spells" | "variant" | "attack" | "resource"; name: string;
+  key: string; from: string; kind: "spell" | "spells" | "variant" | "attack" | "resource" | "feat"; name: string;
   spell?: string; filter?: SpellFilter; count?: number; variants?: string[]; attack?: Attack; max?: number; rest?: "short" | "long";
+  /** a "feat": which one, or the `category` to choose from; `list`: the spell list it comes with */
+  feat?: string; category?: string; list?: string;
 }
 // e.g. "your claws are natural weapons … you deal slashing damage equal to 1d4 + your Strength modifier"
 const NATURAL_WEAPON = /natural weapons?\b[\s\S]*?deal (\w+) damage equal to (\d+d\d+) (?:\+|plus) your (Strength|Dexterity|Constitution) modifier/i;
@@ -1132,6 +1170,29 @@ function breathWeapon(name: string, text: string, level: number, scores: Record<
   const area = /Breath Weapon: ([^(·]+)/i.exec(picked)?.[1].trim();
   return { name, toHit: null, save: `DC ${8 + mod(scores[ability].total) + pb}${save ? ` ${save.slice(0, 3)}` : ""}`, damage: `${dice}${type ? ` ${type.toLowerCase()}` : ""}`,
     notes: [area, "half on a successful save"].filter(Boolean).join(", "), link: null };
+}
+/** Where the spells a feat grants are kept: a feat given by a grant has its own, as the same feat can be taken twice with another list. */
+const featSpellKey = (fe: FeatEntry) => (fe.grant ? `${fe.grant}|spells` : featureKey(fe.id, "spells"));
+/** The feats the character's background and race give (2024). */
+function originFeatGrants(r: Rules, s: CharState, raceName: string): Grant[] {
+  const out: Grant[] = [], bg = r.background(s), race = r.race(s);
+  (bg?.originFeats ?? []).forEach((o, i) => {
+    const f = r.feat(o.id);
+    if (f) out.push({ key: `${bg!.id}|feat|${i}`, from: bg!.name, kind: "feat", name: f.name, feat: f.id, ...o.list ? { list: o.list } : {} });
+  });
+  const raceFeats = Array.isArray(race?.feats) ? race.feats as { anyFromCategory?: { category?: string[]; count?: number } }[] : [];
+  raceFeats.forEach((o, i) => {
+    const any = o?.anyFromCategory;
+    if (any?.category?.length) for (let n = 0; n < (any.count ?? 1); n++) out.push({ key: `${race!.id}|feat|${i}|${n}`, from: raceName, kind: "feat", name: "origin feat", category: any.category[0] });
+  });
+  return out;
+}
+/** Add a feat from its grant (`id`: the feat chosen, when the grant has a category to choose from), with the spell list it comes with. */
+export function addGrantedFeat(r: Rules, s: CharState, g: Grant, id = g.feat!) {
+  const fe: FeatEntry = { id, picks: [], free: true, grant: g.key, from: g.from };
+  s.feats.push(fe);
+  const list = g.list && r.feat(id)?.spells?.find((b) => lc(b.name ?? "").startsWith(lc(g.list!)))?.name;
+  if (list) s.choices[`${featSpellKey(fe)}|list`] = [list];
 }
 /**
  * What the character's race, subclasses, feats and picked optional features grant (see Grant).
@@ -1158,17 +1219,17 @@ export function featureGrants(r: Rules, s: CharState, choices = characterChoices
   const race = r.race(s), subrace = r.subrace(s);
   const raceName = race ? (subrace ? `${race.name} (${subrace.name})` : race.name) : "";
   const raceOwner = subrace?.spells ? subrace : race;
+  if (r.profile.originFeats) out.push(...originFeatGrants(r, s, raceName));
   if (raceOwner) spells(raceOwner.spells, featureKey(raceOwner.id, "spells"), raceName, level, ["known", "innate"]);
   for (const e of s.classes) {
     const c = r.cls(e.id), sub = r.subclass(e);
     if (c && sub) spells(sub.additionalSpells, featureKey(sub.id, "spells"), `${c.name} (${sub.name})`, e.level, ["prepared"]);
   }
-  for (const fe of s.feats) { const f = r.feat(fe.id); if (f) spells(f.spells, featureKey(f.id, "spells"), f.name, level); }
+  for (const fe of s.feats) { const f = r.feat(fe.id); if (f) spells(f.spells, featSpellKey(fe), f.name, level); }
   for (const c of choices) for (const id of c.picked) { const o = r.optionalFeature(id); if (o) spells(o.spells, featureKey(o.id, "spells"), o.name, level); }
   if (race) {
     const picked = choices.filter((c) => c.group === race.id).flatMap((c) => c.picked.map((id) => c.options.find((o) => o.id === id)?.text ?? "")).join(" · ");
-    const traits = [...race.traits.map((t) => [t, race.id] as const), ...(subrace?.traits || []).map((t) => [t, subrace!.id] as const)];
-    for (const [t, owner] of traits) {
+    for (const { t, owner } of raceTraits(race, subrace)) {
       if (RACE_TRAIT_SKIP.has(t.name)) continue;
       const src = featureKey(owner, t.name), text = untoken(t.text || "");
       const nat = NATURAL_WEAPON.exec(text);
@@ -1191,7 +1252,7 @@ export function featureGrants(r: Rules, s: CharState, choices = characterChoices
  * its spells or spell list; or for an added item whose grant is gone (`gone`: the spell's id, or the
  * AddedGrant), for the player to remove or keep it.
  */
-export interface Suggestion { key: string; text: string; grant?: Grant; left?: number; gone?: { spell: string } | { added: AddedGrant } }
+export interface Suggestion { key: string; text: string; grant?: Grant; left?: number; gone?: { spell: string } | { added: AddedGrant } | { feat: string } }
 /** Suggestions for the grants the player hasn't added or dismissed, and the added items no grant gives any more. `auto`: grantedSpells() */
 export function grantSuggestions(r: Rules, s: CharState, grants: Grant[], auto: { id: string }[] = grantedSpells(r, s)): Suggestion[] {
   const out: Suggestion[] = [];
@@ -1204,11 +1265,15 @@ export function grantSuggestions(r: Rules, s: CharState, grants: Grant[], auto: 
       const left = g.count! - s.spells.filter((x) => x.grant === g.key).length;
       if (left > 0) out.push({ key: g.key, text: `Choose ${left === 1 ? a(g.name) : `${left} ${filterText(g.filter!, left)}`} (from ${g.from})`, grant: g, left });
     } else if (g.kind === "variant") out.push({ key: g.key, text: `Choose the spell list of ${g.from}`, grant: g });
+    else if (g.kind === "feat") {
+      if (!s.feats.some((f) => f.grant === g.key)) out.push({ key: g.key, text: g.feat ? `Add the ${g.name} feat (from ${g.from})` : `Choose ${a(g.name)} (from ${g.from})`, grant: g });
+    }
     else if ((g.kind === "attack" || g.kind === "resource") && !s.added.some((x) => x.key === g.key))
       out.push({ key: g.key, text: g.kind === "attack" ? `Add the ${g.name} attack (from ${g.from})` : `Track the uses of ${g.name} (from ${g.from})`, grant: g });
   }
   const keys = new Set(grants.map((g) => g.key));
   for (const e of s.spells) if (e.grant && !keys.has(e.grant)) out.push({ key: `${e.grant}#${e.id}`, text: `${r.spell(e.id)?.name ?? e.id} is no longer granted by ${e.from || "a feature"}`, gone: { spell: e.id } });
+  for (const f of s.feats) if (f.grant && !keys.has(f.grant)) out.push({ key: f.grant, text: `${r.feat(f.id)?.name ?? f.id} is no longer granted by ${f.from || "a feature"}`, gone: { feat: f.grant } });
   for (const x of s.added) if (!keys.has(x.key)) out.push({ key: x.key, text: `${x.name} is no longer granted by ${x.from || "a feature"}`, gone: { added: x } });
   return out;
 }
@@ -1267,9 +1332,10 @@ export function pendingChoices(r: Rules, s: CharState, known: { asiSlots: number
   const out: string[] = [];
   const race = r.race(s);
   if (!s.name) out.push("Give the character a name");
-  if (!race) out.push("Choose a race");
+  const labels = r.profile.labels;
+  if (!race) out.push(`Choose a ${lc(labels.race)}`);
   else {
-    if (race.subraces.length && !s.subrace && race.subraceRequired) out.push(`Choose a ${race.name} subrace`);
+    if (race.subraces.length && !s.subrace && race.subraceRequired) out.push(`Choose a ${race.name} ${lc(labels.subrace)}`);
     const opt = raceAbilityOptions(r, s)[s.raceAbility.option];
     const need = opt ? opt.choose.reduce((a, c) => a + c.count, 0) : 0;
     if (need > s.raceAbility.picks.filter(Boolean).length) out.push(`Pick ${need} racial ability score increase(s)`);
@@ -1286,6 +1352,9 @@ export function pendingChoices(r: Rules, s: CharState, known: { asiSlots: number
   });
   out.push(...choicesPending(known.choices ?? characterChoices(r, s)));
   if (!s.background) out.push("Choose a background");
+  const bgOpt = backgroundAbilityOptions(r, s)[s.backgroundAbility.option];
+  const bgPicks = bgOpt ? pickSlots(bgOpt.choose).length - s.backgroundAbility.picks.filter(Boolean).length : 0;
+  if (bgPicks > 0) out.push(`Pick ${bgPicks} background ability score increase(s)`);
   if (s.abilities.method === "pointbuy") { const pbs = pointBuySpent(s.abilities.base); if (!pbs.valid) out.push("Point buy is over 27 points or out of range (8–15)"); else if (pbs.remaining > 0) out.push(`${pbs.remaining} point-buy point(s) unspent`); }
   const free = known.asiSlots - asiTaken(s);
   if (free > 0) out.push(`${free} Ability Score Improvement(s) available — add an ASI or a feat in Feats`);

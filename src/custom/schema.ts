@@ -2,7 +2,7 @@
 // is drawn from them, src/ui/custom-form.ts) and how an entry becomes rules data. The file, the
 // settings page and the form only know these shapes, so another ruleset (D&D 2024) is one more
 // Ruleset, not changes to them.
-import type { CharState, Compendium } from "../rules/engine.ts";
+import type { CharState, Compendium, RulesProfile } from "../rules/engine.ts";
 import type { CustomEntry } from "./format.ts";
 
 /** An option of a select field; `group`: the heading it is listed under. */
@@ -49,7 +49,7 @@ export interface KindDef {
   /** why entries of this kind can't be made with this data (null: they can), e.g. no races to add a trait to */
   available?: (ctx: CustomContext) => string | null;
 }
-export interface Ruleset { id: string; label: string; kinds: KindDef[] }
+export interface Ruleset { id: string; label: string; kinds: KindDef[]; profile: RulesProfile }
 
 /** The options of a select field for this context. */
 export const choicesOf = (f: Extract<FieldDef, { options: unknown }>, ctx: CustomContext) => (typeof f.options === "function" ? f.options(ctx) : f.options);

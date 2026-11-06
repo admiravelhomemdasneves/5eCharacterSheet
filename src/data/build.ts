@@ -6,7 +6,7 @@
 // and entity links are attached at runtime by Linker (src/data/links.ts), depending on whether
 // and where the user keeps a compendium of notes.
 import type {
-  AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell,
+  AdventuresFile, BooksFile, ClassFile, FileIndex, RacesFile, RawAbility, RawBackground, RawBase, RawCell, RawRace,
   HomebrewJson, RawClassFeatureRef, RawData, RawEntry, RawEntryObject, RawMod, RawFeat, RawItem, RawOptionalFeature, RawOptionalProgression, RawProf, RawProfItem,
   RawSkillChoice, RawSpeed, RawSpell, RawSubclass, RawSubclassFeature, RawSubrace, RawTableValue, SpellSourcesFile,
 } from "./fivetools.ts";
@@ -15,7 +15,7 @@ import { ABILITIES, combineAbilityOptions } from "../rules/engine.ts";
 import { lc, title } from "../text.ts";
 import type {
   AbilityOption, BackgroundData, ChoiceOption, ClassData, Compendium, FeatData, Feature, FeatureChoice, ItemData, OptionalFeatureData,
-  OptionRequirement, ProfList, RaceData, SpellData, Speeds, SubclassData, SubraceData,
+  OptionRequirement, OriginFeat, ProfList, RaceData, SpellData, Speeds, SubclassData, SubraceData,
 } from "../rules/engine.ts";
 
 /** Reads a 5etools data file (path relative to the `data` folder) and returns its parsed JSON. */
@@ -199,6 +199,54 @@ function abilityOf(ab: RawAbility[] | undefined, lineage?: string | boolean): Ab
     opt.label = [...Object.entries(opt.fixed).map(([k, v]) => `${k.toUpperCase()} ${v > 0 ? "+" : ""}${v}`), ...opt.choose.map((c) => `+${c.amount} to ${c.count} of ${c.from.length === 6 ? "any" : c.from.map((x) => x.toUpperCase()).join("/")}`)].join(", ");
     return opt;
   });
+}
+/** The feats a 2024 background gives: "magic initiate; cleric|xphb" is Magic Initiate, with the Cleric spell list. */
+function originFeatsOf(feats: unknown): OriginFeat[] {
+  if (!Array.isArray(feats)) return [];
+  return (feats as Record<string, unknown>[]).flatMap((o) => Object.keys(o || {}).filter((k) => o[k] === true).map((k) => {
+    const [ref, source = "PHB"] = k.split("|"), [name, list] = ref.split(";").map((x) => x.trim());
+    return { id: idOf(name, source), ...list ? { list } : {} };
+  }));
+}
+/** A race's versions, each with what it changes: an `_abstract` version is one per implementation. */
+function raceVersions(r: RawRace): Record<string, unknown>[] {
+  return (r._versions || []).flatMap((v): Record<string, unknown>[] => {
+    if (!v._abstract) return [v as Record<string, unknown>];
+    return (v._implementations || []).map(({ _variables, ...own }) => {
+      const vars = (_variables || {}) as Record<string, string>;
+      const text = JSON.stringify(v._abstract).replace(/\{\{(\w+)\}\}/g, (m, k: string) => vars[k] ?? m);
+      return { ...JSON.parse(text) as Record<string, unknown>, ...own };
+    });
+  });
+}
+/** A 2024 lineage's name: "Elf; Drow Lineage" is Drow, "Goliath; Cloud Giant Ancestry" Cloud Giant, "Dragonborn (Black)" Black. */
+const lineageName = (name: string) => /\((.+)\)$/.exec(name)?.[1] ?? (name.split("; ").pop() ?? name).replace(/ (Lineage|Legacy|Ancestry)$/, "");
+/** A version of a 2024 race as the subrace the sheet offers: `replaces` says which of the race's traits go with it. */
+function lineageOf(r: RawRace, v: Record<string, unknown>): SubraceData {
+  const { _mod, name, source, ...own } = v as { _mod?: Record<string, RawMod | RawMod[]>; name: string; source?: string } & Record<string, unknown>;
+  const merged = structuredClone({ ...r, _versions: undefined, ...own }) as RawRace & Record<string, unknown>;
+  if (_mod) applyMods(merged, _mod);
+  const named = (es: RawEntry[] | undefined) => (es || []).filter((e): e is RawEntryObject => typeof e === "object" && !!e.name);
+  const before = named(r.entries), after = named(merged.entries);
+  const lineage = lineageName(name);
+  const blocks = merged.additionalSpells || [];
+  const traits = after.filter((e) => !before.some((b) => sameJson(b, e)));
+  // the text is what a lineage's rules are: a darkvision the data has and the text doesn't mention is left out
+  const darkvision = merged.darkvision !== r.darkvision && merged.darkvision != null && JSON.stringify(traits).includes(String(merged.darkvision)) ? merged.darkvision : null;
+  const spells = blocks.length === 1 ? blocks : blocks.filter((b) => b.name === lineage);
+  return {
+    id: idOf(r.name, lineage, source || r.source), name: lineage, source: source || r.source, link: null,
+    ability: null, overwriteAbility: false,
+    speed: sameJson(merged.speed, r.speed) ? null : speedOf(merged.speed),
+    darkvision,
+    skills: profList(sameJson(merged.skillProficiencies, r.skillProficiencies) ? undefined : merged.skillProficiencies),
+    languages: [],
+    traits: traitsOf(traits),
+    // the race lists the spells of its lineages by name; a lineage of its own has one list
+    spells: spells.length ? spells : null,
+    hpPerLevel: 0,
+    replaces: before.filter((b) => !after.some((e) => sameJson(b, e))).map((b) => b.name!),
+  };
 }
 function profList(arr: RawProf[] | undefined): ProfList {
   const fixed: string[] = [], choose: ProfList["choose"] = [];
@@ -553,6 +601,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       });
       subsMade.push(s);
     }
+    const lineages = only2024 ? raceVersions(r).map((v) => lineageOf(r, v)) : [];
+    subOut.push(...lineages);
     const baseOk = allowed("races", r);
     if (!baseOk && !subOut.length) return;
     const SIZE: Record<string, string> = { T: "Tiny", S: "Small", M: "Medium", L: "Large" };
@@ -568,10 +618,12 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       languages: langText(r.languageProficiencies),
       feats: r.feats || null,
       traits: traitsOf(r.entries),
-      spells: r.additionalSpells || null,
+      // each lineage has its own
+      spells: lineages.length ? null : r.additionalSpells || null,
+      ...only2024 && /hit point maximum increases by 1/i.test(plain(renderEntries(r.entries))) ? { hpPerLevel: 1 } : {},
       subraces: subOut,
       // with a "Standard" subrace the race alone is incomplete (its bonuses live in the subraces)
-      subraceRequired: subOut.length > 0 && (!baseOk || !!standard),
+      subraceRequired: subOut.length > 0 && (!baseOk || !!standard || lineages.length > 0),
     };
     if (standard && subOut.length === 1) mergeSubrace(race, standard);
     races.push(race);
@@ -762,6 +814,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       skills: profList(b.skillProficiencies), tools: profList(b.toolProficiencies), languages: langText(b.languageProficiencies),
       feature: fe ? { name: fe.name.replace(FEATURE, ""), heading: fe.name, text: renderEntries(fe.entries), link: null } : null,
       feats: b.feats || null,
+      ...only2024 ? { ability: abilityOf(b.ability), originFeats: originFeatsOf(b.feats) } : {},
     });
     made.add(b);
   });
@@ -771,7 +824,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   for (const f of raw.feat) guard("feats", f, () => {
     if (!allowed("feats", f)) return;
     const prereq = (f.prerequisite || []).map(prereqText).join(" or ");
-    feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries), spells: f.additionalSpells || null });
+    feats.push({ id: idOf(f.name, f.source), name: nameOf(f), source: f.source, link: null, prereq, ability: f.ability ? abilityOf(f.ability) : [], text: renderEntries(f.entries), spells: f.additionalSpells || null, ...only2024 && f.category ? { category: f.category } : {} });
     made.add(f);
   });
 
