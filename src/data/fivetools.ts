@@ -30,7 +30,11 @@ export interface RawBase {
   name: string;
   source: string;
   srd?: boolean | string;
+  /** SRD 5.2: like `srd` */
+  srd52?: boolean | string;
   edition?: string;
+  /** the newer printings of this entry, as "name|source" */
+  reprintedAs?: (string | { uid?: string })[];
   entries?: RawEntry[];
   _copy?: RawCopy;
 }
