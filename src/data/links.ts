@@ -88,6 +88,8 @@ export class Linker {
     for (const r of data.races) {
       for (const s of r.subraces) s.link = this.note("races", `${r.name} (${s.name})`, s.source);
       r.link = this.note("races", r.name, r.source) ?? r.subraces.find((s) => s.link)?.link ?? null;
+      // a 2024 lineage is told about in the note of its species
+      for (const s of r.subraces) if (!s.link && s.replaces) s.link = r.link;
     }
     for (const c of data.classes) {
       c.link = this.note("classes", c.name, c.source);

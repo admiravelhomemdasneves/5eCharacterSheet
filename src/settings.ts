@@ -28,6 +28,8 @@ export interface SheetSettings {
   importClassicIn2024: boolean;
   /** optional folder of a ttrpg-convert-cli compendium, used only for links */
   compendiumFolder: string;
+  /** the same for the 2024 rules; empty = the folder above */
+  compendiumFolder2024: string;
   fivetoolsPath: string;
   /** vault paths of 5etools homebrew files added to the data when importing */
   homebrewFiles: string[];
@@ -48,12 +50,12 @@ export interface SheetSettings {
   customDataPath: string;
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
-  charactersFolder: "", lastFolder: "", dataSource: "none", dataSource2024: "none", defaultRuleset: "5e-2014", splitEditions: true, importClassicIn2024: true, compendiumFolder: "",
+  charactersFolder: "", lastFolder: "", dataSource: "none", dataSource2024: "none", defaultRuleset: "5e-2014", splitEditions: true, importClassicIn2024: true, compendiumFolder: "", compendiumFolder2024: "",
   fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "", lastImport2024: "", removedEntries: [], noteLinks: {},
   theme: "plugin", customAccent: "#922610", hiddenSections: [], customDataPath: "",
 };
 const THEME_KEYS = ["theme", "customAccent"];
-const RELOAD_KEYS = ["dataSource", "dataSource2024", "defaultRuleset", "compendiumFolder"];
+const RELOAD_KEYS = ["dataSource", "dataSource2024", "defaultRuleset", "compendiumFolder", "compendiumFolder2024"];
 // Sheet template toggles use "section:<key>" control keys, stored as the list of hidden sections
 const SECTION_PREFIX = "section:";
 // homebrew files are edited one path per line and stored as a list
@@ -73,6 +75,7 @@ const T = {
   onlyNotes: ["Only entries with a note", "Import only what has a note in your compendium folder, so the menus match it exactly."],
   importNow: ["Import", "Convert the data now. The result is stored in this plugin's folder, and a report shows what came from each file."],
   compendium: ["Compendium folder", "Optional, only for links. The folder that contains the \"compendium\" and \"rules\" folders of your compendium notes. Races, classes, spells, items and features then link to their notes."],
+  compendium2024: ["Compendium folder for the 2024 rules", "Optional. The same, for a compendium made from the 2024 books. Leave it empty if the folder above has both editions, or to use it for both."],
   license: ["SRD license", ""],
   importWhat: "Imports the data of each edition set to \"Imported from 5etools\" above, each into its own file.",
   theme: ["Theme", "Accent colour of the sheets: the plugin's own, the one of your Obsidian theme, or your own choice."],
@@ -258,6 +261,7 @@ export class SheetSettingTab extends PluginSettingTab {
       { type: "page", name: "Compendium", desc: T.compendiumPage, items: [
         { type: "group", items: [
           { name: T.compendium[0], desc: withLinks(T.compendium[1], L.compendium), control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
+          { name: T.compendium2024[0], desc: T.compendium2024[1], control: { type: "folder", key: "compendiumFolder2024", placeholder: "Same folder" } },
           { name: "Making a compendium", desc: withLinks(T.makeCompendium, L.convert, L.convertCli, L.convertUi) },
         ] },
       ] },

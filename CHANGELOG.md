@@ -9,6 +9,7 @@ What each version of 5e Character Sheet brings. The release of each version on G
 - **SRD 5.2.1 included,** with 9 species, 12 classes, 4 backgrounds, 17 feats and 339 spells.
 - **Rules settings.** The *Rules data* page is now *Rules*: the rules of new characters, and the data of each edition. It lists any conflict between the rules chosen and their data. The *New character* dialog lets you choose the rules.
 - **Importing the 2024 rules.** Each edition is imported into its own data. What was reprinted for 2024 stays out of the 2024 data, and classic content with no 2024 version is included, or left out with a setting. The report says at the top which homebrew is for rules you didn't import.
+- **A compendium for each edition.** Set *Compendium folder for the 2024 rules* to use a separate compendium made from the 2024 books. A lineage links to the note of its species.
 - **Change a sheet's rules** from the button next to its rules label. What it was stays in the sheet, and changing back brings it back.
 
 ### Fixes

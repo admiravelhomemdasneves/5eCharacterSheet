@@ -10,7 +10,7 @@ import { ReportFile, importReport, joinedData, mergedEntries } from "./data/repo
 import { RemovedEntry, entryKey, removedFrom, removedKeys, withoutEntries } from "./data/entries";
 import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
-import { editionsApart, importedRulesets, isMixedData } from "./data/editions";
+import { compendiumFor, editionsApart, importedRulesets, isMixedData } from "./data/editions";
 import { dataConflicts } from "./rules/conflicts";
 import { fileNameProblem, renamedPath } from "./files";
 import { loadSrd } from "./data/srd";
@@ -102,7 +102,7 @@ export default class CharacterSheetPlugin extends Plugin {
     for (const r of RULESETS) {
       // rules with nothing to load cost nothing: most vaults use one ruleset
       const idle = r.id !== DEFAULT_RULESET && this.dataSourceOf(r.id) === "none" && !custom.file.entries.some((e) => e.ruleset === r.id);
-      this.contexts.set(r.id, idle ? { ...emptyContext(r.id, r, "ready"), linker: this.buildLinker() } : await this.loadContext(r.id, custom));
+      this.contexts.set(r.id, idle ? { ...emptyContext(r.id, r, "ready"), linker: this.buildLinker({}, r.id) } : await this.loadContext(r.id, custom));
     }
     // said once per session: the rest is for when the settings are open
     if (!this.conflictNoticeShown && this.dataConflicts().some((c) => c.kind === "mixed-data")) {
@@ -136,8 +136,7 @@ export default class CharacterSheetPlugin extends Plugin {
     const ruleset = rulesetById(id);
     const merged = mergeCustom(data, custom.file, ruleset), alone = mergeCustom(EMPTY_DATA, custom.file, ruleset);
     const manual = source === "none" || (data.races.length === 0 && data.classes.length === 0);
-    const linker = this.buildLinker(merged.links);
-    linker.sameSourceOnly = id !== DEFAULT_RULESET;
+    const linker = this.buildLinker(merged.links, id);
     return {
       id, ruleset, importIsOutdated, manual, linker,
       // a source is chosen but gave nothing: the sheets must not take that for rules that say nothing
@@ -163,8 +162,13 @@ export default class CharacterSheetPlugin extends Plugin {
   }
 
   /** Index the compendium notes (title + source tag) under the configured folder. `extra`: notes custom entries link to, by note key. */
-  buildLinker(extra: Record<string, string> = {}) {
-    const root = normalizePath(this.settings.compendiumFolder.trim() || "/");
+  buildLinker(extra: Record<string, string> = {}, ruleset = DEFAULT_RULESET) {
+    const linker = this.linkerOf(extra, ruleset);
+    linker.sameSourceOnly = ruleset !== DEFAULT_RULESET;
+    return linker;
+  }
+  private linkerOf(extra: Record<string, string>, ruleset: string) {
+    const root = normalizePath(compendiumFor(this.settings, ruleset) || "/");
     // notes chosen in "Import data" link even without a compendium folder
     const chosen = { ...this.settings.noteLinks, ...extra };
     if (root === "/") return new Linker(null, [], chosen);
@@ -223,8 +227,6 @@ export default class CharacterSheetPlugin extends Plugin {
     }
     const notice = new Notice(base ? "Importing 5etools data…" : "Importing homebrew…", 0);
     try {
-      const linker = this.settings.importOnlyWithNotes ? this.buildLinker() : null;
-      if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
       // homebrew files, and entries in them, that can't be read are left out and reported; the rest is imported
       const homebrew: HomebrewFile[] = [], files: ReportFile[] = [], leftOut: string[] = [];
       for (const path of brewPaths) {
@@ -242,6 +244,8 @@ export default class CharacterSheetPlugin extends Plugin {
       const brew = !base ? ` (${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"} only, no 5etools data)` : homebrew.length ? ` (with ${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"})` : "";
       for (const ruleset of importedRulesets(this.settings)) {
         const entries: BrewEntry[] = [];
+        const linker = this.settings.importOnlyWithNotes ? this.buildLinker({}, ruleset) : null;
+        if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
         const built = await buildCompendium({
           read: base ? async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown : undefined,
           homebrew: structuredClone(homebrew),

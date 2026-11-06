@@ -10,6 +10,10 @@ type Sources = { dataSource: string; dataSource2024: string };
 /** The rules "Import now" imports: each of those whose data source is the imported data. */
 export const importedRulesets = (st: Sources) => [...st.dataSource === "imported" ? [DEFAULT_RULESET] : [], ...st.dataSource2024 === "imported" ? [RULESET_2024_ID] : []];
 
+/** The compendium of some rules: the 2024 rules have their own folder if one is set, else they use the same one. */
+export const compendiumFor = (st: { compendiumFolder: string; compendiumFolder2024: string }, ruleset: string) =>
+  (ruleset === RULESET_2024_ID && st.compendiumFolder2024.trim()) || st.compendiumFolder.trim();
+
 /** Editions are kept apart unless the import filter of an older version let them mix: then that stays until the player separates them. */
 export const editionsApart = (saved: { splitEditions?: boolean; importRules2014?: boolean; importOnlyWithNotes?: boolean } | null | undefined) =>
   saved?.splitEditions ?? ((saved?.importRules2014 ?? true) && !saved?.importOnlyWithNotes);
