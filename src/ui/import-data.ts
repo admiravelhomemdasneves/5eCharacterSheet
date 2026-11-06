@@ -2,7 +2,7 @@ import { App, FuzzySuggestModal, Notice, Platform, Setting, TFile, TFolder, Vaul
 import type CharacterSheetPlugin from "../main";
 import { ENTRY_KINDS, type EntryKind } from "../data/build";
 import { KIND_LABELS as KIND, groupByFile, removedFrom, type DataEntry, type EntryGroup } from "../data/entries";
-import { importedRulesets } from "../data/editions";
+import { compendiumFor, importedRulesets } from "../data/editions";
 import { DEFAULT_RULESET } from "../custom/format";
 import { rulesetById } from "../rules/rulesets";
 import type { Counts } from "../data/report";
@@ -141,7 +141,7 @@ export class ImportDataView {
     const actions = tr.createEl("td", { cls: "dnd-import-data-actions" });
     const edit = actions.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Change compendium note" } });
     setIcon(edit, "pencil");
-    edit.onclick = () => new NoteSuggestModal(plugin.app, plugin.settings.compendiumFolder.trim(), chosen != null, async (path) => {
+    edit.onclick = () => new NoteSuggestModal(plugin.app, compendiumFor(plugin.settings, this.rules), chosen != null, async (path) => {
       await plugin.setNoteLink(e.noteKey, path);
       this.redraw();
     }).open();

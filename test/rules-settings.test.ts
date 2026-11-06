@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { buildCompendium, importOptions, type BrewEntry } from "../src/data/build.ts";
-import { editionsApart, importedRulesets, isMixedData } from "../src/data/editions.ts";
+import { compendiumFor, editionsApart, importedRulesets, isMixedData } from "../src/data/editions.ts";
 import { Linker } from "../src/data/links.ts";
 import { importReport } from "../src/data/report.ts";
 import { dataConflicts } from "../src/rules/conflicts.ts";
@@ -111,6 +111,27 @@ test("a note of the same name from another source isn't used for 2024 data", () 
   assert.ok(l.note("spells", "Fireball", "XPHB"));
   l.sameSourceOnly = true;
   assert.equal(l.note("spells", "Fireball", "XPHB"), null);
+});
+
+test("each edition has its compendium, and 2024 uses the same one unless it has its own", () => {
+  const st = (compendiumFolder: string, compendiumFolder2024: string) => ({ compendiumFolder, compendiumFolder2024 });
+  assert.equal(compendiumFor(st("Old", "New"), "5e-2014"), "Old");
+  assert.equal(compendiumFor(st("Old", "New"), "5e-2024"), "New");
+  assert.equal(compendiumFor(st("Old", " "), "5e-2024"), "Old");
+  assert.equal(compendiumFor(st("", "New"), "5e-2014"), "");
+});
+
+test("a lineage links to the note of its species, a subrace with no note to nothing", () => {
+  const notes = [{ path: "c/compendium/races/elf-xphb", alias: "Elf", source: "XPHB" }, { path: "c/compendium/races/dwarf", alias: "Dwarf", source: "PHB" }];
+  const sub = { ...srd52.races.find((r) => r.name === "Elf")!.subraces[0], link: null };
+  const data = structuredClone(srd52);
+  data.races = [
+    { ...data.races.find((r) => r.name === "Elf")!, subraces: [sub] },
+    { ...data.races.find((r) => r.name === "Dwarf")!, source: "PHB", subraces: [{ ...sub, name: "Hill", source: "PHB", replaces: undefined }] },
+  ];
+  const d = new Linker("c", notes).attach(data);
+  assert.equal(d.races[0].subraces[0].link, "c/compendium/races/elf-xphb");
+  assert.equal(d.races[1].subraces[0].link, null);
 });
 
 test("both rulesets are there, and 2024 has custom entries too", () => {
