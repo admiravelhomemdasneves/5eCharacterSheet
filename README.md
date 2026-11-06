@@ -1,14 +1,14 @@
 <h1 align="center">5e Character Sheet</h1>
 
 <p align="center">
-  Interactive <b>fifth edition (2014 rules)</b> character sheets that live inside your Obsidian notes.<br>
+  Interactive <b>fifth edition (2014 and 2024 rules)</b> character sheets that live inside your Obsidian notes.<br>
   Create a character in a few clicks, keep your friends' characters next to your campaign notes, and roll straight from the sheet.
 </p>
 
 <p align="center">
   <a href="https://github.com/admiravelhomemdasneves/5eCharacterSheet/releases/latest"><img src="https://img.shields.io/github/v/release/admiravelhomemdasneves/5eCharacterSheet?label=release&color=922610" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Obsidian-1.4%2B-7c3aed" alt="Obsidian 1.4+">
-  <img src="https://img.shields.io/badge/rules-5e%202014-922610" alt="5e 2014 rules">
+  <img src="https://img.shields.io/badge/rules-5e%202014%20%26%202024-922610" alt="5e 2014 and 2024 rules">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
@@ -20,7 +20,8 @@
 
 - **Everything in one note.** Race, class (multiclass included), background, ability scores, combat, skills, features, spells, inventory, personality and a diary, saved in the note itself.
 - **Rules done for you.** Racial bonuses, proficiency, saves and skills, AC, hit points, spell save DC, spell slots (single and multiclass), class features by level and a creation checklist that tells you what is still missing.
-- **Works with or without game data.** Manual mode for homebrew and quick notes, the SRD 5.1 built in, or import the books you own and 5etools homebrew.
+- **2014 and 2024 rules.** Each character keeps its own rules, so both can be in the same vault.
+- **Works with or without game data.** Manual mode for homebrew and quick notes, the SRD 5.1 and SRD 5.2.1 built in, or import the books you own and 5etools homebrew.
 - **Roll from the sheet.** Click any bonus to roll; Shift-click for advantage, Ctrl/Cmd-click for disadvantage. Uses [Dice Roller](https://github.com/javalent/dice-roller) when installed.
 - **Linked to your notes.** Optional links and page previews to a compendium, `[[links]]` in every text field, and Initiative Tracker integration.
 
@@ -74,7 +75,7 @@ Plain text when you read, a text box when you click. Type `[[` to link any note 
 - **Rolls**: click any bonus to roll; Shift-click = advantage, Ctrl/Cmd-click = disadvantage. Uses the [Dice Roller](https://github.com/javalent/dice-roller) plugin when it is installed, a built-in roller otherwise.
 - **Initiative Tracker**: the sheet keeps `name`, `level`, `hp`, `ac` and `modifier` in the note's properties, which [Initiative Tracker](https://github.com/javalent/initiative-tracker) reads for players linked to a note.
 
-> The screenshots show content imported from the books the author owns. The plugin itself ships only the SRD 5.1; see [Rules data](#rules-data).
+> The screenshots show content imported from the books the author owns. The plugin itself ships only the SRD 5.1 and SRD 5.2.1; see [Rules data](#rules-data).
 
 ## Requirements
 
@@ -128,17 +129,37 @@ The settings have five pages, and a sixth with imported data (tabs in Obsidian b
   - **Characters folder**: optional. Where new characters are created. Leave it empty to use the last folder you created a character in (the vault root the first time).
   - **Theme**: the sheet's accent colour. *Original* keeps the plugin's red accent, *Obsidian theme* uses your theme's accent colour, and *Custom* lets you pick your own.
 - **Sheet template**: which sections new sheets show (all of them by default, even while empty). On a sheet, hover a section's title to hide it, and use the **Hidden sections** menu at the top to show it again.
-- **Rules data**: none (manual mode), SRD 5.1 or imported data (see below). For imported data it walks you through the three steps of the import. A warning on the page means the import is still to do or out of date.
+- **Rules**: the rules of new characters, and for each edition its data: none (manual mode), the SRD or imported data (see below). For imported data it walks you through the three steps of the import. A warning on the page means the import is still to do or out of date, or that a conflict is listed at its top.
 - **Import data** (with imported data): what was imported and from where; remove entries and change their compendium notes (see [Import data](#import-data)).
 - **Custom data**: your own races, subraces, classes, subclasses, backgrounds, feats, spells and items, and traits and features for the races and classes of your rules data (see [Custom data](#custom-data)).
 - **Compendium**: optional, only for links (see [Compendium links](#compendium-links-optional)).
 
+### 2014 and 2024 rules
+
+Each character has its own rules, shown at the top of the sheet. **Rules of new characters** on the *Rules* page sets what the *New character* dialog starts with, and the dialog lets you choose. Sheets from before the 2024 rules are 2014 sheets, and nothing about them changes.
+
+Under the 2024 rules:
+
+- Backgrounds give the ability score increases and an origin feat; races are species, with lineages.
+- Weapon mastery: pick your weapons in the class feature, and the attack shows the mastery.
+- Prepared spells come from the class table, and subclasses and half casters follow the 2024 classes.
+- Exhaustion takes 2 per level from d20 tests when you roll, and 5 feet per level from your speed. A long rest gives back all your hit dice.
+
+To change a sheet's rules, press the button next to its rules label. Race, background, classes, feats and spells don't carry over, so they start empty under the new rules. Nothing is lost: what the sheet was stays in it, and changing back brings it back. Name, ability scores, inventory and notes stay.
+
+If a sheet's choices aren't in its rules data, or its data is missing, a warning at the top of the sheet says so, and its hit points and properties are left as they are until that is fixed.
+
+An older version of the plugin shows a 2024 sheet as a 2014 one, and changes to it there can limit its current hit points. Use the same version on all your devices.
+
 ### Rules data
+
+Each edition has its own data, chosen on the *Rules* page.
 
 | Source | What you get |
 |---|---|
 | **None (manual mode)** — default | Everything is typed in: race, class, features, spells, AC, HP, speed, hit dice. Simple maths stays automatic: modifiers, proficiency bonus, saves, skills, passive Perception, initiative, spell DC and attack. |
-| **SRD 5.1 (included)** | Menus and automatic rules for the SRD 5.1 content (9 races, 12 classes with one subclass each, 319 spells, equipment). |
+| **SRD 5.1 (included)**, 2014 rules | Menus and automatic rules for the SRD 5.1 content (9 races, 12 classes with one subclass each, 319 spells, equipment). |
+| **SRD 5.2.1 (included)**, 2024 rules | The same for the SRD 5.2.1 content (9 species with their lineages, 12 classes with one subclass each, 4 backgrounds, 17 feats, 339 spells, equipment). |
 | **Imported from 5etools** | All the content of the books you own (see below). |
 
 Switching sources never loses information: manual fields and data-driven choices are stored separately.
@@ -149,10 +170,12 @@ New to 5etools? This is everything you need, in order. Only for content **you ar
 
 1. **Get the data.** 5etools keeps the content of the books as JSON files in a folder named `data` (with files such as `races.json` and `backgrounds.json`, and folders such as `class` and `spells`). You need that `data` folder from a copy of 5etools.
 2. **Put it in your vault.** Copy the whole `data` folder into your vault, e.g. as `.5etools/data`. A folder whose name starts with a dot is hidden, so the hundreds of JSON files don't show up in your file list, search or graph. Obsidian on mobile can only reach files inside the vault, so keep it there on every device you use.
-3. **Choose it in the settings.** Open *Settings → 5e Character Sheet → Rules data* and choose **Imported from 5etools**. Three steps appear.
+3. **Choose it in the settings.** Open *Settings → 5e Character Sheet → Rules* and choose **Imported from 5etools** for the 2014 rules, the 2024 rules or both. Three steps appear.
 4. **Find it.** Press **Detect**. It looks through your vault, hidden folders included, and lists the 5etools data folders, homebrew files and compendium folders it finds; pick what to use and press **Use these**. Or type the folder (e.g. `.5etools/data`) in **Folder with 5etools data**.
-5. **Import.** Optional: **Only 2014 rules** leaves out the 2024 core books, and **Only entries with a note** imports exactly what your compendium contains. Press **Import now**. A report shows what came from the 5etools data and from each homebrew file.
+5. **Import.** Optional: **Only entries with a note** imports exactly what your compendium contains, and **Classic content in the 2024 data** (on by default) also brings older content with no 2024 version into the 2024 data. Press **Import now**: each edition gets its own data, and what was reprinted for 2024 stays out of the 2024 data. A report shows what came from the 5etools data and from each homebrew file.
 6. **Done.** The races, classes, backgrounds, spells and items are in the menus of every sheet. The data is converted on your device and stored in the plugin's folder in your vault, so you can delete the copied `data` folder afterwards. Import again after you update it.
+
+Data from an older version with both editions mixed keeps working as it was. The *Rules* page then shows a conflict, with a button to separate the editions: the old file is kept as a backup, and sheets aren't changed.
 
 Optional extras:
 
@@ -217,6 +240,7 @@ If you keep a compendium generated by [ttrpg-convert-cli](https://github.com/ebu
 - Character data is stored in the note's frontmatter (`dnd` property, hidden from the Properties panel). Links written inside the sheet work and preview, but Obsidian does not count them as backlinks.
 - Spell lists, class tables and features come from the data source; homebrew content can be imported in the 5etools format (see [Homebrew](#homebrew)) or added in manual mode.
 - Optional class features from Tasha's Cauldron are shown and marked as optional rather than chosen individually.
+- Under the 2024 rules, Weapon Mastery offers every weapon with a mastery, without each class's limits, and a classic background gives no ability increases.
 
 ## Development
 
@@ -239,7 +263,9 @@ npm run build      # bundles dist/main.js, manifest.json, styles.css
 
 This work includes material taken from the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.
 
-Only SRD 5.1 content is distributed with this plugin. Content imported by a user from their own files stays on their computer and is their responsibility.
+This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
+
+Only SRD 5.1 and SRD 5.2.1 content is distributed with this plugin. Content imported by a user from their own files stays on their computer and is their responsibility.
 
 Dungeons & Dragons, D&D and Wizards of the Coast are trademarks of Wizards of the Coast LLC. 5etools, ttrpg-convert-cli, Dice Roller and Initiative Tracker are independent projects of their respective authors.
 

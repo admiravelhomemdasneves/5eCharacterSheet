@@ -6,9 +6,13 @@ This project includes or derives from the following third-party material. It is 
 
 `data/srd-5.1.json` contains material from the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC, available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
 
+## System Reference Document 5.2.1
+
+`data/srd-5.2.1.json` contains material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
+
 ## 5etools
 
-`data/srd-5.1.json` is derived from the data files of 5etools (https://github.com/5etools-mirror-3/5etools-src), and `src/data/build.ts` reads that data format. The structure of that data is provided under the following license:
+`data/srd-5.1.json` and `data/srd-5.2.1.json` are derived from the data files of 5etools (https://github.com/5etools-mirror-3/5etools-src), and `src/data/build.ts` reads that data format. The structure of that data is provided under the following license:
 
 ```text
 MIT License
