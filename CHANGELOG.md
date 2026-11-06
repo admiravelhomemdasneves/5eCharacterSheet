@@ -2,6 +2,25 @@
 
 What each version of 5e Character Sheet brings. The release of each version on GitHub uses its section as its notes.
 
+## 1.5.0
+
+### New
+- **The 2024 rules.** Each character keeps its own rules, so 2014 and 2024 characters can be in the same vault. Under the 2024 rules backgrounds give the ability increases and an origin feat, species have lineages, and classes have weapon mastery, Fighting Style and Epic Boons, prepared spells from their tables, the 2024 exhaustion and all hit dice back on a long rest. (#3)
+- **SRD 5.2.1 included,** with 9 species, 12 classes, 4 backgrounds, 17 feats and 339 spells.
+- **Rules settings.** The *Rules data* page is now *Rules*: the rules of new characters, and the data of each edition. It lists any conflict between the rules chosen and their data. The *New character* dialog lets you choose the rules.
+- **Importing the 2024 rules.** Each edition is imported into its own data. What was reprinted for 2024 stays out of the 2024 data, and classic content with no 2024 version is included, or left out with a setting. The report says at the top which homebrew is for rules you didn't import.
+- **Change a sheet's rules** from the button next to its rules label. What it was stays in the sheet, and changing back brings it back.
+
+### Fixes
+- **A sheet whose data is missing keeps its hit points.** With the rules data not loaded, as on a device where the imported file isn't synced, any change used to cut current HP to the manual maximum. The sheet now says what is wrong and leaves its numbers as they are.
+- `npm run data:srd` works again.
+
+### After updating
+- **2014 sheets don't change,** and neither does your data.
+- **If your import mixes the 2014 and 2024 rules** (*Only 2014 rules* off, or *Only entries with a note* on, with 2024 entries in the data), it keeps working as it did. The *Rules* page offers to separate the editions.
+- **Use the same version on all your devices.** An older version shows a 2024 sheet as a 2014 one, and changes to it there can limit its current hit points.
+- **The plugin is larger** (`main.js` is about 2 MB), as it now has both SRDs.
+
 ## 1.4.0
 
 ### New
