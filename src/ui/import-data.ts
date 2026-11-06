@@ -25,7 +25,7 @@ export class ImportDataView {
     el.empty();
     el.addClass("dnd-report", "dnd-import-data");
     // the data as imported, without the custom entries (see Custom data)
-    const { plugin } = this, st = plugin.settings, data = plugin.baseData;
+    const { plugin } = this, st = plugin.settings, data = plugin.context.baseData;
     if (st.dataSource !== "imported" || !st.lastImport) {
       el.createEl("p", { cls: "dnd-hint", text: "Nothing imported yet. Import your 5etools data or homebrew in the rules data settings first." });
       return;
@@ -121,7 +121,7 @@ export class ImportDataView {
     const tr = body.createEl("tr");
     tr.createEl("td", { text: e.name });
     tr.createEl("td", { text: KIND[e.kind][0] });
-    tr.createEl("td", { text: e.source, attr: { title: plugin.rules.data.meta.sources[e.source] ?? "" } });
+    tr.createEl("td", { text: e.source, attr: { title: plugin.context.rules.data.meta.sources[e.source] ?? "" } });
     const note = tr.createEl("td", { cls: "dnd-import-data-note" });
     const chosen = plugin.settings.noteLinks[e.noteKey];
     if (e.link) {

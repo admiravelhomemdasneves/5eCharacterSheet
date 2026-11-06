@@ -150,12 +150,12 @@ export class SheetSettingTab extends PluginSettingTab {
   private importStatus() {
     const st = this.plugin.settings;
     if (!st.lastImport) return "Not imported yet.";
-    return `Last import: ${st.lastImport}` + (this.plugin.importIsOutdated ? ` — out of date: press "Import now" to update it (${IMPORT_CHANGES}).` : "");
+    return `Last import: ${st.lastImport}` + (this.plugin.context.importIsOutdated ? ` — out of date: press "Import now" to update it (${IMPORT_CHANGES}).` : "");
   }
 
   // Obsidian 1.13+: declarative settings, also searchable from the settings search
   /** the imported data is chosen but missing or out of date */
-  private importNeedsAttention() { const st = this.plugin.settings; return st.dataSource === "imported" && (!st.lastImport || this.plugin.importIsOutdated); }
+  private importNeedsAttention() { const st = this.plugin.settings; return st.dataSource === "imported" && (!st.lastImport || this.plugin.context.importIsOutdated); }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
     const st = this.plugin.settings;

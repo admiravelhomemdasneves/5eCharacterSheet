@@ -20,7 +20,7 @@ export class CustomDataView {
   draw(el: HTMLElement) {
     el.empty();
     el.addClass("dnd-report", "dnd-import-data", "dnd-custom-data");
-    const { plugin } = this, ruleset = plugin.ruleset, file = plugin.customFile;
+    const { plugin } = this, c = plugin.context, ruleset = c.ruleset!, file = plugin.customFile;
     el.createEl("p", { cls: "dnd-hint", text: `Your own entries for ${ruleset.label}. With the SRD or imported rules data they are in the sheets' menus, under "Custom data"; in manual mode, "From custom data…" fills a sheet's fields with them.` });
 
     new Setting(el).setName("File").setDesc(`Where they are kept, in this vault. A folder starting with a dot is hidden from the file list and search. After editing the file by hand, load it again.`)
@@ -36,13 +36,13 @@ export class CustomDataView {
     new Setting(el).setName("New entry").setDesc("A race, subrace, class, subclass, background, feat, spell or item of your own, or a trait or feature for a race or class of the rules data.")
       .addButton((b) => b.setButtonText("Create an entry").setCta().onClick(() => this.create()));
 
-    if (plugin.customProblems.length) {
+    if (c.customProblems.length) {
       const d = el.createEl("details", { cls: "dnd-report-messages", attr: { open: "" } });
-      d.createEl("summary", { text: `Problems (${plugin.customProblems.length})` });
+      d.createEl("summary", { text: `Problems (${c.customProblems.length})` });
       const ul = d.createEl("ul");
-      for (const m of plugin.customProblems) ul.createEl("li", { text: m });
+      for (const m of c.customProblems) ul.createEl("li", { text: m });
     }
-    if (plugin.customOther) el.createEl("p", { cls: "dnd-hint", text: `${plugin.customOther} entr${plugin.customOther === 1 ? "y is" : "ies are"} for other rules, so not used with this rules data.` });
+    if (c.customOther) el.createEl("p", { cls: "dnd-hint", text: `${c.customOther} entr${c.customOther === 1 ? "y is" : "ies are"} for other rules, so not used with this rules data.` });
 
     if (!file.entries.length) { el.createEl("p", { cls: "dnd-hint", text: "No custom entries yet." }); return; }
     const bar = el.createDiv({ cls: "dnd-import-data-bar" });
@@ -64,7 +64,7 @@ export class CustomDataView {
     el.empty();
     const { plugin } = this, q = lc(this.query.trim());
     const kindOf = (e: CustomEntry) => rulesetById(e.ruleset).kinds.find((k) => k.kind === e.kind) ?? null;
-    const order = (e: CustomEntry) => plugin.ruleset.kinds.findIndex((k) => k.kind === e.kind);
+    const order = (e: CustomEntry) => plugin.context.ruleset!.kinds.findIndex((k) => k.kind === e.kind);
     const entries = plugin.customFile.entries.filter((e) => (!this.kind || e.kind === this.kind) && (!q || lc(e.name).includes(q)))
       .sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
     if (!entries.length) { el.createEl("p", { cls: "dnd-hint", text: "No entries match." }); return; }
@@ -77,7 +77,7 @@ export class CustomDataView {
 
   private row(body: HTMLElement, e: CustomEntry, def: KindDef | null) {
     const { plugin } = this;
-    const other = e.ruleset !== plugin.ruleset.id;
+    const other = e.ruleset !== plugin.context.id;
     const tr = body.createEl("tr", { cls: other || !def ? "is-left-out" : "" });
     tr.createEl("td", { text: e.name });
     tr.createEl("td", { text: (def?.label[0] ?? e.kind) + (other ? ` (${rulesetById(e.ruleset).label})` : "") });
@@ -108,9 +108,9 @@ export class CustomDataView {
 
   /** "+ New entry": the kind first, then its form. */
   private create() {
-    const { plugin } = this;
-    const ctx = { data: plugin.manual ? plugin.customOnly : plugin.rules.data };
-    new Picker(plugin.app, plugin.ruleset.kinds, (k) => k.label[0], (k) => {
+    const { plugin } = this, c = plugin.context;
+    const ctx = { data: c.manual ? c.customOnly : c.rules.data };
+    new Picker(plugin.app, c.ruleset!.kinds, (k) => k.label[0], (k) => {
       const why = k.available?.(ctx);
       if (why) { new Notice(why); return; }
       window.setTimeout(() => new EntryModal(plugin.app, plugin, k, null, () => this.redraw()).open(), 0);

@@ -7,8 +7,10 @@ import { CharState } from "../rules/engine";
 import { button, iconButton, labeled, RichOpt, richSelect } from "./widgets";
 import { roll } from "./dice";
 import { isD20, withAdvantage } from "../rules/roll";
+import { sheetConflicts } from "../rules/conflicts";
 import { SECTIONS } from "../sections";
 import { richText } from "./richtext";
+import { rulesWarnings } from "./sections/rules-warnings";
 import { header } from "./sections/header";
 import { creation } from "./sections/creation";
 import { abilities } from "./sections/abilities";
@@ -37,8 +39,17 @@ export class CharacterSheet extends MarkdownRenderChild {
   constructor(readonly plugin: CharacterSheetPlugin, el: HTMLElement, public sourcePath: string) {
     super(el);
   }
-  get r() { return this.plugin.rules; }
-  get manual() { return this.plugin.manual; }
+  /** what this sheet works with: the context of its character's rules */
+  get ctx() { return this.plugin.contextById(this.s.ruleset); }
+  get r() { return this.ctx.rules; }
+  get manual() { return this.ctx.manual; }
+  /** the rules can say what this character's numbers are; if not, they are left as they are */
+  get trusted() { return this.plugin.trusted(this.ctx, this.s); }
+  /** what is wrong between this sheet and its rules */
+  conflicts() {
+    const c = this.ctx;
+    return sheetConflicts({ ruleset: c.id, label: c.ruleset?.label ?? null, status: c.status, unresolved: c.manual ? [] : E.unresolvedIds(c.rules, this.s) });
+  }
   /** called by the plugin when settings or rules data change, or the note's state was replaced
    *  (changed outside the sheet, or by another sheet of the same note) */
   reload() {
@@ -96,7 +107,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     // current HP is not used by derive(), so the render below can use it after the HP check
     const d = this.derive();
     // a lower maximum (level down, CON down, manual edit) must not leave current HP above it
-    if (this.s.hp.current != null) this.s.hp.current = E.currentHp(this.s, this.manual ? this.s.manual.maxHp : d.hp.max);
+    if (this.s.hp.current != null) this.s.hp.current = E.settledHp(this.s, this.trusted, this.manual ? this.s.manual.maxHp : d.hp.max);
     this.plugin.states.set(this.sourcePath, this.s);
     this.plugin.requestSave(this.sourcePath);
     if (rerender) this.render(d);
@@ -126,6 +137,7 @@ export class CharacterSheet extends MarkdownRenderChild {
     root.addClass("dnd-sheet");
     this.applyTheme(root);
     this.hiddenSectionsMenu(root);
+    rulesWarnings(this, root);
     header(this, root, d);
     creation(this, root, d);
     abilities(this, root, d);
@@ -183,7 +195,7 @@ export class CharacterSheet extends MarkdownRenderChild {
   }
   md(parent: HTMLElement, text: string) {
     const el = parent.createDiv({ cls: "dnd-md" });
-    void MarkdownRenderer.render(this.app, this.plugin.linker.text(text), el, this.sourcePath, this.renderScope ?? this);
+    void MarkdownRenderer.render(this.app, this.ctx.linker.text(text), el, this.sourcePath, this.renderScope ?? this);
     return el;
   }
   rollable(parent: HTMLElement, text: string, formula: string, label: string, cls = "") {

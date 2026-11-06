@@ -1,5 +1,6 @@
 // Pure D&D 5e (2014) rules engine: no Obsidian imports, so it can be unit tested in Node.
 // Note: written with erasable TypeScript only (no enums/namespaces) so Node can strip types.
+import { DEFAULT_RULESET } from "../custom/format.ts";
 
 export type Ability = "str" | "dex" | "con" | "int" | "wis" | "cha";
 export const ABILITIES: Ability[] = ["str", "dex", "con", "int", "wis", "cha"];
@@ -72,6 +73,8 @@ export interface InventoryEntry { id: string | null; name: string; qty: number; 
 export interface FeatEntry { id: string; picks: Ability[]; free?: boolean } // free: granted by race/background, not an ASI
 export interface CharState {
   version: number;
+  /** the rules of this character (a ruleset id, src/rules/rulesets.ts); older notes have none and are for the 2014 rules */
+  ruleset: string;
   name: string; player: string; image: string; alignment: string; xp: number;
   race: string | null; subrace: string | null;
   raceAbility: { option: number; picks: Ability[] };
@@ -149,7 +152,7 @@ export function legacyView(s: Partial<CharState> | null | undefined): SheetView 
 const zeroAbilities = (): Record<Ability, number> => ({ str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 });
 export function newCharacter(name = ""): CharState {
   return {
-    version: STATE_VERSION, name, player: "", image: "", alignment: "", xp: 0,
+    version: STATE_VERSION, ruleset: DEFAULT_RULESET, name, player: "", image: "", alignment: "", xp: 0,
     race: null, subrace: null, raceAbility: { option: 0, picks: [] }, raceSkills: [],
     background: null, classes: [],
     abilities: { method: "pointbuy", base: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 }, asi: zeroAbilities(), adjust: zeroAbilities() },
@@ -179,6 +182,8 @@ export function savedState(s: CharState): Record<string, unknown> {
 export function normalize(s: Partial<CharState> | null | undefined): CharState {
   const d = newCharacter(), version = stateVersion(s);
   const out: CharState = { ...d, ...(s || {}) };
+  // an id this version doesn't know is kept: it isn't this version's to change
+  out.ruleset = typeof s?.ruleset === "string" && s.ruleset ? s.ruleset : DEFAULT_RULESET;
   const merge = <T extends object>(base: T, saved: Partial<T> | undefined): T => ({ ...base, ...(saved ?? {}) });
   out.raceAbility = merge(d.raceAbility, s?.raceAbility);
   out.hp = merge(d.hp, s?.hp);
@@ -544,6 +549,43 @@ export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s)
 /** Current HP, never above the maximum or below 0 (no current value yet = full health). */
 export function currentHp(s: CharState, max: number) {
   return Math.max(0, Math.min(s.hp.current ?? max, max));
+}
+/**
+ * What a state holds that its rules data doesn't have: its ids, as they are in the state. Those parts
+ * of the character can't be worked out, and counting them as missing would give wrong results.
+ */
+export function unresolvedIds(r: Rules, s: CharState): string[] {
+  const out: string[] = [];
+  if (s.race && !r.race(s)) out.push(s.race);
+  else if (s.subrace && s.race && !r.subrace(s)) out.push(s.subrace);
+  if (s.background && !r.background(s)) out.push(s.background);
+  for (const e of s.classes) {
+    if (!r.cls(e.id)) out.push(e.id);
+    else if (e.subclass && !r.subclass(e)) out.push(e.subclass);
+  }
+  return out;
+}
+/** Current HP after a change: limited by `max` only when `max` can be `trusted` (see CharacterSheet#trusted). */
+export const settledHp = (s: CharState, trusted: boolean, max: number) => (trusted ? currentHp(s, max) : s.hp.current);
+/**
+ * The flat frontmatter keys other plugins read (Dataview, Initiative Tracker, Fantasy Statblocks): undefined
+ * removes one. When the rules can't be `trusted` only the names are given, so the rest stay as they were.
+ */
+export function flatKeys(r: Rules, s0: CharState, manual: boolean, trusted: boolean, fileName: string): Record<string, unknown> {
+  const s = manual ? manualView(s0) : s0;
+  const names = { name: s.name || fileName, player: s.player || undefined };
+  if (!trusted) return names;
+  const sc = abilityScores(r, s);
+  return {
+    ...names,
+    race: (manual ? [s0.manual.race, s0.manual.subrace] : [r.race(s)?.name, r.subrace(s)?.name]).filter(Boolean).join(" ") || undefined,
+    class: (manual ? s0.manual.classes.map((c) => `${c.name || "?"} ${c.level}`) : s.classes.map((e) => `${r.cls(e.id)?.name ?? "?"} ${e.level}`)).join(" / ") || undefined,
+    level: totalLevel(s),
+    hp: manual ? s0.manual.maxHp : hpBreakdown(r, s, sc).max,
+    ac: manual ? s0.manual.ac : armorClass(r, s, sc).value,
+    modifier: initiative(r, s, sc),
+    stats: ABILITIES.map((a) => sc[a].total),
+  };
 }
 /**
  * A long rest: hit points to `maxHp` and no temporary ones, spell slots and class resources back,

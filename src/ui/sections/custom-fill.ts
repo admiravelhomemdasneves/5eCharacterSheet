@@ -6,10 +6,10 @@ import type { CharacterSheet } from "../sheet";
 
 /** `section`: the ManualFill section of the kinds it offers (src/custom/schema.ts) */
 export function fromCustom(sheet: CharacterSheet, parent: HTMLElement, section: string) {
-  const { plugin } = sheet;
-  if (!sheet.manual) return;
-  const kinds = plugin.ruleset.kinds.filter((k) => k.manual?.section === section);
-  const entries = plugin.customFile.entries.filter((e) => e.ruleset === plugin.ruleset.id && kinds.some((k) => k.kind === e.kind)).sort((a, b) => a.name.localeCompare(b.name));
+  const { plugin } = sheet, ruleset = sheet.ctx.ruleset;
+  if (!sheet.manual || !ruleset) return;
+  const kinds = ruleset.kinds.filter((k) => k.manual?.section === section);
+  const entries = plugin.customFile.entries.filter((e) => e.ruleset === ruleset.id && kinds.some((k) => k.kind === e.kind)).sort((a, b) => a.name.localeCompare(b.name));
   if (!entries.length) return;
   const kindOf = (e: CustomEntry) => kinds.find((k) => k.kind === e.kind)!;
   button(parent, "From custom data…", () => new Picker(sheet.app, entries, (e) => e.name, (e) => sheet.change((x) => { kindOf(e).manual!.fill(e, x); }),

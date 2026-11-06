@@ -19,7 +19,8 @@ export class EntryModal extends Modal {
     this.name = entry ? (copy ? `${entry.name} (copy)` : entry.name) : "";
     this.link = entry?.link ?? "";
     this.data = { ...emptyData(def.fields), ...structuredClone(entry?.data ?? {}) };
-    this.ctx = { data: plugin.manual ? plugin.customOnly : plugin.rules.data };
+    const c = plugin.context;
+    this.ctx = { data: c.manual ? c.customOnly : c.rules.data };
   }
   private get editing() { return !!this.entry && !this.copy; }
 
@@ -159,7 +160,7 @@ export class EntryModal extends Modal {
     const data = Object.fromEntries(this.def.fields.filter((f) => !f.visible || f.visible(this.data)).map((f) => [f.key, this.data[f.key]]));
     const e: CustomEntry = {
       id: this.editing ? this.entry!.id : newEntryId(name, new Set(this.plugin.customFile.entries.map((x) => x.id))),
-      ruleset: this.editing ? this.entry!.ruleset : this.plugin.ruleset.id, kind: this.def.kind, name,
+      ruleset: this.editing ? this.entry!.ruleset : this.plugin.context.id, kind: this.def.kind, name,
       ...(this.link ? { link: this.link } : {}), data, updated: new Date().toISOString(),
     };
     try {
