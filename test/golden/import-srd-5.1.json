@@ -1,0 +1,261 @@
+{
+ "meta": {
+  "srdOnly": true,
+  "sources": {
+   "PHB": "Player's Handbook (2014)"
+  },
+  "importVersion": 6
+ },
+ "races": [
+  {
+   "id": "dwarf|phb",
+   "name": "Dwarf",
+   "source": "PHB",
+   "link": null,
+   "size": [
+    "Medium"
+   ],
+   "speed": {
+    "walk": 25
+   },
+   "ability": [
+    {
+     "label": "CON +2",
+     "fixed": {
+      "con": 2
+     },
+     "choose": []
+    }
+   ],
+   "darkvision": 60,
+   "skills": {
+    "fixed": [],
+    "choose": []
+   },
+   "tools": {
+    "fixed": [],
+    "choose": []
+   },
+   "weapons": {
+    "fixed": [],
+    "choose": []
+   },
+   "armor": {
+    "fixed": [],
+    "choose": []
+   },
+   "languages": [],
+   "feats": null,
+   "traits": [
+    {
+     "name": "Stonecunning",
+     "text": "Text."
+    }
+   ],
+   "spells": null,
+   "subraces": [
+    {
+     "id": "dwarf|hill|phb",
+     "name": "Hill",
+     "source": "PHB",
+     "link": null,
+     "ability": [
+      {
+       "label": "WIS +1",
+       "fixed": {
+        "wis": 1
+       },
+       "choose": []
+      }
+     ],
+     "overwriteAbility": false,
+     "speed": null,
+     "darkvision": null,
+     "skills": {
+      "fixed": [],
+      "choose": []
+     },
+     "languages": [],
+     "traits": [
+      {
+       "name": "Dwarven Toughness",
+       "text": "Your hit point maximum increases by 1, and it increases by 1 every time you gain a level."
+      }
+     ],
+     "spells": null,
+     "hpPerLevel": 1
+    }
+   ],
+   "subraceRequired": false
+  }
+ ],
+ "classes": [
+  {
+   "id": "fighter|phb",
+   "name": "Fighter",
+   "source": "PHB",
+   "link": null,
+   "hd": 10,
+   "saves": [
+    "str",
+    "con"
+   ],
+   "armor": [
+    "light",
+    "medium",
+    "heavy",
+    "shield"
+   ],
+   "weapons": [
+    "simple",
+    "martial"
+   ],
+   "tools": [],
+   "skills": [
+    {
+     "from": [
+      "athletics",
+      "history"
+     ],
+     "count": 2
+    }
+   ],
+   "spellcasting": null,
+   "pactSlots": null,
+   "tableCols": [],
+   "subclassTitle": "Martial Archetype",
+   "subclassLevel": 3,
+   "features": [
+    {
+     "name": "Second Wind",
+     "level": 1,
+     "source": "PHB",
+     "text": "Text.",
+     "optional": false,
+     "subclassFeature": false,
+     "link": null
+    },
+    {
+     "name": "Martial Archetype",
+     "level": 3,
+     "source": "PHB",
+     "text": "Text.",
+     "optional": false,
+     "subclassFeature": true,
+     "link": null
+    }
+   ],
+   "multiclass": null,
+   "subclasses": [
+    {
+     "id": "fighter|champion|phb",
+     "name": "Champion",
+     "shortName": "Champion",
+     "source": "PHB",
+     "link": null,
+     "features": [
+      {
+       "name": "Champion",
+       "level": 3,
+       "source": "PHB",
+       "text": "Text.",
+       "link": null
+      }
+     ],
+     "spellcasting": null,
+     "additionalSpells": null
+    }
+   ]
+  }
+ ],
+ "backgrounds": [
+  {
+   "id": "acolyte|phb",
+   "name": "Acolyte",
+   "source": "PHB",
+   "link": null,
+   "skills": {
+    "fixed": [
+     "insight",
+     "religion"
+    ],
+    "choose": []
+   },
+   "tools": {
+    "fixed": [],
+    "choose": []
+   },
+   "languages": [],
+   "feature": {
+    "name": "Shelter of the Faithful",
+    "heading": "Feature: Shelter of the Faithful",
+    "text": "Text.",
+    "link": null
+   },
+   "feats": null
+  }
+ ],
+ "feats": [
+  {
+   "id": "grappler|phb",
+   "name": "Grappler",
+   "source": "PHB",
+   "link": null,
+   "prereq": "",
+   "ability": [],
+   "text": "Text.",
+   "spells": null
+  }
+ ],
+ "spells": [
+  {
+   "id": "fireball|phb",
+   "name": "Fireball",
+   "source": "PHB",
+   "link": null,
+   "level": 3,
+   "school": "Evocation",
+   "time": "1 action",
+   "range": "60 feet",
+   "components": "V",
+   "duration": "Instant",
+   "concentration": false,
+   "ritual": false,
+   "classes": [
+    "Wizard"
+   ],
+   "text": "Text."
+  }
+ ],
+ "items": [
+  {
+   "id": "longsword|phb",
+   "name": "Longsword",
+   "source": "PHB",
+   "link": null,
+   "kind": "weapon",
+   "armorType": null,
+   "ac": null,
+   "strength": null,
+   "stealth": false,
+   "weaponCategory": "martial",
+   "ranged": false,
+   "dmg1": "1d8",
+   "dmg2": "1d10",
+   "dmgType": "slashing",
+   "properties": [
+    "versatile"
+   ],
+   "range": null,
+   "weight": 3,
+   "value": 1500,
+   "magic": false,
+   "rarity": null,
+   "attunement": false,
+   "bonusAc": 0,
+   "bonusWeapon": 0,
+   "baseItem": null
+  }
+ ],
+ "optionalFeatures": []
+}

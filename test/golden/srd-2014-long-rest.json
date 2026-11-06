@@ -1,0 +1,39 @@
+{
+ "hp": {
+  "current": 40,
+  "temp": 0,
+  "adjust": 0,
+  "override": null
+ },
+ "slots": {
+  "adjust": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "used": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "pactUsed": 0
+ },
+ "hitDiceUsed": 3,
+ "exhaustion": 2,
+ "deathSaves": {
+  "success": 0,
+  "fail": 0
+ }
+}
