@@ -94,6 +94,8 @@
 
 .dnd-hint { color: var(--text-muted); font-size: 0.8rem; }
 .dnd-warn { color: var(--text-error); font-size: 0.8rem; }
+.dnd-rules-label { display: flex; align-items: center; gap: var(--size-4-1); margin-bottom: var(--size-4-1); }
+.dnd-rules-conflict .setting-item-description { color: var(--text-error); }
 /* something is wrong between a sheet and its rules (src/rules/conflicts.ts) */
 .dnd-rules-warning { color: var(--text-error); border: 1px solid var(--text-error); border-radius: var(--radius-s); padding: var(--size-4-1) var(--size-4-2); margin-bottom: var(--size-4-2); font-size: var(--font-ui-small); }
 /* the slots the rules give: a popup on the info button after the "Spell Slots" title, open while it is

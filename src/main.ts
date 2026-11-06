@@ -10,6 +10,8 @@ import { ReportFile, importReport, joinedData, mergedEntries } from "./data/repo
 import { RemovedEntry, entryKey, removedFrom, removedKeys, withoutEntries } from "./data/entries";
 import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
+import { editionsApart, importedRulesets, isMixedData } from "./data/editions";
+import { dataConflicts } from "./rules/conflicts";
 import { fileNameProblem, renamedPath } from "./files";
 import { loadSrd } from "./data/srd";
 import { DEFAULT_RULESET, emptyCustomFile, type CustomEntry, type CustomFile } from "./custom/format";
@@ -54,6 +56,7 @@ export default class CharacterSheetPlugin extends Plugin {
   /** how each sheet note is shown (collapsed sections, edit mode), by note path: on this device, not in the notes */
   private views: Record<string, SheetView> = {};
   private importNoticeShown = false;
+  private conflictNoticeShown = false;
   sheets = new Set<CharacterSheet>();
   /** the custom data file as last read */
   customFile: CustomFile = emptyCustomFile();
@@ -64,7 +67,8 @@ export default class CharacterSheetPlugin extends Plugin {
   customPath() { return normalizePath(this.settings.customDataPath.trim() || DEFAULT_CUSTOM_PATH); }
 
   async onload() {
-    this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<SheetSettings> | null) };
+    const saved = (await this.loadData()) as Partial<SheetSettings> | null;
+    this.settings = { ...DEFAULT_SETTINGS, ...saved, splitEditions: editionsApart(saved) };
     this.views = this.loadViews();
     this.addSettingTab(new SheetSettingTab(this.app, this));
 
@@ -100,13 +104,18 @@ export default class CharacterSheetPlugin extends Plugin {
       const idle = r.id !== DEFAULT_RULESET && this.dataSourceOf(r.id) === "none" && !custom.file.entries.some((e) => e.ruleset === r.id);
       this.contexts.set(r.id, idle ? { ...emptyContext(r.id, r, "ready"), linker: this.buildLinker() } : await this.loadContext(r.id, custom));
     }
+    // said once per session: the rest is for when the settings are open
+    if (!this.conflictNoticeShown && this.dataConflicts().some((c) => c.kind === "mixed-data")) {
+      this.conflictNoticeShown = true;
+      new Notice("Your imported rules data has the 2014 and 2024 rules mixed: open the plugin settings to separate them.", 15000);
+    }
     this.sheets.forEach((s) => s.reload());
   }
   private async loadContext(id: string, custom: Awaited<ReturnType<typeof loadCustom>>): Promise<RulesContext> {
     let data: Compendium = EMPTY_DATA;
     const source = this.dataSourceOf(id);
     try {
-      if (source === "srd" && id === DEFAULT_RULESET) data = loadSrd();
+      if (source === "srd") data = loadSrd(id);
       else if (source === "imported") {
         const file = this.importedFile(id);
         if (await this.app.vault.adapter.exists(file)) data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;
@@ -128,6 +137,7 @@ export default class CharacterSheetPlugin extends Plugin {
     const merged = mergeCustom(data, custom.file, ruleset), alone = mergeCustom(EMPTY_DATA, custom.file, ruleset);
     const manual = source === "none" || (data.races.length === 0 && data.classes.length === 0);
     const linker = this.buildLinker(merged.links);
+    linker.sameSourceOnly = id !== DEFAULT_RULESET;
     return {
       id, ruleset, importIsOutdated, manual, linker,
       // a source is chosen but gave nothing: the sheets must not take that for rules that say nothing
@@ -230,7 +240,7 @@ export default class CharacterSheetPlugin extends Plugin {
       }
       const results: { data: Compendium; entries: BrewEntry[] }[] = [];
       const brew = !base ? ` (${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"} only, no 5etools data)` : homebrew.length ? ` (with ${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"})` : "";
-      for (const ruleset of this.settings.importEditions) {
+      for (const ruleset of importedRulesets(this.settings)) {
         const entries: BrewEntry[] = [];
         const built = await buildCompendium({
           read: base ? async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown : undefined,
@@ -277,20 +287,21 @@ export default class CharacterSheetPlugin extends Plugin {
   }
 
   /** Remove entries from the imported data ("Import data"); they stay out of later imports until restored. */
-  async removeEntries(entries: RemovedEntry[]) {
-    const file = this.importedFile(DEFAULT_RULESET);
+  async removeEntries(entries: RemovedEntry[], ruleset = DEFAULT_RULESET) {
+    const file = this.importedFile(ruleset);
     if (await this.app.vault.adapter.exists(file)) {
       const data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;
-      await this.writeImported(DEFAULT_RULESET, withoutEntries(data, removedKeys(entries)));
+      await this.writeImported(ruleset, withoutEntries(data, removedKeys(entries)));
     }
-    const known = removedKeys(this.settings.removedEntries);
-    this.settings.removedEntries = [...this.settings.removedEntries, ...entries.filter((e) => !known.has(entryKey(e.kind, e.name, e.source)))];
+    const known = removedKeys(removedFrom(this.settings.removedEntries, ruleset));
+    const stamped = entries.map((e) => (ruleset === DEFAULT_RULESET ? e : { ...e, ruleset }));
+    this.settings.removedEntries = [...this.settings.removedEntries, ...stamped.filter((e) => !known.has(entryKey(e.kind, e.name, e.source)))];
     await this.saveSettings();
   }
   /** Let removed entries come back: they are in the data again after the next import. */
-  async restoreEntries(entries: RemovedEntry[]) {
+  async restoreEntries(entries: RemovedEntry[], ruleset = DEFAULT_RULESET) {
     const back = removedKeys(entries);
-    this.settings.removedEntries = this.settings.removedEntries.filter((e) => !back.has(entryKey(e.kind, e.name, e.source)));
+    this.settings.removedEntries = this.settings.removedEntries.filter((e) => (e.ruleset ?? DEFAULT_RULESET) !== ruleset || !back.has(entryKey(e.kind, e.name, e.source)));
     await this.saveData(this.settings);
   }
   /** The compendium note of an entry, by its note key: a note path (without .md), "" for none, or null to match by name again. */
@@ -399,6 +410,22 @@ export default class CharacterSheetPlugin extends Plugin {
       this.writing.delete(path);
     }
   }
+  /** What is wrong between the rules chosen and the data for them. */
+  dataConflicts() {
+    const st = this.settings;
+    return dataConflicts({
+      rules: RULESETS.map((r) => ({ id: r.id, label: r.label, source: this.dataSourceOf(r.id), status: this.contextById(r.id).status })),
+      defaultRuleset: st.defaultRuleset, mixed: !st.splitEditions && isMixedData(this.context.baseData),
+    });
+  }
+  /** Separate imported data with both editions in it: the data as it was is kept in a backup, then each edition is imported into its own. */
+  async splitMixedImport() {
+    if (!this.settings.fivetoolsPath.trim() && !this.settings.homebrewFiles.length) { new Notice("Set the 5etools \"data\" folder first, so each edition can be imported."); return; }
+    const adapter = this.app.vault.adapter, file = this.importedFile(DEFAULT_RULESET);
+    if (await adapter.exists(file)) await adapter.write(normalizePath(`${this.manifest.dir}/data/imported-mixed-backup.json`), await adapter.read(file));
+    Object.assign(this.settings, { splitEditions: true, importRules2014: true, dataSource2024: "imported" });
+    await this.importFiveTools();
+  }
   /** Where the data of some rules comes from. */
   dataSourceOf(id: string) { return id === DEFAULT_RULESET ? this.settings.dataSource : this.settings.dataSource2024; }
   /** What the rules say about this state can be used: its data is there and has all it chose (see E.unresolvedIds). */
@@ -425,24 +452,25 @@ export default class CharacterSheetPlugin extends Plugin {
   /** A new character. Without rules data there are no racial or ASI bonuses to add on top of point
    *  buy, so manual mode starts with the Manual method (scores typed in, 1–30). The setting is read
    *  instead of `manual` because the rules data may not be loaded yet when a sheet first renders. */
-  freshCharacter(name: string): CharState {
+  freshCharacter(name: string, ruleset = this.settings.defaultRuleset): CharState {
     const s = newCharacter(name);
-    if (this.settings.dataSource === "none") s.abilities = { ...s.abilities, method: "manual", base: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
+    s.ruleset = ruleset;
+    if (this.dataSourceOf(ruleset) === "none") s.abilities = { ...s.abilities, method: "manual", base: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
     // Sheet template: sections left out of new sheets
     for (const key of this.settings.hiddenSections) s.ui.hidden[key] = true;
     return s;
   }
 
-  async createCharacter(name: string, folder: string) {
+  async createCharacter(name: string, folder: string, ruleset = this.settings.defaultRuleset) {
     const dir = normalizePath(folder || "/");
     if (dir !== "/" && !this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
     const prefix = dir === "/" ? "" : dir + "/";
     let path = normalizePath(`${prefix}${name}.md`);
     for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = normalizePath(`${prefix}${name} ${i}.md`);
-    const file = await this.app.vault.create(path, TEMPLATE(name, DEFAULT_RULESET));
+    const file = await this.app.vault.create(path, TEMPLATE(name, ruleset));
     this.settings.lastFolder = dir === "/" ? "" : dir;
     await this.saveData(this.settings);
-    this.states.set(file.path, this.freshCharacter(name));
+    this.states.set(file.path, this.freshCharacter(name, ruleset));
     // written soon, so the note gets the full state (and its frontmatter is not read as a change)
     this.requestSave(file.path);
     await this.app.workspace.getLeaf(true).openFile(file);
@@ -454,9 +482,13 @@ class NewCharacterModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "New character" });
-    let name = "", folder = this.plugin.defaultFolder();
+    let name = "", folder = this.plugin.defaultFolder(), ruleset = this.plugin.settings.defaultRuleset;
     new Setting(contentEl).setName("Name").addText((t) => { t.setPlaceholder("Character name").onChange((v) => (name = v)); window.setTimeout(() => t.inputEl.focus(), 50); });
     new Setting(contentEl).setName("Folder").setDesc("Where the character note is created (empty = vault root)").addText((t) => t.setPlaceholder("/").setValue(folder).onChange((v) => (folder = v)));
+    const rules = new Setting(contentEl).setName("Rules");
+    const hint = () => rules.setDesc(this.plugin.dataSourceOf(ruleset) === "none" ? "These rules have no rules data, so the sheet starts in manual mode." : "");
+    rules.addDropdown((d) => d.addOptions(Object.fromEntries(RULESETS.map((r) => [r.id, r.label]))).setValue(ruleset).onChange((v) => { ruleset = v; hint(); }));
+    hint();
     new Setting(contentEl).addButton((b) => b.setButtonText("Create").setCta().onClick(async () => {
       if (!name.trim()) { new Notice("Give the character a name."); return; }
       // the name is the note's file name; the folder may have subfolders, each checked the same way
@@ -466,7 +498,7 @@ class NewCharacterModal extends Modal {
       if (folderProblem) { new Notice(`Folder: ${folderProblem.replace(/^A name/, "a folder name")}.`); return; }
       this.close();
       try {
-        await this.plugin.createCharacter(name.trim(), folder.trim());
+        await this.plugin.createCharacter(name.trim(), folder.trim(), ruleset);
       } catch (e) {
         console.error("5e Character Sheet: could not create the character", e);
         new Notice(`Could not create the character: ${(e as Error).message}`);

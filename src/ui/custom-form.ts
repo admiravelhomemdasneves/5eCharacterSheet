@@ -14,12 +14,12 @@ export class EntryModal extends Modal {
   private data: Record<string, unknown>;
   private ctx: CustomContext;
   /** `entry`: the entry to edit (null: a new one; `copy`: a new one with its values) */
-  constructor(app: App, private plugin: CharacterSheetPlugin, private def: KindDef, private entry: CustomEntry | null, private saved: () => void, private copy = false) {
+  constructor(app: App, private plugin: CharacterSheetPlugin, private def: KindDef, private entry: CustomEntry | null, private saved: () => void, private copy = false, private rules = "5e-2014") {
     super(app);
     this.name = entry ? (copy ? `${entry.name} (copy)` : entry.name) : "";
     this.link = entry?.link ?? "";
     this.data = { ...emptyData(def.fields), ...structuredClone(entry?.data ?? {}) };
-    const c = plugin.context;
+    const c = plugin.contextById(rules);
     this.ctx = { data: c.manual ? c.customOnly : c.rules.data };
   }
   private get editing() { return !!this.entry && !this.copy; }
@@ -160,7 +160,7 @@ export class EntryModal extends Modal {
     const data = Object.fromEntries(this.def.fields.filter((f) => !f.visible || f.visible(this.data)).map((f) => [f.key, this.data[f.key]]));
     const e: CustomEntry = {
       id: this.editing ? this.entry!.id : newEntryId(name, new Set(this.plugin.customFile.entries.map((x) => x.id))),
-      ruleset: this.editing ? this.entry!.ruleset : this.plugin.context.id, kind: this.def.kind, name,
+      ruleset: this.editing ? this.entry!.ruleset : this.rules, kind: this.def.kind, name,
       ...(this.link ? { link: this.link } : {}), data, updated: new Date().toISOString(),
     };
     try {

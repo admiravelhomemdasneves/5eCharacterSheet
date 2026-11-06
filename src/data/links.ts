@@ -55,13 +55,15 @@ export class Linker {
       }
     }
   }
+  /** no note of the same name from another source: with 2024 data, that would be the note of the 2014 entry */
+  sameSourceOnly = false;
   get enabled() { return !!this.root && this.exact.size > 0; }
   /** note for an entity of a kind (spells, races, classes, …), preferring the same source */
   note(kind: string, name: string, source?: string): string | null {
     const key = `${kind}|${lc(name)}|${sourceTag(source)}`;
     const own = this.chosen.get(key);
     if (own != null) return own || null;
-    return this.exact.get(key) ?? this.byName.get(`${kind}|${lc(name)}`) ?? null;
+    return this.exact.get(key) ?? (this.sameSourceOnly ? null : this.byName.get(`${kind}|${lc(name)}`)) ?? null;
   }
   /** heading inside a rules note, e.g. rule("conditions", "Blinded") */
   rule(file: string, heading: string): string | null {

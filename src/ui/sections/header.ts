@@ -4,6 +4,7 @@ import * as E from "../../rules/engine";
 import { fmtMod } from "../../rules/engine";
 import { button, iconButton, imageFiles, labeled, Picker, select, stepper, textInput } from "../widgets";
 import { richText } from "../richtext";
+import { rulesLabel } from "./rules-warnings";
 import type { CharacterSheet } from "../sheet";
 import { fromCustom } from "./custom-fill";
 
@@ -26,6 +27,7 @@ export function header(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
 
   const info = head.createDiv({ cls: "dnd-header-info" });
   textInput(info, s.name, (v) => sheet.change((x) => { x.name = v; }), "Character name", "dnd-name");
+  rulesLabel(sheet, info);
   const row1 = info.createDiv({ cls: "dnd-row dnd-fill" });
   textInput(labeled(row1, "Player"), s.player, (v) => sheet.change((x) => { x.player = v; }), "Player name");
   select(labeled(row1, "Alignment"), E.ALIGNMENTS.map((a) => ({ value: a, label: a })), s.alignment, (v) => sheet.change((x) => { x.alignment = v; }));

@@ -1,7 +1,7 @@
 // The report shown after an import: what came from the 5etools data folder and from each homebrew
 // file, by kind, and for each homebrew file what it had that was left out (and why) or that the
 // sheet does not use (monsters, optional features, …).
-import { ENTRY_KINDS, type BrewEntry, type EntryKind } from "./build.ts";
+import { ENTRY_KINDS, REASON_2014, REASON_2024, type BrewEntry, type EntryKind } from "./build.ts";
 import { homebrewSources } from "./detect.ts";
 import { HOMEBREW_COLLECTIONS } from "./fivetools.ts";
 import type { Compendium } from "../rules/engine.ts";
@@ -33,6 +33,8 @@ export interface ImportReport {
   total: Counts;
   /** what the import said that is not about one file */
   messages: string[];
+  /** homebrew entries left out for being for rules that were not imported */
+  otherRules: BrewEntry[];
 }
 
 const zero = (): Counts => Object.fromEntries(ENTRY_KINDS.map((k) => [k, 0])) as Counts;
@@ -90,5 +92,6 @@ export function importReport(o: { data: Compendium; dataFolder: string | null; f
   const official = zero();
   for (const k of ENTRY_KINDS) official[k] = Math.max(0, total[k] - files.reduce((a, f) => a + f.imported[k], 0));
   const own = new Set(o.files.map((f) => `${f.file}: `));
-  return { dataFolder: o.dataFolder, official, files, total, messages: o.messages.filter((m) => ![...own].some((p) => m.startsWith(p))) };
+  const otherRules = o.entries.filter((e) => e.reason === REASON_2024 || e.reason === REASON_2014);
+  return { dataFolder: o.dataFolder, official, files, total, messages: o.messages.filter((m) => ![...own].some((p) => m.startsWith(p))), otherRules };
 }

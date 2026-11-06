@@ -94,7 +94,7 @@ test("removed entries are of the data they were removed from; older ones of the 
 });
 
 test("the options of an import: 2014 as the settings have always said", () => {
-  const st = (importRules2014: boolean, importOnlyWithNotes: boolean, importClassicIn2024 = true) => ({ importRules2014, importOnlyWithNotes, importClassicIn2024 });
+  const st = (importRules2014: boolean, importOnlyWithNotes: boolean, importClassicIn2024 = true) => ({ splitEditions: false, importRules2014, importOnlyWithNotes, importClassicIn2024 });
   assert.deepEqual(importOptions("5e-2014", st(true, false)), { rules2014Only: true });
   assert.deepEqual(importOptions("5e-2014", st(false, false)), { rules2014Only: false });
   assert.deepEqual(importOptions("5e-2014", st(true, true)), { rules2014Only: false });

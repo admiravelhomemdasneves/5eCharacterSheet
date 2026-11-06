@@ -1,13 +1,13 @@
 // The "Custom data" settings page: the player's own entries (src/custom), listed as on the "Import data"
 // page, to create, edit, copy and delete; and the file they are kept in.
-import { App, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
+import { Notice, Platform, Setting, setIcon } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import type { CustomEntry } from "../custom/format";
 import type { KindDef } from "../custom/schema";
 import { DEFAULT_CUSTOM_PATH } from "../custom/store";
-import { rulesetById } from "../rules/rulesets";
+import { RULESETS, rulesetById } from "../rules/rulesets";
 import { EntryModal } from "./custom-form";
-import { Picker } from "./widgets";
+import { ConfirmModal, Picker } from "./widgets";
 import { lc } from "../text";
 
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
@@ -15,12 +15,16 @@ const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 export class CustomDataView {
   private query = "";
   private kind = "";
-  constructor(private plugin: CharacterSheetPlugin) {}
+  /** the rules whose entries are made here */
+  private rules: string;
+  constructor(private plugin: CharacterSheetPlugin) { this.rules = plugin.settings.defaultRuleset; }
+  private get context() { return this.plugin.contextById(this.rules); }
 
   draw(el: HTMLElement) {
     el.empty();
     el.addClass("dnd-report", "dnd-import-data", "dnd-custom-data");
-    const { plugin } = this, c = plugin.context, ruleset = c.ruleset!, file = plugin.customFile;
+    const { plugin } = this, c = this.context, ruleset = c.ruleset!, file = plugin.customFile;
+    new Setting(el).setName("Rules").setDesc("New entries are for these rules, and only sheets using them see them.").addDropdown((d) => d.addOptions(Object.fromEntries(RULESETS.map((r) => [r.id, r.label]))).setValue(this.rules).onChange((v) => { this.rules = v; this.redraw(); }));
     el.createEl("p", { cls: "dnd-hint", text: `Your own entries for ${ruleset.label}. With the SRD or imported rules data they are in the sheets' menus, under "Custom data"; in manual mode, "From custom data…" fills a sheet's fields with them.` });
 
     new Setting(el).setName("File").setDesc(`Where they are kept, in this vault. A folder starting with a dot is hidden from the file list and search. After editing the file by hand, load it again.`)
@@ -64,7 +68,7 @@ export class CustomDataView {
     el.empty();
     const { plugin } = this, q = lc(this.query.trim());
     const kindOf = (e: CustomEntry) => rulesetById(e.ruleset).kinds.find((k) => k.kind === e.kind) ?? null;
-    const order = (e: CustomEntry) => plugin.context.ruleset!.kinds.findIndex((k) => k.kind === e.kind);
+    const order = (e: CustomEntry) => this.context.ruleset!.kinds.findIndex((k) => k.kind === e.kind);
     const entries = plugin.customFile.entries.filter((e) => (!this.kind || e.kind === this.kind) && (!q || lc(e.name).includes(q)))
       .sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
     if (!entries.length) { el.createEl("p", { cls: "dnd-hint", text: "No entries match." }); return; }
@@ -77,7 +81,7 @@ export class CustomDataView {
 
   private row(body: HTMLElement, e: CustomEntry, def: KindDef | null) {
     const { plugin } = this;
-    const other = e.ruleset !== plugin.context.id;
+    const other = e.ruleset !== this.rules;
     const tr = body.createEl("tr", { cls: other || !def ? "is-left-out" : "" });
     tr.createEl("td", { text: e.name });
     tr.createEl("td", { text: (def?.label[0] ?? e.kind) + (other ? ` (${rulesetById(e.ruleset).label})` : "") });
@@ -95,8 +99,8 @@ export class CustomDataView {
       b.onclick = run;
     };
     if (def) {
-      act("pencil", "Edit", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw()).open());
-      act("copy", "Make a copy", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw(), true).open());
+      act("pencil", "Edit", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw(), false, this.rules).open());
+      act("copy", "Make a copy", () => new EntryModal(plugin.app, plugin, def, e, () => this.redraw(), true, this.rules).open());
     }
     act("trash-2", "Delete", () => new ConfirmModal(plugin.app, `Delete ${e.name}?`,
       "Sheets that use it keep it by name only, and lose what it gave them. This can't be undone.", "Delete", async () => {
@@ -108,12 +112,12 @@ export class CustomDataView {
 
   /** "+ New entry": the kind first, then its form. */
   private create() {
-    const { plugin } = this, c = plugin.context;
+    const { plugin } = this, c = this.context;
     const ctx = { data: c.manual ? c.customOnly : c.rules.data };
     new Picker(plugin.app, c.ruleset!.kinds, (k) => k.label[0], (k) => {
       const why = k.available?.(ctx);
       if (why) { new Notice(why); return; }
-      window.setTimeout(() => new EntryModal(plugin.app, plugin, k, null, () => this.redraw()).open(), 0);
+      window.setTimeout(() => new EntryModal(plugin.app, plugin, k, null, () => this.redraw(), false, this.rules).open(), 0);
     }, "What do you want to create?", (k) => k.available?.(ctx) ?? "").open();
   }
 
@@ -122,14 +126,3 @@ export class CustomDataView {
 }
 
 /** Asks before doing something that can't be undone. */
-class ConfirmModal extends Modal {
-  constructor(app: App, private heading: string, private text: string, private action: string, private run: () => Promise<void>) { super(app); }
-  onOpen() {
-    this.titleEl.setText(this.heading);
-    this.contentEl.createEl("p", { text: this.text });
-    new Setting(this.contentEl)
-      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
-      .addButton((b) => { b.setButtonText(this.action).onClick(async () => { this.close(); await this.run(); }); b.buttonEl.addClass("mod-warning"); });
-  }
-  onClose() { this.contentEl.empty(); }
-}
