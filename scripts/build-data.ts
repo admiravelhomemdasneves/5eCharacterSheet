@@ -1,5 +1,6 @@
 // Builds sheet data from a 5etools data folder, using the same code as the plugin's importer.
 //   node scripts/build-data.ts srd                 -> data/srd-5.1.json (bundled in the plugin)
+//   node scripts/build-data.ts srd52               -> data/srd-5.2.1.json (bundled in the plugin)
 //   node scripts/build-data.ts import [compendium] -> data/imported.json (personal, never committed)
 // `import` keeps only entries that have a note in the compendium folder of a vault (VAULT and
 // COMPENDIUM env vars, or local.config.json),
@@ -9,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildCompendium, summarize } from "../src/data/build.ts";
 import { Linker } from "../src/data/links.ts";
-import { SRD_ATTRIBUTION } from "../src/data/attribution.ts";
+import { SRD_521_ATTRIBUTION, SRD_ATTRIBUTION } from "../src/data/attribution.ts";
 import { ROOT, compendiumNotes, personalPaths } from "./local.ts";
 
 const DATA = process.env.FIVETOOLS_DATA || path.join(ROOT, "vendor", "5etools-data");
@@ -27,6 +28,11 @@ if (mode === "srd") {
   fs.mkdirSync(path.join(ROOT, "data"), { recursive: true });
   fs.writeFileSync(path.join(ROOT, "data", "srd-5.1.json"), JSON.stringify(out));
   console.log("SRD:", summarize(data));
+} else if (mode === "srd52") {
+  const data = await buildCompendium({ read, srdOnly: true, edition: "2024" });
+  const out = { ...data, meta: { ...data.meta, attribution: SRD_521_ATTRIBUTION, dataCommit: dataCommit() } };
+  fs.writeFileSync(path.join(ROOT, "data", "srd-5.2.1.json"), JSON.stringify(out));
+  console.log("SRD 5.2.1:", summarize(data));
 } else {
   const { vault, compendium } = personalPaths();
   const comp = process.argv[3] || compendium;

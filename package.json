@@ -5,6 +5,7 @@
   "description": "Interactive fifth edition (2014) character sheets for Obsidian",
   "scripts": {
     "data:srd": "node scripts/build-data.ts srd",
+    "data:srd52": "node scripts/build-data.ts srd52",
     "data:import": "node scripts/build-data.ts import",
     "build": "node esbuild.config.mjs",
     "install-vault": "node esbuild.config.mjs --install",

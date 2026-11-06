@@ -1,5 +1,5 @@
 // Small DOM helpers shared by the sheet. Everything is plain Obsidian DOM API (createEl/createDiv).
-import { App, FuzzySuggestModal, TFile, setIcon } from "obsidian";
+import { App, FuzzySuggestModal, Modal, Setting, TFile, setIcon } from "obsidian";
 
 export interface Opt { value: string; label: string; group?: string; disabled?: boolean }
 
@@ -184,4 +184,21 @@ export class Picker<T> extends FuzzySuggestModal<T> {
 
 export function imageFiles(app: App): TFile[] {
   return app.vault.getFiles().filter((f) => /^(png|jpe?g|webp|gif|svg|bmp)$/i.test(f.extension));
+}
+
+/** Asks before something that can't be undone or changes a lot: `action` is its button. */
+export class ConfirmModal extends Modal {
+  private heading: string; private text: string; private action: string; private run: () => Promise<void>;
+  constructor(app: App, heading: string, text: string, action: string, run: () => Promise<void>) {
+    super(app);
+    this.heading = heading; this.text = text; this.action = action; this.run = run;
+  }
+  onOpen() {
+    this.titleEl.setText(this.heading);
+    this.contentEl.createEl("p", { text: this.text });
+    new Setting(this.contentEl)
+      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((b) => { b.setButtonText(this.action).onClick(async () => { this.close(); await this.run(); }); b.buttonEl.addClass("mod-warning"); });
+  }
+  onClose() { this.contentEl.empty(); }
 }

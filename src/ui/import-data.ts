@@ -1,7 +1,10 @@
-import { App, FuzzySuggestModal, Notice, Platform, TFile, TFolder, Vault, setIcon } from "obsidian";
+import { App, FuzzySuggestModal, Notice, Platform, Setting, TFile, TFolder, Vault, setIcon } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import { ENTRY_KINDS, type EntryKind } from "../data/build";
-import { KIND_LABELS as KIND, groupByFile, type DataEntry, type EntryGroup } from "../data/entries";
+import { KIND_LABELS as KIND, groupByFile, removedFrom, type DataEntry, type EntryGroup } from "../data/entries";
+import { importedRulesets } from "../data/editions";
+import { DEFAULT_RULESET } from "../custom/format";
+import { rulesetById } from "../rules/rulesets";
 import type { Counts } from "../data/report";
 import { lc } from "../text";
 
@@ -19,14 +22,19 @@ export class ImportDataView {
   private opened = new Set<string | null>();
   private query = "";
   private kind: EntryKind | "" = "";
+  /** the rules whose imported data is shown */
+  private rules = DEFAULT_RULESET;
   constructor(private plugin: CharacterSheetPlugin) {}
 
   draw(el: HTMLElement) {
     el.empty();
     el.addClass("dnd-report", "dnd-import-data");
     // the data as imported, without the custom entries (see Custom data)
-    const { plugin } = this, st = plugin.settings, data = plugin.context.baseData;
-    if (st.dataSource !== "imported" || !st.lastImport) {
+    const { plugin } = this, st = plugin.settings, editions = importedRulesets(st);
+    if (!editions.includes(this.rules)) this.rules = editions[0] ?? DEFAULT_RULESET;
+    const data = plugin.contextById(this.rules).baseData;
+    if (editions.length > 1) new Setting(el).setName("Rules").addDropdown((d) => d.addOptions(Object.fromEntries(editions.map((id) => [id, rulesetById(id).label]))).setValue(this.rules).onChange((v) => { this.rules = v; this.redraw(); }));
+    if (!data.races.length && !data.classes.length && !data.spells.length) {
       el.createEl("p", { cls: "dnd-hint", text: "Nothing imported yet. Import your 5etools data or homebrew in the rules data settings first." });
       return;
     }
@@ -121,7 +129,7 @@ export class ImportDataView {
     const tr = body.createEl("tr");
     tr.createEl("td", { text: e.name });
     tr.createEl("td", { text: KIND[e.kind][0] });
-    tr.createEl("td", { text: e.source, attr: { title: plugin.context.rules.data.meta.sources[e.source] ?? "" } });
+    tr.createEl("td", { text: e.source, attr: { title: plugin.contextById(this.rules).rules.data.meta.sources[e.source] ?? "" } });
     const note = tr.createEl("td", { cls: "dnd-import-data-note" });
     const chosen = plugin.settings.noteLinks[e.noteKey];
     if (e.link) {
@@ -140,7 +148,7 @@ export class ImportDataView {
     const remove = actions.createEl("button", { cls: "clickable-icon mod-warning", attr: { "aria-label": "Remove from the imported data" } });
     setIcon(remove, "trash-2");
     remove.onclick = async () => {
-      await plugin.removeEntries([{ kind: e.kind, name: e.name, source: e.source }]);
+      await plugin.removeEntries([{ kind: e.kind, name: e.name, source: e.source }], this.rules);
       new Notice(`Removed ${e.name} from the imported data. Restore it from the list of removed entries.`);
       this.redraw();
     };
@@ -148,7 +156,7 @@ export class ImportDataView {
 
   /** The entries removed by hand: each can be restored, and is back after the next import. */
   private removedList(el: HTMLElement) {
-    const { plugin } = this, removed = plugin.settings.removedEntries;
+    const { plugin } = this, removed = removedFrom(plugin.settings.removedEntries, this.rules);
     if (!removed.length) return;
     const d = el.createEl("details", { cls: "dnd-report-messages" });
     d.createEl("summary", { text: `Removed entries (${removed.length})` });
@@ -160,7 +168,7 @@ export class ImportDataView {
       li.createSpan({ cls: "dnd-hint", text: `${KIND[e.kind][0]}, ${e.source} ` });
       const b = li.createEl("button", { text: "Restore" });
       b.onclick = async () => {
-        await plugin.restoreEntries([e]);
+        await plugin.restoreEntries([e], this.rules);
         new Notice(`${e.name} will be back after the next import.`);
         this.redraw();
       };

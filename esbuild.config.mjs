@@ -18,7 +18,7 @@ await esbuild.build({
   plugins: [{
     name: "srd-as-text",
     setup(build) {
-      build.onLoad({ filter: /[\\/]data[\\/]srd-5\.1\.json$/ }, (args) => ({ contents: fs.readFileSync(args.path, "utf8"), loader: "text" }));
+      build.onLoad({ filter: /[\\/]data[\\/]srd-5\.(1|2\.1)\.json$/ }, (args) => ({ contents: fs.readFileSync(args.path, "utf8"), loader: "text" }));
     },
   }],
   outfile: "dist/main.js",

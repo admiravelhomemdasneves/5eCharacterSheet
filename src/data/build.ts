@@ -58,11 +58,12 @@ export interface BuildOptions {
 }
 
 /** What an import of some rules leaves out, by the settings. */
-export function importOptions(ruleset: string, st: { importRules2014: boolean; importOnlyWithNotes: boolean; importClassicIn2024: boolean }): Pick<BuildOptions, "rules2014Only" | "edition" | "classic"> {
-  return ruleset === "5e-2024" ? { edition: "2024", classic: st.importClassicIn2024 } : { rules2014Only: st.importRules2014 && !st.importOnlyWithNotes };
+export function importOptions(ruleset: string, st: { splitEditions: boolean; importRules2014: boolean; importOnlyWithNotes: boolean; importClassicIn2024: boolean }): Pick<BuildOptions, "rules2014Only" | "edition" | "classic"> {
+  if (ruleset === "5e-2024") return { edition: "2024", classic: st.importClassicIn2024 };
+  return st.splitEditions ? { edition: "2014" } : { rules2014Only: st.importRules2014 && !st.importOnlyWithNotes };
 }
 
-const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
+export const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
 /**
  * Version of what the importer produces, stamped into imported data as `meta.importVersion`. Raise it
  * (and say what it brings in IMPORT_CHANGES) whenever an importer change needs a new import: data with

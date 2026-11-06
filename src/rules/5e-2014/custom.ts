@@ -522,4 +522,6 @@ const classFeature: KindDef = {
 };
 
 /** The custom entries of the 2014 rules, in the order they are added to the data (an entry's parent first). */
-export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: [race, subrace, raceFeature, klass, subclass, classFeature, background, feat, spell, item], profile: PROFILE_2014 };
+/** The kinds of entries; the 2024 rules use the same forms. */
+export const KINDS_5E: KindDef[] = [race, subrace, raceFeature, klass, subclass, classFeature, background, feat, spell, item];
+export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: KINDS_5E, profile: PROFILE_2014 };

@@ -94,6 +94,8 @@ export interface CharState {
   version: number;
   /** the rules of this character (a ruleset id, src/rules/rulesets.ts); older notes have none and are for the 2014 rules */
   ruleset: string;
+  /** what the character was under other rules, by ruleset id: changing back brings it back (see changeRules) */
+  rulesSnapshots: Record<string, Partial<CharState>>;
   name: string; player: string; image: string; alignment: string; xp: number;
   race: string | null; subrace: string | null;
   raceAbility: { option: number; picks: Ability[] };
@@ -173,7 +175,7 @@ export function legacyView(s: Partial<CharState> | null | undefined): SheetView 
 const zeroAbilities = (): Record<Ability, number> => ({ str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 });
 export function newCharacter(name = ""): CharState {
   return {
-    version: STATE_VERSION, ruleset: DEFAULT_RULESET, name, player: "", image: "", alignment: "", xp: 0,
+    version: STATE_VERSION, ruleset: DEFAULT_RULESET, rulesSnapshots: {}, name, player: "", image: "", alignment: "", xp: 0,
     race: null, subrace: null, raceAbility: { option: 0, picks: [] }, raceSkills: [],
     background: null, backgroundAbility: { option: 0, picks: [] }, classes: [],
     abilities: { method: "pointbuy", base: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 }, asi: zeroAbilities(), adjust: zeroAbilities() },
@@ -595,6 +597,22 @@ export function hpBreakdown(r: Rules, s: CharState, scores = abilityScores(r, s)
 /** Current HP, never above the maximum or below 0 (no current value yet = full health). */
 export function currentHp(s: CharState, max: number) {
   return Math.max(0, Math.min(s.hp.current ?? max, max));
+}
+/** What depends on a character's rules; the rest (name, scores, inventory, notes) stays when they change. */
+const RULES_FIELDS = ["race", "subrace", "raceAbility", "raceSkills", "background", "backgroundAbility", "classes", "feats", "spells", "slots", "resources", "choices", "added", "dismissed", "hp", "hitDiceUsed"] as const;
+/**
+ * Change a character's rules. What it was under the old ones is kept in the state, and what it was
+ * under the new ones comes back; if it never had them, those choices start empty. `keep`: the choices
+ * are already of the new rules (a sheet with 2024 entries from data with both editions), so they stay.
+ */
+export function changeRules(s: CharState, to: string, keep = false) {
+  if (to === s.ruleset) return;
+  const fresh = newCharacter() as unknown as Record<string, unknown>, state = s as unknown as Record<string, unknown>;
+  s.rulesSnapshots = { ...s.rulesSnapshots, [s.ruleset]: Object.fromEntries(RULES_FIELDS.map((k) => [k, structuredClone(state[k])])) };
+  s.ruleset = to;
+  if (keep) return;
+  const back = (s.rulesSnapshots[to] ?? {}) as Record<string, unknown>;
+  for (const k of RULES_FIELDS) state[k] = structuredClone(back[k] ?? fresh[k]);
 }
 /**
  * What a state holds that its rules data doesn't have: its ids, as they are in the state. Those parts

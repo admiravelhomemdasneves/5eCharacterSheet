@@ -18,6 +18,10 @@ export class ImportReportModal extends Modal {
     this.modalEl.addClass("dnd-report-modal");
     contentEl.addClass("dnd-report");
     contentEl.createEl("h2", { text: "Import report" });
+    if (r.otherRules.length) {
+      const shown = r.otherRules.slice(0, 5).map((e) => e.name).join(", ");
+      contentEl.createDiv({ cls: "dnd-rules-warning", text: `${r.otherRules.length} homebrew entr${r.otherRules.length === 1 ? "y is" : "ies are"} for other rules, so left out: ${shown}${r.otherRules.length > 5 ? "…" : ""}. To use them, set the data source of those rules to imported data and import again.` });
+    }
     contentEl.createEl("p", { cls: "dnd-hint", text: r.files.length ? "What came from each source. Open a homebrew file to see its entries." : "What came from the 5etools data." });
 
     const table = contentEl.createDiv({ cls: "dnd-report-scroll" }).createEl("table", { cls: "dnd-report-table" });
