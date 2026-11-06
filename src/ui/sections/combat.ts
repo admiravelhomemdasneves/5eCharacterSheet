@@ -58,7 +58,8 @@ export function combat(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
     // manual mode: the hit dice are set in an edit mode, as the ability scores are
     const editing = man && !!sheet.view.editing["hit-dice"];
     if (man) iconButton(hdEl, editing ? "check" : "pencil", editing ? "Done editing" : "Edit hit dice", () => sheet.changeView((v) => { v.editing["hit-dice"] = !editing; }), `dnd-hd-edit${editing ? " is-active" : ""}`);
-    button(labeled(hpGrid, "Rest"), "Long Rest", () => sheet.change((x) => E.longRest(x, hp.max, hdTotal)), "dnd-rest-btn");
+    // back to a maximum the rules can't work out now would lose hit points
+    if (sheet.trusted) button(labeled(hpGrid, "Rest"), "Long Rest", () => sheet.change((x) => E.longRest(x, hp.max, hdTotal)), "dnd-rest-btn");
     if (editing) hitDiceEditor(sheet, hpEl, d.level);
     // roll a hit die (one button per die type when multiclassed)
     const hdRoll = hpEl.createDiv({ cls: "dnd-row dnd-hd-roll" });

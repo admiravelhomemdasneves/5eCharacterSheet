@@ -19,7 +19,7 @@ export function skills(sheet: CharacterSheet, root: HTMLElement, d: E.Derived) {
       dot.onclick = () => sheet.change((x) => { x.skills[k] = (((lvl + 1) % 3) as E.ProfLevel); });
       const bonus = d.skills[k];
       sheet.rollable(row, fmtMod(bonus), d20(bonus), title(k), "dnd-skill-bonus");
-      sheet.link(row, title(k), sheet.plugin.linker.rule("skills", title(k)), "dnd-skill-name");
+      sheet.link(row, title(k), sheet.ctx.linker.rule("skills", title(k)), "dnd-skill-name");
       row.createSpan({ cls: "dnd-skill-abil", text: a.toUpperCase() });
       if (auto[k]) row.createSpan({ cls: "dnd-skill-src", text: auto[k].join(", ") });
     }

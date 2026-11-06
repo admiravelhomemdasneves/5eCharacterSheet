@@ -1,6 +1,7 @@
 import { CachedMetadata, Modal, Notice, Plugin, Setting, TFile, TFolder, Vault, normalizePath } from "obsidian";
 import * as E from "./rules/engine";
 import { CharState, Compendium, Rules, SheetView, newCharacter } from "./rules/engine";
+import { EMPTY_DATA, RulesContext, emptyContext } from "./rules/context";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo, sourceOfTag } from "./data/links";
 import { BrewEntry, HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
@@ -11,15 +12,15 @@ import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import { fileNameProblem, renamedPath } from "./files";
 import { loadSrd } from "./data/srd";
-import { emptyCustomFile, type CustomEntry, type CustomFile } from "./custom/format";
+import { DEFAULT_RULESET, emptyCustomFile, type CustomEntry, type CustomFile } from "./custom/format";
 import { DEFAULT_CUSTOM_PATH, loadCustom, saveCustom } from "./custom/store";
 import { mergeCustom, rulesetOf } from "./custom/merge";
-import { rulesetById } from "./rules/rulesets";
+import { RULESETS, rulesetById } from "./rules/rulesets";
 
 // Code block names: "character-sheet-5e" for new notes, "dnd-character" kept for older ones
 export const BLOCKS = ["character-sheet-5e", "dnd-character"];
 
-const TEMPLATE = (name: string) => `---
+const TEMPLATE = (name: string, ruleset: string) => `---
 obsidianUIMode: preview
 cssclasses:
   - character-sheet-5e
@@ -27,6 +28,7 @@ tags:
   - character
 dnd:
   name: ${JSON.stringify(name)}
+  ruleset: ${JSON.stringify(ruleset)}
 ---
 
 \`\`\`character-sheet-5e
@@ -38,12 +40,12 @@ const VIEWS_KEY = "fifth-edition-character-sheet:views";
 /** App#loadLocalStorage and App#saveLocalStorage, from Obsidian 1.8.7: checked at runtime for older versions */
 type LocalStorageApp = { loadLocalStorage?: (key: string) => unknown; saveLocalStorage?: (key: string, data: unknown) => void };
 
-const EMPTY: Compendium = { meta: { sources: {} }, races: [], classes: [], backgrounds: [], feats: [], spells: [], items: [] };
-
 export default class CharacterSheetPlugin extends Plugin {
   settings: SheetSettings = { ...DEFAULT_SETTINGS };
-  rules: Rules = new Rules(EMPTY);
-  linker: Linker = new Linker(null, []);
+  /** what the sheets of each ruleset work with, by ruleset id */
+  private contexts = new Map<string, RulesContext>(RULESETS.map((r) => [r.id, emptyContext(r.id, r, "loading")]));
+  /** reloads run one after the other, so an older one can't finish last */
+  private reloading: Promise<void> = Promise.resolve();
   /** the state of each sheet note opened this session, shared by all its sheets; by note path */
   states = new Map<string, CharState>();
   /** pending saves (debounced) and saves being written, by note path */
@@ -51,22 +53,14 @@ export default class CharacterSheetPlugin extends Plugin {
   private writing = new Set<string>();
   /** how each sheet note is shown (collapsed sections, edit mode), by note path: on this device, not in the notes */
   private views: Record<string, SheetView> = {};
-  /** the imported rules data was made by an older importer and should be imported again */
-  importIsOutdated = false;
   private importNoticeShown = false;
   sheets = new Set<CharacterSheet>();
-  /** the rules data without the custom entries (what "Import data" lists) */
-  baseData: Compendium = EMPTY;
-  /** the custom data file as last read; `customProblems`: what could not be read or added; `customOther`: entries for other rules */
+  /** the custom data file as last read */
   customFile: CustomFile = emptyCustomFile();
-  customProblems: string[] = [];
-  customOther = 0;
-  /** the custom entries on their own, as rules data: what manual mode fills its fields from */
-  customOnly: Compendium = EMPTY;
-  /** manual mode: no rules data configured (or the configured data could not be loaded); custom entries alone don't leave it */
-  get manual() { return this.settings.dataSource === "none" || (this.baseData.races.length === 0 && this.baseData.classes.length === 0); }
-  /** the ruleset of the rules data, which custom entries are made for */
-  get ruleset() { return rulesetById(rulesetOf(this.baseData)); }
+  /** The rules a sheet works with. Rules this version doesn't have give an unavailable context, never another ruleset's. */
+  contextById(id: string): RulesContext { return this.contexts.get(id) ?? emptyContext(id, null, "unavailable"); }
+  /** The context of the plugin's own pages (settings, Import data, Custom data). */
+  get context() { return this.contextById(DEFAULT_RULESET); }
   customPath() { return normalizePath(this.settings.customDataPath.trim() || DEFAULT_CUSTOM_PATH); }
 
   async onload() {
@@ -94,8 +88,18 @@ export default class CharacterSheetPlugin extends Plugin {
   }
 
   // ---------------------------------------------------------------- data
-  async reloadData() {
-    let data: Compendium = EMPTY;
+  reloadData() {
+    this.reloading = this.reloading.then(() => this.loadContexts(), (e) => { console.error("5e Character Sheet: could not reload the rules data", e); return this.loadContexts(); });
+    return this.reloading;
+  }
+  private async loadContexts() {
+    const custom = await loadCustom(this.app.vault.adapter, this.customPath());
+    this.customFile = custom.file;
+    for (const r of RULESETS) this.contexts.set(r.id, await this.loadContext(r.id, custom));
+    this.sheets.forEach((s) => s.reload());
+  }
+  private async loadContext(id: string, custom: Awaited<ReturnType<typeof loadCustom>>): Promise<RulesContext> {
+    let data: Compendium = EMPTY_DATA;
     try {
       if (this.settings.dataSource === "srd") data = loadSrd();
       else if (this.settings.dataSource === "imported") {
@@ -106,26 +110,27 @@ export default class CharacterSheetPlugin extends Plugin {
     } catch (e) {
       console.error("5e Character Sheet: could not load rules data", e);
       new Notice("Could not load the rules data, so the sheets are in manual mode.");
-      data = EMPTY;
+      data = EMPTY_DATA;
     }
     // data imported by an older version of the plugin: remind the user (once per session) to import again
-    this.importIsOutdated = this.settings.dataSource === "imported" && data !== EMPTY && importOutdated(data.meta);
-    if (this.importIsOutdated && !this.importNoticeShown) {
+    const importIsOutdated = this.settings.dataSource === "imported" && data !== EMPTY_DATA && importOutdated(data.meta);
+    if (importIsOutdated && !this.importNoticeShown) {
       this.importNoticeShown = true;
       new Notice(`5e Character Sheet: your imported 5etools data is from an older version of the plugin. Press "Import now" in the plugin settings to update it (${IMPORT_CHANGES}).`, 15000);
     }
     // custom entries: added to the data, or on their own for manual mode to fill its fields from
-    const custom = await loadCustom(this.app.vault.adapter, this.customPath());
-    this.customFile = custom.file;
     const ruleset = rulesetById(rulesetOf(data));
-    const merged = mergeCustom(data, custom.file, ruleset), alone = mergeCustom(EMPTY, custom.file, ruleset);
-    this.customProblems = [...(custom.error ? [custom.error] : []), ...custom.warnings, ...merged.warnings];
-    this.customOther = merged.other;
-    this.baseData = data;
-    this.linker = this.buildLinker(merged.links);
-    this.customOnly = this.linker.attach(alone.data);
-    this.rules = new Rules(this.linker.attach(this.manual ? data : merged.data));
-    this.sheets.forEach((s) => s.reload());
+    const merged = mergeCustom(data, custom.file, ruleset), alone = mergeCustom(EMPTY_DATA, custom.file, ruleset);
+    const manual = this.settings.dataSource === "none" || (data.races.length === 0 && data.classes.length === 0);
+    const linker = this.buildLinker(merged.links);
+    return {
+      id, ruleset, importIsOutdated, manual, linker,
+      // a source is chosen but gave nothing: the sheets must not take that for rules that say nothing
+      status: this.settings.dataSource !== "none" && data === EMPTY_DATA ? "unavailable" : "ready",
+      rules: new Rules(linker.attach(manual ? data : merged.data)),
+      baseData: data, customOnly: linker.attach(alone.data),
+      customProblems: [...(custom.error ? [custom.error] : []), ...custom.warnings, ...merged.warnings], customOther: merged.other,
+    };
   }
 
   /** Save the custom data file, then load the data again with it. */
@@ -368,23 +373,13 @@ export default class CharacterSheetPlugin extends Plugin {
   private async writeState(path: string) {
     const file = this.app.vault.getAbstractFileByPath(path), s0 = this.states.get(path);
     if (!(file instanceof TFile) || !s0) return;
-    const r = this.rules, man = this.manual;
-    const s = man ? E.manualView(s0) : s0;
-    const sc = E.abilityScores(r, s);
+    const ctx = this.contextById(s0.ruleset), keys = E.flatKeys(ctx.rules, s0, ctx.manual, this.trusted(ctx, s0), file.basename);
     this.writing.add(path);
     try {
       await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
         fm.dnd = E.savedState(s0);
         // flat keys for Dataview, Initiative Tracker (players) and Fantasy Statblocks
-        fm.name = s.name || file.basename;
-        fm.player = s.player || undefined;
-        fm.race = (man ? [s0.manual.race, s0.manual.subrace] : [r.race(s)?.name, r.subrace(s)?.name]).filter(Boolean).join(" ") || undefined;
-        fm.class = (man ? s0.manual.classes.map((c) => `${c.name || "?"} ${c.level}`) : s.classes.map((e) => `${r.cls(e.id)?.name ?? "?"} ${e.level}`)).join(" / ") || undefined;
-        fm.level = E.totalLevel(s);
-        fm.hp = man ? s0.manual.maxHp : E.hpBreakdown(r, s, sc).max;
-        fm.ac = man ? s0.manual.ac : E.armorClass(r, s, sc).value;
-        fm.modifier = E.initiative(r, s, sc);
-        fm.stats = E.ABILITIES.map((a) => sc[a].total);
+        Object.assign(fm, keys);
         if (s0.image) fm.image = s0.image; else delete fm.image;
         for (const k of Object.keys(fm)) if (fm[k] === undefined) delete fm[k];
       });
@@ -392,6 +387,8 @@ export default class CharacterSheetPlugin extends Plugin {
       this.writing.delete(path);
     }
   }
+  /** What the rules say about this state can be used: its data is there and has all it chose (see E.unresolvedIds). */
+  trusted(ctx: RulesContext, s: CharState) { return ctx.status === "ready" && (ctx.manual || E.unresolvedIds(ctx.rules, s).length === 0); }
   /**
    * A sheet note's frontmatter changed: when its `dnd` is no longer the state the sheets hold, it was
    * edited outside them, so that becomes the state. Changes not yet written win (they are saved over it).
@@ -428,7 +425,7 @@ export default class CharacterSheetPlugin extends Plugin {
     const prefix = dir === "/" ? "" : dir + "/";
     let path = normalizePath(`${prefix}${name}.md`);
     for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = normalizePath(`${prefix}${name} ${i}.md`);
-    const file = await this.app.vault.create(path, TEMPLATE(name));
+    const file = await this.app.vault.create(path, TEMPLATE(name, DEFAULT_RULESET));
     this.settings.lastFolder = dir === "/" ? "" : dir;
     await this.saveData(this.settings);
     this.states.set(file.path, this.freshCharacter(name));
