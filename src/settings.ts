@@ -15,6 +15,14 @@ export interface SheetSettings {
   lastFolder: string;
   /** none = manual mode (type everything in), srd = bundled SRD 5.1, imported = user's own 5etools data */
   dataSource: "none" | "srd" | "imported";
+  /** the same for the 2024 rules */
+  dataSource2024: "none" | "srd" | "imported";
+  /** the rules of new characters (a ruleset id) */
+  defaultRuleset: string;
+  /** the rules "Import now" imports (ruleset ids) */
+  importEditions: string[];
+  /** classic content with no 2024 version is imported into the 2024 data */
+  importClassicIn2024: boolean;
   /** optional folder of a ttrpg-convert-cli compendium, used only for links */
   compendiumFolder: string;
   fivetoolsPath: string;
@@ -23,6 +31,7 @@ export interface SheetSettings {
   importRules2014: boolean;
   importOnlyWithNotes: boolean;
   lastImport: string;
+  lastImport2024: string;
   /** entries removed from the imported data ("Import data"), kept out of later imports too */
   removedEntries: RemovedEntry[];
   /** compendium notes chosen for entries ("Import data"), by note key; "" = no note */
@@ -36,8 +45,8 @@ export interface SheetSettings {
   customDataPath: string;
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
-  charactersFolder: "", lastFolder: "", dataSource: "none", compendiumFolder: "",
-  fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "", removedEntries: [], noteLinks: {},
+  charactersFolder: "", lastFolder: "", dataSource: "none", dataSource2024: "none", defaultRuleset: "5e-2014", importEditions: ["5e-2014"], importClassicIn2024: true, compendiumFolder: "",
+  fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "", lastImport2024: "", removedEntries: [], noteLinks: {},
   theme: "plugin", customAccent: "#922610", hiddenSections: [], customDataPath: "",
 };
 const THEME_KEYS = ["theme", "customAccent"];

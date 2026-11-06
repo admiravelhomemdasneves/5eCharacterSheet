@@ -5,6 +5,7 @@ import { countData, type Counts } from "./report.ts";
 import { sourceTag } from "./links.ts";
 import type { Compendium } from "../rules/engine.ts";
 import { lc } from "../text.ts";
+import { DEFAULT_RULESET } from "../custom/format.ts";
 
 /** One entry of the data: subraces are named "Race (Subrace)" and subclasses "Subclass (Class)", as in the import report. */
 export interface DataEntry {
@@ -26,8 +27,10 @@ export const KIND_LABELS: Record<EntryKind, [one: string, many: string]> = {
   race: ["Race", "Races"], subrace: ["Subrace", "Subraces"], class: ["Class", "Classes"], subclass: ["Subclass", "Subclasses"],
   background: ["Background", "Backgrounds"], feat: ["Feat", "Feats"], spell: ["Spell", "Spells"], item: ["Item", "Items"],
 };
-/** An entry removed from the imported data, as it is kept in the settings. */
-export interface RemovedEntry { kind: EntryKind; name: string; source: string }
+/** An entry removed from the imported data, as it is kept in the settings. `ruleset`: the data it was removed from (none: the 2014 rules). */
+export interface RemovedEntry { kind: EntryKind; name: string; source: string; ruleset?: string }
+/** The entries removed from the data of one ruleset: the same entry can be in the data of both. */
+export const removedFrom = (list: RemovedEntry[], ruleset: string) => list.filter((e) => (e.ruleset ?? DEFAULT_RULESET) === ruleset);
 export const removedKeys = (list: RemovedEntry[]) => new Set(list.map((e) => entryKey(e.kind, e.name, e.source)));
 
 /** The compendium folder of each kind of entry (subraces are notes of races, subclasses of classes). */

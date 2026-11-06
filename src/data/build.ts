@@ -29,6 +29,10 @@ export const ENTRY_KINDS = ["race", "subrace", "class", "subclass", "background"
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 /** What became of one entry of a homebrew file: `reason` is null when it was imported, else why it was left out. */
 export interface BrewEntry { file: string; kind: EntryKind; name: string; source: string; reason: string | null }
+/** The rules of an import. */
+export type Edition = "2014" | "2024";
+/** Why an entry is not in an import of its edition: an entry left out for one of these belongs to other rules. */
+export const REASON_2024 = "2024 edition", REASON_2014 = "2014 edition", REASON_REPRINTED = "reprinted for 2024", REASON_CLASSIC = "classic content";
 export interface BuildOptions {
   /** reads the official 5etools data; without it, only the homebrew is imported */
   read?: ReadJson;
@@ -42,8 +46,20 @@ export interface BuildOptions {
   srdOnly?: boolean;
   /** drop 2024-edition content (XPHB/XDMG/XMM and entries marked edition "one") */
   rules2014Only?: boolean;
+  /**
+   * The rules the data is for, stamped into it (meta.ruleset). "2014" leaves out the same as rules2014Only.
+   * "2024" keeps what was published for 2024 and leaves out what was reprinted for it; with `srdOnly`, the SRD 5.2.
+   */
+  edition?: Edition;
+  /** "2024": also keep classic content that has no 2024 version (the default). Subclasses made to work with a 2024 class always stay. */
+  classic?: boolean;
   /** extra filter, e.g. "only entries that have a note in my compendium" */
   keep?: (kind: string, name: string, source: string) => boolean;
+}
+
+/** What an import of some rules leaves out, by the settings. */
+export function importOptions(ruleset: string, st: { importRules2014: boolean; importOnlyWithNotes: boolean; importClassicIn2024: boolean }): Pick<BuildOptions, "rules2014Only" | "edition" | "classic"> {
+  return ruleset === "5e-2024" ? { edition: "2024", classic: st.importClassicIn2024 } : { rules2014Only: st.importRules2014 && !st.importOnlyWithNotes };
 }
 
 const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
@@ -56,10 +72,12 @@ const SOURCES_2024 = new Set(["XPHB", "XDMG", "XMM", "XScreen"]);
  *   6 = the spells feats grant
  */
 export const IMPORT_VERSION = 6;
+/** The same, for data of the 2024 rules: its changes don't ask for a new import of 2014 data. */
+export const IMPORT_VERSION_2024 = 1;
 /** What an import with this importer brings to data imported before it (shown when it is out of date). */
 export const IMPORT_CHANGES = "adds the options of class features to choose from on the sheet, such as Fighting Styles, Eldritch Invocations, Metamagic and maneuvers, and the spells feats grant";
 /** Imported data made by an older importer (data from before the stamp counts as version 1). */
-export const importOutdated = (meta: { importVersion?: number } | undefined) => (meta?.importVersion ?? 1) < IMPORT_VERSION;
+export const importOutdated = (meta: { importVersion?: number; ruleset?: string } | undefined) => (meta?.importVersion ?? 1) < (meta?.ruleset === "5e-2024" ? IMPORT_VERSION_2024 : IMPORT_VERSION);
 /** Name given to a race's unnamed 5etools subrace (the race without a variant). */
 export const STANDARD_SUBRACE = "Standard";
 export const TOKEN = /⟦([^|⟧]*)\|([^|⟧]*)\|([^|⟧]*)\|([^⟧]*)⟧/g;
@@ -203,7 +221,7 @@ function langText(arr: RawProf[] | undefined): string[] {
 
 // ---------------------------------------------------------------- _copy and _mod
 /** fields a copy does not take from what it copies, unless its _preserve names them */
-const NOT_COPIED = ["srd", "basicRules", "page", "otherSources", "referenceSources", "reprintedAs", "hasFluff", "hasFluffImages"];
+const NOT_COPIED = ["srd", "srd52", "basicRules", "basicRules2024", "page", "otherSources", "referenceSources", "reprintedAs", "hasFluff", "hasFluffImages"];
 /** what identifies an entry for _copy, besides name and source */
 const COPY_KEYS: Partial<Record<(typeof HOMEBREW_COLLECTIONS)[number], string[]>> = {
   subrace: ["raceName", "raceSource"],
@@ -473,16 +491,34 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     try { convert(); } catch (err) { warn(`${kind}: left out ${e.name} (${e.source}): ${(err as Error).message}`); leftOut.set(e, (err as Error).message); }
   };
   const is2024 = (e: RawBase) => SOURCES_2024.has(e.source) || e.edition === "one";
+  const only2014 = !!o.rules2014Only || o.edition === "2014", only2024 = o.edition === "2024";
+  // sources of the 2024 rules: spells, feats and items have no edition of their own, so their source tells
+  const sources2024 = new Set([...SOURCES_2024].map(lc));
+  if (only2024) for (const k of HOMEBREW_COLLECTIONS) for (const e of raw[k] as RawBase[]) if (e.edition === "one") sources2024.add(lc(e.source));
+  const from2024 = (e: RawBase) => e.edition === "one" || sources2024.has(lc(e.source));
+  const reprintedFor2024 = (e: RawBase) => (e.reprintedAs || []).some((x) => sources2024.has(lc((typeof x === "string" ? x : x?.uid ?? "").split("|")[1] ?? "")));
+  const classicKept = new Set<RawBase>();
+  /** why an import of the 2024 rules leaves an entry out; `tied`: it was made to work with a 2024 class or race */
+  const not2024 = (e: RawBase, tied: boolean) => {
+    if (from2024(e)) return null;
+    if (reprintedFor2024(e)) return REASON_REPRINTED;
+    // homebrew says what it is for: with nothing said, it was written for the rules it has always been used with
+    if (origin.has(e) && !tied) return REASON_2014;
+    if (o.classic === false && !tied) return REASON_CLASSIC;
+    classicKept.add(e);
+    return null;
+  };
   // SRD: 5etools marks SRD entries with srd: true, or srd: "<SRD name>" when the SRD renames them
-  const srdName = (e: RawBase): string | null => (e.srd === true ? e.name : typeof e.srd === "string" ? e.srd : null);
+  const srdFlag = (e: RawBase) => (only2024 ? e.srd52 : e.srd);
+  const srdName = (e: RawBase): string | null => { const f = srdFlag(e); return f === true ? e.name : typeof f === "string" ? f : null; };
   /** why the options leave an entry out, or null when it is kept */
-  const filteredBy = (kind: string, e: RawBase, name: string) =>
+  const filteredBy = (kind: string, e: RawBase, name: string, tied: boolean) =>
     // the SRD flag itself, not the SRD name: unnamed subraces (e.g. the standard Human) have none
-    o.srdOnly && e.srd !== true && typeof e.srd !== "string" ? "not in the SRD"
-      : o.rules2014Only && is2024(e) ? "2024 edition"
-        : o.keep && !o.keep(kind, name, e.source) ? "no compendium note" : null;
-  const allowed = (kind: string, e: RawBase, name = e.name) => {
-    const why = filteredBy(kind, e, name);
+    o.srdOnly && srdFlag(e) !== true && typeof srdFlag(e) !== "string" ? "not in the SRD"
+      : only2014 && is2024(e) ? REASON_2024
+        : (only2024 && not2024(e, tied)) || (o.keep && !o.keep(kind, name, e.source) ? "no compendium note" : null);
+  const allowed = (kind: string, e: RawBase, name = e.name, tied = false) => {
+    const why = filteredBy(kind, e, name, tied);
     if (why) leftOut.set(e, why);
     return !why;
   };
@@ -491,7 +527,8 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   // races
   const races: RaceData[] = [];
   for (const r of raw.race) guard("races", r, () => {
-    if (o.rules2014Only && is2024(r)) { leftOut.set(r, "2024 edition"); return; }
+    if (only2014 && is2024(r)) { leftOut.set(r, REASON_2024); return; }
+    if (only2024 && !allowed("races", r)) return;
     const subOut: SubraceData[] = [], subsMade: RawSubrace[] = [];
     // An unnamed subrace is the race as written: 5etools keeps e.g. the standard Human's +1 to every
     // ability there. Next to named subraces (Variant Human, the dragonmarks, which replace those +1s)
@@ -608,7 +645,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const subclassSpells = new Map<SubclassData, string[]>();
   for (const c of raw.class) guard("classes", c, () => {
     if (!allowed("classes", c)) return;
-    const featOk = (f: RawBase) => !o.srdOnly || !!f.srd;
+    const featOk = (f: RawBase) => !o.srdOnly || !!srdFlag(f);
     const feat = (ref: RawClassFeatureRef): Feature | null => {
       const s = typeof ref === "string" ? ref : ref?.classFeature;
       if (typeof s !== "string") return null;
@@ -620,7 +657,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       return out;
     };
     const features = (c.classFeatures || []).map(feat).filter((f): f is Feature => f !== null)
-      .filter((f) => !f.optional || !o.rules2014Only || !SOURCES_2024.has(f.source));
+      .filter((f) => !f.optional || !only2014 || !SOURCES_2024.has(f.source));
     const tableCols: ClassData["tableCols"] = [];
     for (const g of c.classTableGroups || []) {
       if (g.rowsSpellProgression) continue;
@@ -632,10 +669,14 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
     }
     const subclasses: SubclassData[] = [], subsMade: RawBase[] = [];
     for (const sc of raw.subclass.filter((x) => x.className === c.name && x.classSource === c.source)) guard("subclasses", sc, () => {
-      if (!allowed("classes", sc)) return;
+      // 2024: a subclass kept under a 2024 class, unless the class has its own 2024 version of it
+      const tied = only2024 && from2024(c);
+      if (tied && !from2024(sc) && raw.subclass.some((x) => x !== sc && x.className === c.name && x.classSource === c.source && x.shortName === sc.shortName && from2024(x))) { leftOut.set(sc, REASON_REPRINTED); return; }
+      if (!allowed("classes", sc, sc.name, tied)) return;
       const sfeats: Feature[] = [];
       const pushSub = (name: string, scShort: string, scSrc: string, lvl: string, src: string, clsSrc = "PHB"): RawSubclassFeature | null => {
-        const f = subclassFeatures.get([name, c.name, scShort, +lvl, src || scSrc || clsSrc || "PHB"].join("|"));
+        // a subclass under a 2024 class names that class, and leaves its own source (which isn't the class's) out
+        const f = subclassFeatures.get([name, c.name, scShort, +lvl, src || scSrc || (only2024 ? sc.source : clsSrc) || "PHB"].join("|"));
         if (!f || !featOk(f) || sfeats.some((y) => y.name === name && y.level === +lvl)) return null;
         const out: Feature = { name, level: +lvl, source: f.source, text: renderEntries(f.entries), link: null };
         rawOf.set(out, f.entries);
@@ -830,7 +871,7 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
       o.brewEntry({
         file, kind, source: e.source,
         name: parent ? (kind === "subrace" ? `${parent} (${e.name})` : `${e.name} (${parent})`) : e.name,
-        reason: made.has(e) ? null : leftOut.get(e) ?? (o.rules2014Only && is2024(e) ? "2024 edition" : unreached[kind]) ?? "left out",
+        reason: made.has(e) ? null : leftOut.get(e) ?? (only2014 && is2024(e) ? REASON_2024 : unreached[kind]) ?? "left out",
       });
     }
   }
@@ -839,8 +880,17 @@ export async function buildCompendium(o: BuildOptions): Promise<Compendium> {
   const used = new Set<string>([...races, ...races.flatMap((r) => r.subraces), ...classes, ...classes.flatMap((c) => c.subclasses), ...backgrounds, ...feats, ...spells, ...items].map((x) => x.source));
   const sources = Object.fromEntries(Object.entries(raw.sourceNames).filter(([id]) => used.has(id)));
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+  const ruleset = o.edition ? { ruleset: `5e-${o.edition}` } : {};
+  // the 2024 rules have ability increases from backgrounds: those of older races don't apply
+  if (only2024) for (const r of races) {
+    r.ability = [];
+    for (const s of r.subraces) { s.ability = null; s.overwriteAbility = false; }
+  }
   return {
-    meta: { generated: new Date().toISOString(), srdOnly: !!o.srdOnly, sources, importVersion: IMPORT_VERSION },
+    meta: {
+      generated: new Date().toISOString(), srdOnly: !!o.srdOnly, sources, importVersion: only2024 ? IMPORT_VERSION_2024 : IMPORT_VERSION, ...ruleset,
+      ...only2024 ? { classicEntries: [...classicKept].filter((e) => made.has(e)).length } : {},
+    },
     races: races.sort(byName), classes: classes.sort(byName), backgrounds: backgrounds.sort(byName), feats: feats.sort(byName),
     spells: spells.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)), items: items.sort(byName),
     optionalFeatures: optionalFeatures.sort(byName),

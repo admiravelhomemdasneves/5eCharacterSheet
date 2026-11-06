@@ -4,17 +4,17 @@ import { CharState, Compendium, Rules, SheetView, newCharacter } from "./rules/e
 import { EMPTY_DATA, RulesContext, emptyContext } from "./rules/context";
 import { CharacterSheet } from "./ui/sheet";
 import { Linker, NoteInfo, sourceOfTag } from "./data/links";
-import { BrewEntry, HomebrewFile, IMPORT_CHANGES, buildCompendium, importOutdated, summarize } from "./data/build";
+import { BrewEntry, HomebrewFile, IMPORT_CHANGES, buildCompendium, importOptions, importOutdated, summarize } from "./data/build";
 import { SKIP_FOLDERS, detect } from "./data/detect";
-import { ReportFile, importReport } from "./data/report";
-import { RemovedEntry, entryKey, removedKeys, withoutEntries } from "./data/entries";
+import { ReportFile, importReport, joinedData, mergedEntries } from "./data/report";
+import { RemovedEntry, entryKey, removedFrom, removedKeys, withoutEntries } from "./data/entries";
 import { ImportReportModal } from "./ui/report";
 import { DEFAULT_SETTINGS, SheetSettings, SheetSettingTab } from "./settings";
 import { fileNameProblem, renamedPath } from "./files";
 import { loadSrd } from "./data/srd";
 import { DEFAULT_RULESET, emptyCustomFile, type CustomEntry, type CustomFile } from "./custom/format";
 import { DEFAULT_CUSTOM_PATH, loadCustom, saveCustom } from "./custom/store";
-import { mergeCustom, rulesetOf } from "./custom/merge";
+import { mergeCustom } from "./custom/merge";
 import { RULESETS, rulesetById } from "./rules/rulesets";
 
 // Code block names: "character-sheet-5e" for new notes, "dnd-character" kept for older ones
@@ -95,15 +95,20 @@ export default class CharacterSheetPlugin extends Plugin {
   private async loadContexts() {
     const custom = await loadCustom(this.app.vault.adapter, this.customPath());
     this.customFile = custom.file;
-    for (const r of RULESETS) this.contexts.set(r.id, await this.loadContext(r.id, custom));
+    for (const r of RULESETS) {
+      // rules with nothing to load cost nothing: most vaults use one ruleset
+      const idle = r.id !== DEFAULT_RULESET && this.dataSourceOf(r.id) === "none" && !custom.file.entries.some((e) => e.ruleset === r.id);
+      this.contexts.set(r.id, idle ? { ...emptyContext(r.id, r, "ready"), linker: this.buildLinker() } : await this.loadContext(r.id, custom));
+    }
     this.sheets.forEach((s) => s.reload());
   }
   private async loadContext(id: string, custom: Awaited<ReturnType<typeof loadCustom>>): Promise<RulesContext> {
     let data: Compendium = EMPTY_DATA;
+    const source = this.dataSourceOf(id);
     try {
-      if (this.settings.dataSource === "srd") data = loadSrd();
-      else if (this.settings.dataSource === "imported") {
-        const file = this.importedFile();
+      if (source === "srd" && id === DEFAULT_RULESET) data = loadSrd();
+      else if (source === "imported") {
+        const file = this.importedFile(id);
         if (await this.app.vault.adapter.exists(file)) data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;
         else new Notice("No imported rules data yet. Import it in the plugin settings.");
       }
@@ -113,20 +118,20 @@ export default class CharacterSheetPlugin extends Plugin {
       data = EMPTY_DATA;
     }
     // data imported by an older version of the plugin: remind the user (once per session) to import again
-    const importIsOutdated = this.settings.dataSource === "imported" && data !== EMPTY_DATA && importOutdated(data.meta);
+    const importIsOutdated = source === "imported" && data !== EMPTY_DATA && importOutdated(data.meta);
     if (importIsOutdated && !this.importNoticeShown) {
       this.importNoticeShown = true;
       new Notice(`5e Character Sheet: your imported 5etools data is from an older version of the plugin. Press "Import now" in the plugin settings to update it (${IMPORT_CHANGES}).`, 15000);
     }
     // custom entries: added to the data, or on their own for manual mode to fill its fields from
-    const ruleset = rulesetById(rulesetOf(data));
+    const ruleset = rulesetById(id);
     const merged = mergeCustom(data, custom.file, ruleset), alone = mergeCustom(EMPTY_DATA, custom.file, ruleset);
-    const manual = this.settings.dataSource === "none" || (data.races.length === 0 && data.classes.length === 0);
+    const manual = source === "none" || (data.races.length === 0 && data.classes.length === 0);
     const linker = this.buildLinker(merged.links);
     return {
       id, ruleset, importIsOutdated, manual, linker,
       // a source is chosen but gave nothing: the sheets must not take that for rules that say nothing
-      status: this.settings.dataSource !== "none" && data === EMPTY_DATA ? "unavailable" : "ready",
+      status: source !== "none" && data === EMPTY_DATA ? "unavailable" : "ready",
       rules: new Rules(linker.attach(manual ? data : merged.data)),
       baseData: data, customOnly: linker.attach(alone.data),
       customProblems: [...(custom.error ? [custom.error] : []), ...custom.warnings, ...merged.warnings], customOther: merged.other,
@@ -211,7 +216,7 @@ export default class CharacterSheetPlugin extends Plugin {
       const linker = this.settings.importOnlyWithNotes ? this.buildLinker() : null;
       if (this.settings.importOnlyWithNotes && !linker?.enabled) throw new Error("No compendium notes found — set the compendium folder first, or turn off \"Only entries with a compendium note\".");
       // homebrew files, and entries in them, that can't be read are left out and reported; the rest is imported
-      const homebrew: HomebrewFile[] = [], files: ReportFile[] = [], leftOut: string[] = [], entries: BrewEntry[] = [];
+      const homebrew: HomebrewFile[] = [], files: ReportFile[] = [], leftOut: string[] = [];
       for (const path of brewPaths) {
         const file = normalizePath(path);
         try {
@@ -223,33 +228,39 @@ export default class CharacterSheetPlugin extends Plugin {
           files.push({ file, error: (e as Error).message });
         }
       }
-      const built = await buildCompendium({
-        read: base ? async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown : undefined,
-        homebrew,
-        warn: (message) => leftOut.push(message),
-        brewEntry: (e) => entries.push(e),
-        rules2014Only: this.settings.importRules2014 && !this.settings.importOnlyWithNotes,
-        keep: linker ? (kind, name, source) => linker.has(kind, name, source) : undefined,
-      });
-      // entries removed in "Import data" stay out; the file of each homebrew entry is kept for that page
-      const removed = removedKeys(this.settings.removedEntries);
-      const origins: Record<string, string> = {};
-      for (const e of entries) {
-        const key = entryKey(e.kind, e.name, e.source);
-        if (e.reason == null && removed.has(key)) e.reason = "removed in Import data";
-        if (e.reason == null) origins[key] = e.file;
+      const results: { data: Compendium; entries: BrewEntry[] }[] = [];
+      const brew = !base ? ` (${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"} only, no 5etools data)` : homebrew.length ? ` (with ${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"})` : "";
+      for (const ruleset of this.settings.importEditions) {
+        const entries: BrewEntry[] = [];
+        const built = await buildCompendium({
+          read: base ? async (rel) => JSON.parse(await adapter.read(normalizePath(`${base}/${rel}`))) as unknown : undefined,
+          homebrew: structuredClone(homebrew),
+          warn: (message) => leftOut.push(message),
+          brewEntry: (e) => entries.push(e),
+          ...importOptions(ruleset, this.settings),
+          keep: linker ? (kind, name, source) => linker.has(kind, name, source) : undefined,
+        });
+        // entries removed in "Import data" stay out; the file of each homebrew entry is kept for that page
+        const removed = removedKeys(removedFrom(this.settings.removedEntries, ruleset));
+        const origins: Record<string, string> = {};
+        for (const e of entries) {
+          const key = entryKey(e.kind, e.name, e.source);
+          if (e.reason == null && removed.has(key)) e.reason = "removed in Import data";
+          if (e.reason == null) origins[key] = e.file;
+        }
+        const data = withoutEntries(built, removed);
+        data.meta = { ...data.meta, origins };
+        await this.writeImported(ruleset, data);
+        const last = `${new Date().toLocaleString()} — ${summarize(data)}${brew}`;
+        // only the rules imported change: their data source, not the one of the other rules
+        if (ruleset === DEFAULT_RULESET) { this.settings.lastImport = last; this.settings.dataSource = "imported"; }
+        else { this.settings.lastImport2024 = last; this.settings.dataSource2024 = "imported"; }
+        results.push({ data, entries });
       }
-      const data = withoutEntries(built, removed);
-      data.meta = { ...data.meta, origins };
-      await this.writeImported(data);
-      const brewFiles = `${homebrew.length} homebrew file${homebrew.length === 1 ? "" : "s"}`;
-      const brew = !base ? ` (${brewFiles} only, no 5etools data)` : homebrew.length ? ` (with ${brewFiles})` : "";
-      this.settings.lastImport = `${new Date().toLocaleString()} — ${summarize(data)}${brew}`;
-      this.settings.dataSource = "imported";
       await this.saveSettings();
       notice.hide();
-      if (leftOut.length) console.warn(`5e Character Sheet: left out of the import:\n${leftOut.join("\n")}`);
-      new ImportReportModal(this.app, importReport({ data, dataFolder: base, files, entries, messages: leftOut })).open();
+      if (leftOut.length) console.warn(`5e Character Sheet: left out of the import:\n${[...new Set(leftOut)].join("\n")}`);
+      new ImportReportModal(this.app, importReport({ data: joinedData(results.map((x) => x.data)), dataFolder: base, files, entries: mergedEntries(results.map((x) => x.entries)), messages: [...new Set(leftOut)] })).open();
     } catch (e) {
       notice.hide();
       console.error("5e Character Sheet: import failed", e);
@@ -257,19 +268,20 @@ export default class CharacterSheetPlugin extends Plugin {
     }
   }
 
-  private importedFile() { return normalizePath(`${this.manifest.dir}/data/imported.json`); }
-  private async writeImported(data: Compendium) {
+  /** The imported data of some rules: one file each, so an import of one can't touch the other. */
+  private importedFile(ruleset: string) { return normalizePath(`${this.manifest.dir}/data/${ruleset === DEFAULT_RULESET ? "imported" : "imported-2024"}.json`); }
+  private async writeImported(ruleset: string, data: Compendium) {
     const dir = normalizePath(`${this.manifest.dir}/data`);
     if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.adapter.mkdir(dir);
-    await this.app.vault.adapter.write(this.importedFile(), JSON.stringify(data));
+    await this.app.vault.adapter.write(this.importedFile(ruleset), JSON.stringify(data));
   }
 
   /** Remove entries from the imported data ("Import data"); they stay out of later imports until restored. */
   async removeEntries(entries: RemovedEntry[]) {
-    const file = this.importedFile();
+    const file = this.importedFile(DEFAULT_RULESET);
     if (await this.app.vault.adapter.exists(file)) {
       const data = JSON.parse(await this.app.vault.adapter.read(file)) as Compendium;
-      await this.writeImported(withoutEntries(data, removedKeys(entries)));
+      await this.writeImported(DEFAULT_RULESET, withoutEntries(data, removedKeys(entries)));
     }
     const known = removedKeys(this.settings.removedEntries);
     this.settings.removedEntries = [...this.settings.removedEntries, ...entries.filter((e) => !known.has(entryKey(e.kind, e.name, e.source)))];
@@ -387,6 +399,8 @@ export default class CharacterSheetPlugin extends Plugin {
       this.writing.delete(path);
     }
   }
+  /** Where the data of some rules comes from. */
+  dataSourceOf(id: string) { return id === DEFAULT_RULESET ? this.settings.dataSource : this.settings.dataSource2024; }
   /** What the rules say about this state can be used: its data is there and has all it chose (see E.unresolvedIds). */
   trusted(ctx: RulesContext, s: CharState) { return ctx.status === "ready" && (ctx.manual || E.unresolvedIds(ctx.rules, s).length === 0); }
   /**

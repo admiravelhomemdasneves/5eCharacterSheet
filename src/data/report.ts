@@ -55,6 +55,23 @@ function unusedCollections(json: unknown) {
     .map(([collection, v]) => ({ collection, count: (v as unknown[]).length }));
 }
 
+/** The data of several imports as one, to count it. */
+export function joinedData(list: Compendium[]): Compendium {
+  const [first, ...rest] = list;
+  return rest.reduce((a, b) => ({
+    ...a, races: [...a.races, ...b.races], classes: [...a.classes, ...b.classes], backgrounds: [...a.backgrounds, ...b.backgrounds],
+    feats: [...a.feats, ...b.feats], spells: [...a.spells, ...b.spells], items: [...a.items, ...b.items],
+  }), first);
+}
+/** What became of homebrew entries over the imports of several editions: imported by one of them is imported. */
+export function mergedEntries(lists: BrewEntry[][]): BrewEntry[] {
+  const seen = new Map<string, BrewEntry>();
+  for (const e of lists.flat()) {
+    const key = `${e.file}|${e.kind}|${e.name}|${e.source}`, had = seen.get(key);
+    if (!had || (had.reason != null && e.reason == null)) seen.set(key, e);
+  }
+  return [...seen.values()];
+}
 export function importReport(o: { data: Compendium; dataFolder: string | null; files: ReportFile[]; entries: BrewEntry[]; messages: string[] }): ImportReport {
   const total = countData(o.data);
   const order = (e: BrewEntry) => ENTRY_KINDS.indexOf(e.kind);
