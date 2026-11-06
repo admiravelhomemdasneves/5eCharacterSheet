@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { buildCompendium, importOptions, type BrewEntry } from "../src/data/build.ts";
-import { compendiumFor, editionsApart, importedRulesets, isMixedData } from "../src/data/editions.ts";
+import { compendiumFor, editionsApart, fivetoolsFor, importedRulesets, isMixedData } from "../src/data/editions.ts";
 import { Linker } from "../src/data/links.ts";
-import { importReport } from "../src/data/report.ts";
+import { forOtherRules } from "../src/data/report.ts";
 import { dataConflicts } from "../src/rules/conflicts.ts";
 import * as E from "../src/rules/engine.ts";
 import { RULESETS } from "../src/rules/rulesets.ts";
@@ -101,9 +101,12 @@ test("conflicts between the rules chosen and their data", () => {
 test("the import report says what was left out for being for other rules", async () => {
   const brew = { file: "b.json", json: { _meta: { sources: [{ json: "NEW", full: "New" }] }, spell: [{ name: "New Spell", source: "NEW", edition: "one", level: 1, school: "V", entries: ["x"] }] } };
   const entries: BrewEntry[] = [];
-  const data = await buildCompendium({ read, edition: "2014", homebrew: [brew], brewEntry: (e) => entries.push(e) });
-  const r = importReport({ data, dataFolder: "x", files: [brew], entries, messages: [] });
-  assert.deepEqual(r.otherRules.map((e) => e.name), ["New Spell"]);
+  await buildCompendium({ read, edition: "2014", homebrew: [brew], brewEntry: (e) => entries.push(e) });
+  assert.deepEqual(forOtherRules([entries]).map((e) => e.name), ["New Spell"]);
+  // imported by the other edition, it isn't left out
+  const in2024: BrewEntry[] = [];
+  await buildCompendium({ read, edition: "2024", homebrew: [brew], brewEntry: (e) => in2024.push(e) });
+  assert.deepEqual(forOtherRules([entries, in2024]), []);
 });
 
 test("a note of the same name from another source isn't used for 2024 data", () => {
@@ -119,6 +122,25 @@ test("each edition has its compendium, and 2024 uses the same one unless it has 
   assert.equal(compendiumFor(st("Old", "New"), "5e-2024"), "New");
   assert.equal(compendiumFor(st("Old", " "), "5e-2024"), "Old");
   assert.equal(compendiumFor(st("", "New"), "5e-2014"), "");
+});
+
+test("each edition has its 5etools folder, and 2024 uses the same one unless it has its own", () => {
+  const st = (fivetoolsPath: string, fivetoolsPath2024: string) => ({ fivetoolsPath, fivetoolsPath2024 });
+  assert.equal(fivetoolsFor(st("a", "b"), "5e-2014"), "a");
+  assert.equal(fivetoolsFor(st("a", "b"), "5e-2024"), "b");
+  assert.equal(fivetoolsFor(st("a", ""), "5e-2024"), "a");
+  assert.equal(fivetoolsFor(st("", "b"), "5e-2014"), "");
+});
+
+test("a shared compendium: each edition links to the notes of its own book", () => {
+  const notes = [{ path: "c/compendium/spells/fireball", alias: "Fireball", source: "PHB" }, { path: "c/compendium/spells/fireball-xphb", alias: "Fireball", source: "XPHB" }, { path: "c/compendium/spells/aid-xphb", alias: "Aid", source: "XPHB" }];
+  const l2014 = new Linker("c", notes), l2024 = new Linker("c", notes);
+  l2014.notFrom = new Set(["xphb"]);
+  l2024.sameSourceOnly = true;
+  assert.equal(l2014.note("spells", "Fireball", "PHB"), "c/compendium/spells/fireball");
+  assert.equal(l2024.note("spells", "Fireball", "XPHB"), "c/compendium/spells/fireball-xphb");
+  assert.equal(l2014.note("spells", "Aid", "PHB"), null, "no 2024 note for a 2014 entry");
+  assert.equal(new Linker("c", notes).note("spells", "Aid", "PHB"), "c/compendium/spells/aid-xphb", "as before while the 2024 rules aren't used");
 });
 
 test("a lineage links to the note of its species, a subrace with no note to nothing", () => {

@@ -123,16 +123,15 @@ The character's data is saved in that note's properties. Put your own notes, hea
 
 ### Settings
 
-The settings have five pages, and a sixth with imported data (tabs in Obsidian before 1.13):
+The settings have four pages, and a fifth with imported data (tabs in Obsidian before 1.13):
 
 - **General**
   - **Characters folder**: optional. Where new characters are created. Leave it empty to use the last folder you created a character in (the vault root the first time).
   - **Theme**: the sheet's accent colour. *Original* keeps the plugin's red accent, *Obsidian theme* uses your theme's accent colour, and *Custom* lets you pick your own.
 - **Sheet template**: which sections new sheets show (all of them by default, even while empty). On a sheet, hover a section's title to hide it, and use the **Hidden sections** menu at the top to show it again.
-- **Rules**: the rules of new characters, and for each edition its data: none (manual mode), the SRD or imported data (see below). For imported data it walks you through the three steps of the import. A warning on the page means the import is still to do or out of date, or that a conflict is listed at its top.
-- **Import data** (with imported data): what was imported and from where; remove entries and change their compendium notes (see [Import data](#import-data)).
-- **Custom data**: your own races, subraces, classes, subclasses, backgrounds, feats, spells and items, and traits and features for the races and classes of your rules data (see [Custom data](#custom-data)).
-- **Compendium**: optional, only for links (see [Compendium links](#compendium-links-optional)).
+- **Rules**: the rules of new characters, and for each edition its data (none, the SRD or imported data, see below), its 5etools folder and its compendium. For imported data it walks you through the three steps of the import. A warning on the page means the import is still to do or out of date, or that a conflict is listed at its top.
+- **Import data** (with imported data): what was imported for each edition and from where; remove entries and change their compendium notes (see [Import data](#import-data)).
+- **Custom data**: your own races, subraces, classes, subclasses, backgrounds, feats, spells and items, and traits and features for the races and classes of your rules data, each for the rules you choose (see [Custom data](#custom-data)).
 
 ### 2014 and 2024 rules
 
@@ -153,7 +152,7 @@ An older version of the plugin shows a 2024 sheet as a 2014 one, and changes to 
 
 ### Rules data
 
-Each edition has its own data, chosen on the *Rules* page.
+Each edition has its own data, chosen on the *Rules* page. The report after an import and the *Import data* page show each edition apart.
 
 | Source | What you get |
 |---|---|
@@ -171,7 +170,7 @@ New to 5etools? This is everything you need, in order. Only for content **you ar
 1. **Get the data.** 5etools keeps the content of the books as JSON files in a folder named `data` (with files such as `races.json` and `backgrounds.json`, and folders such as `class` and `spells`). You need that `data` folder from a copy of 5etools.
 2. **Put it in your vault.** Copy the whole `data` folder into your vault, e.g. as `.5etools/data`. A folder whose name starts with a dot is hidden, so the hundreds of JSON files don't show up in your file list, search or graph. Obsidian on mobile can only reach files inside the vault, so keep it there on every device you use.
 3. **Choose it in the settings.** Open *Settings → 5e Character Sheet → Rules* and choose **Imported from 5etools** for the 2014 rules, the 2024 rules or both. Three steps appear.
-4. **Find it.** Press **Detect**. It looks through your vault, hidden folders included, and lists the 5etools data folders, homebrew files and compendium folders it finds; pick what to use and press **Use these**. Or type the folder (e.g. `.5etools/data`) in **Folder with 5etools data**.
+4. **Find it.** Press **Detect**. It looks through your vault, hidden folders included, and lists the 5etools data folders, homebrew files and compendium folders it finds; pick what to use and press **Use these**. Or type the folder (e.g. `.5etools/data`) in **5etools data (2014 rules)** or **(2024 rules)**. Both can be the same folder, as a 5etools copy has both editions; left empty, the 2024 rules use the 2014 one.
 5. **Import.** Optional: **Only entries with a note** imports exactly what your compendium contains, and **Classic content in the 2024 data** (on by default) also brings older content with no 2024 version into the 2024 data. Press **Import now**: each edition gets its own data, and what was reprinted for 2024 stays out of the 2024 data. A report shows what came from the 5etools data and from each homebrew file.
 6. **Done.** The races, classes, backgrounds, spells and items are in the menus of every sheet. The data is converted on your device and stored in the plugin's folder in your vault, so you can delete the copied `data` folder afterwards. Import again after you update it.
 
@@ -212,6 +211,8 @@ Data imported before this page existed shows everything as 5etools data until yo
 
 On the **Custom data** page you make your own entries and use them on any sheet. Press **Create an entry**, choose what to create (a race, subrace, race trait, class, subclass, class feature, background, feat, spell or item), and fill in its form. The fields depend on the kind of entry: a race's size, speeds, ability score increases, proficiencies and traits; a class's hit die, saving throws, proficiencies, spellcasting, subclass title and level, features by level (with their uses, tracked with the class resources) and table columns such as Ki Points (values by level are written as `1: 2, 5: 3, 11: 4`); a subclass's features, spells always prepared and, for a class without spells, its own spellcasting (a third caster); a spell's level, school and spell lists; a weapon's damage and properties; a feat's prerequisite and ability score increases; a background's proficiencies and feature. A subrace belongs to a race, yours or one of the rules data (a new elven subrace). A subclass belongs to a class the same way. Your races, subraces, classes and subclasses have their traits and features in their own form; a race trait or class feature entry adds one to a race or class of the SRD or imported data (a trait added to the dwarf, a feature for the Champion). Any entry but a trait can link to a note, opened from the sheet with a preview on hover.
 
+Each entry is for one set of rules, chosen at the top of its form, and the form follows them: under the 2024 rules a species has no ability increases, a background has its ability scores and origin feat, feats have a category, weapons a mastery, and classes a table of prepared spells and their weapon masteries. Only sheets with those rules see the entry. The list shows the rules of each entry and can be filtered by them.
+
 - With the SRD or imported rules data, your entries are in the sheets' menus with the rest, grouped under *Custom data* and marked *(Custom)*. Importing again doesn't touch them.
 - In manual mode, **From custom data…** (next to the race, subrace, background and classes, and in the features, Feats, Spellcasting and Inventory sections) fills the sheet's typed fields with an entry.
 - The list shows every entry, with a search box and a kind menu. The pencil edits an entry, the copy button makes a new one from it, and the bin deletes it. Renaming an entry keeps it on the sheets that use it.
@@ -219,7 +220,7 @@ On the **Custom data** page you make your own entries and use them on any sheet.
 
 ### Compendium links (optional)
 
-If you keep a compendium generated by [ttrpg-convert-cli](https://github.com/ebullient/ttrpg-convert-cli), set **Compendium folder** to the folder that contains its `compendium` and `rules` folders. With a separate compendium made from the 2024 books, set **Compendium folder for the 2024 rules** too: each sheet links to the compendium of its rules. Left empty, the 2024 rules use the first folder, and only link to notes of the same source. Races, classes, subclasses, features, spells, items and conditions then link to those notes, with page previews on hover. With **Only entries with a note** the importer keeps exactly what your compendium contains.
+If you keep a compendium generated by [ttrpg-convert-cli](https://github.com/ebullient/ttrpg-convert-cli), set **Compendium (2014 rules)** and **Compendium (2024 rules)** on the *Rules* page to the folder that contains its `compendium` and `rules` folders. They can be the same folder or two: each sheet links to the compendium of its rules, and each entry to the note of its own book. Left empty, the 2024 rules use the 2014 folder. Races, classes, subclasses, features, spells, items and conditions then link to those notes, with page previews on hover. With **Only entries with a note** the importer keeps exactly what your compendium contains.
 
 ## Privacy and file access
 

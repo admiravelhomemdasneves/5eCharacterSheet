@@ -31,6 +31,8 @@ export interface SheetSettings {
   /** the same for the 2024 rules; empty = the folder above */
   compendiumFolder2024: string;
   fivetoolsPath: string;
+  /** the 5etools folder of the 2024 rules; empty = the folder above */
+  fivetoolsPath2024: string;
   /** vault paths of 5etools homebrew files added to the data when importing */
   homebrewFiles: string[];
   importRules2014: boolean;
@@ -51,7 +53,7 @@ export interface SheetSettings {
 }
 export const DEFAULT_SETTINGS: SheetSettings = {
   charactersFolder: "", lastFolder: "", dataSource: "none", dataSource2024: "none", defaultRuleset: "5e-2014", splitEditions: true, importClassicIn2024: true, compendiumFolder: "", compendiumFolder2024: "",
-  fivetoolsPath: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "", lastImport2024: "", removedEntries: [], noteLinks: {},
+  fivetoolsPath: "", fivetoolsPath2024: "", homebrewFiles: [], importRules2014: true, importOnlyWithNotes: false, lastImport: "", lastImport2024: "", removedEntries: [], noteLinks: {},
   theme: "plugin", customAccent: "#922610", hiddenSections: [], customDataPath: "",
 };
 const THEME_KEYS = ["theme", "customAccent"];
@@ -67,15 +69,16 @@ const T = {
   charactersFolder: ["Characters folder", "Optional. Folder suggested for new characters. Leave empty to use the last folder you created a character in (the vault root the first time)."],
   dataSource: ["Rules data", "Where the entries of these rules come from. Without rules data the sheet works in manual mode: you type races, classes, features, spells and values yourself, and only simple maths (modifiers, proficiency, saves, skills and spellcasting) is automatic."],
   detect: ["Detect", "Look through this vault, hidden folders included, for a 5etools data folder, 5etools homebrew files and a compendium folder. You choose what to use; nothing is read until you press the button."],
-  fivetoolsPath: ["Folder with 5etools data", "Used by the import. A folder inside this vault with the data files of a 5etools copy you are entitled to use (it contains races.json). A hidden folder such as .5etools/data keeps them out of your file list and search. Leave it empty to import only homebrew."],
+  fivetoolsPath: ["5etools data (2014 rules)", "A folder inside this vault with the data files of a 5etools copy you are entitled to use (it contains races.json). A hidden folder such as .5etools/data keeps them out of your file list and search."],
+  fivetoolsPath2024: ["5etools data (2024 rules)", "The same, for the 2024 rules. It can be the same folder as for the 2014 rules: a 5etools copy has both editions, and each import takes only its own. Empty: that folder."],
   homebrew: ["Homebrew files", "Optional. Homebrew in the 5etools format (JSON files inside this vault), one path per line. Their races, classes, subclasses, backgrounds, feats, spells and items are added to the 5etools data when importing, or imported on their own without a data folder."],
   rules2014: ["Only 2014 rules", "Leave out the 2024 core rulebooks and other 2024-edition entries when importing."],
   classic: ["Classic content in the 2024 data", "Also import content with no 2024 version, such as the spells of older books: the 2024 rules can use it. Older subclasses made to work with the 2024 classes are always imported."],
   defaultRuleset: ["Rules of new characters", "Each character keeps its rules, so 2014 and 2024 characters can be in the same vault. This is what the New character dialog starts with. Existing sheets don't change."],
   onlyNotes: ["Only entries with a note", "Import only what has a note in your compendium folder, so the menus match it exactly."],
   importNow: ["Import", "Convert the data now. The result is stored in this plugin's folder, and a report shows what came from each file."],
-  compendium: ["Compendium folder", "Optional, only for links. The folder that contains the \"compendium\" and \"rules\" folders of your compendium notes. Races, classes, spells, items and features then link to their notes."],
-  compendium2024: ["Compendium folder for the 2024 rules", "Optional. The same, for a compendium made from the 2024 books. Leave it empty if the folder above has both editions, or to use it for both."],
+  compendium: ["Compendium (2014 rules)", "Optional, only for links. The folder that contains the \"compendium\" and \"rules\" folders of your compendium notes. Races, classes, spells, items and features then link to their notes."],
+  compendium2024: ["Compendium (2024 rules)", "The same, for sheets with the 2024 rules. It can be the same folder as for the 2014 rules: each entry links to the note of its own book. Empty: that folder."],
   license: ["SRD license", ""],
   importWhat: "Imports the data of each edition set to \"Imported from 5etools\" above, each into its own file.",
   theme: ["Theme", "Accent colour of the sheets: the plugin's own, the one of your Obsidian theme, or your own choice."],
@@ -86,9 +89,8 @@ const T = {
   rules: "Which rules characters use, and where their races, classes, spells and items come from: typed in by you (manual mode), the SRD included with the plugin, or your own 5etools data.",
   importData: "What was imported and from where. Remove entries, and open or change their compendium notes.",
   customData: "Your own races, classes, subclasses, backgrounds, feats, spells, items and more, for any sheet: create, edit and remove them.",
-  compendiumPage: "Optional. Links from the sheets to the notes of a compendium, with page previews.",
   step1: ["Step 1: Get the data", "What you need", "The \"data\" folder of a 5etools copy: JSON files with the races, classes, spells and items of the books. Use only content you are entitled to use; the plugin downloads nothing."],
-  step2: ["Step 2: Put it in your vault", "Where to put it", "Copy that folder into this vault. A hidden folder such as .5etools/data keeps its files out of your file list and search. Then press Detect, or fill in the paths below."],
+  step2: ["Step 2: Put it in your vault", "Where to put it", "Copy that folder into this vault. A hidden folder such as .5etools/data keeps its files out of your file list and search. Then press Detect, or fill in the 5etools data folders above."],
   step3: "Step 3: Import",
   makeCompendium: "The compendium notes are made from your 5etools data by ttrpg-convert-cli, a separate tool.",
   more: "Read more",
@@ -224,10 +226,14 @@ export class SheetSettingTab extends PluginSettingTab {
         ] },
         { type: "group", heading: "2014 rules", items: [
           { name: T.dataSource[0], desc: withLinks(T.dataSource[1], L.rules), control: { type: "dropdown", key: "dataSource", options: SOURCE_OPTIONS } },
+          { name: T.fivetoolsPath[0], desc: T.fivetoolsPath[1], visible: () => st.dataSource === "imported", control: { type: "text", key: "fivetoolsPath", placeholder: ".5etools/data" } },
+          { name: T.compendium[0], desc: withLinks(T.compendium[1], L.compendium), control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
           { name: T.license[0], desc: SRD_ATTRIBUTION },
         ] },
         { type: "group", heading: "2024 rules", items: [
           { name: T.dataSource[0], desc: withLinks(T.dataSource[1], L.rules), control: { type: "dropdown", key: "dataSource2024", options: SOURCE_OPTIONS_2024 } },
+          { name: T.fivetoolsPath2024[0], desc: T.fivetoolsPath2024[1], visible: () => st.dataSource2024 === "imported", control: { type: "text", key: "fivetoolsPath2024", placeholder: "Same folder" } },
+          { name: T.compendium2024[0], desc: T.compendium2024[1], control: { type: "folder", key: "compendiumFolder2024", placeholder: "Same folder" } },
           { name: T.license[0], desc: SRD_521_ATTRIBUTION },
         ] },
         { type: "group", heading: T.step1[0], visible: imported, items: [
@@ -236,7 +242,6 @@ export class SheetSettingTab extends PluginSettingTab {
         { type: "group", heading: T.step2[0], visible: imported, items: [
           { name: T.step2[1], desc: T.step2[2] },
           { name: T.detect[0], desc: T.detect[1], render: (setting) => { setting.addButton((b) => b.setButtonText("Detect").onClick(() => this.openDetect())); } },
-          { name: T.fivetoolsPath[0], desc: T.fivetoolsPath[1], control: { type: "text", key: "fivetoolsPath", placeholder: ".5etools/data" } },
           { name: T.homebrew[0], desc: withLinks(T.homebrew[1], L.homebrew, L.homebrewRepo), control: { type: "textarea", key: "homebrewFiles", placeholder: HOMEBREW_PLACEHOLDER, rows: 4 } },
         ] },
         { type: "group", heading: T.step3, visible: imported, items: [
@@ -255,16 +260,12 @@ export class SheetSettingTab extends PluginSettingTab {
             },
           },
         ] },
+        { type: "group", heading: "Making a compendium", items: [
+          { name: "ttrpg-convert-cli", desc: withLinks(T.makeCompendium, L.convert, L.convertCli, L.convertUi) },
+        ] },
       ] },
       drawnPage({ name: "Import data", desc: T.importData, visible: imported, view: () => new ImportDataView(this.plugin) }),
       drawnPage({ name: "Custom data", desc: T.customData, visible: () => true, view: () => new CustomDataView(this.plugin) }),
-      { type: "page", name: "Compendium", desc: T.compendiumPage, items: [
-        { type: "group", items: [
-          { name: T.compendium[0], desc: withLinks(T.compendium[1], L.compendium), control: { type: "folder", key: "compendiumFolder", placeholder: "Compendium" } },
-          { name: T.compendium2024[0], desc: T.compendium2024[1], control: { type: "folder", key: "compendiumFolder2024", placeholder: "Same folder" } },
-          { name: "Making a compendium", desc: withLinks(T.makeCompendium, L.convert, L.convertCli, L.convertUi) },
-        ] },
-      ] },
     ];
   }
   getControlValue(key: string): unknown {

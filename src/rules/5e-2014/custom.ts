@@ -12,7 +12,7 @@ const DAMAGE_TYPES = ["acid", "bludgeoning", "cold", "fire", "force", "lightning
 const WEAPON_PROPERTIES = ["ammunition", "finesse", "heavy", "light", "loading", "reach", "special", "thrown", "two-handed", "versatile"];
 const RARITIES = ["common", "uncommon", "rare", "very rare", "legendary", "artifact"];
 const plain = (list: string[], label = title): Choice[] => list.map((x) => ({ value: x, label: label(x) }));
-const abilityChoices: Choice[] = ABILITIES.map((a) => ({ value: a, label: ABILITY_NAMES[a] }));
+export const abilityChoices: Choice[] = ABILITIES.map((a) => ({ value: a, label: ABILITY_NAMES[a] }));
 const skillChoices = plain(Object.keys(SKILLS));
 const isAbility = (x: string): x is Ability => (ABILITIES as string[]).includes(x);
 const absent = (v: string) => v || null;
@@ -337,8 +337,8 @@ export function levelValues(text: string): (number | string | null)[] {
   for (const [l, v] of steps) for (let i = Math.min(20, parseInt(l)) - 1; i < 20; i++) out[i] = value(v);
   return out;
 }
-const numbersByLevel = (text: string) => (text.trim() ? levelValues(text).map((v) => (typeof v === "number" ? v : 0)) : null);
-const LEVELS_HELP = "By level: \"1: 2, 4: 3, 10: 4\" (from that level on), or 20 values separated by commas.";
+export const numbersByLevel = (text: string) => (text.trim() ? levelValues(text).map((v) => (typeof v === "number" ? v : 0)) : null);
+export const LEVELS_HELP = "By level: \"1: 2, 4: 3, 10: 4\" (from that level on), or 20 values separated by commas.";
 const USES: Choice[] = [
   ...[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `${n}` })),
   { value: "pb", label: "Proficiency bonus" }, ...ABILITIES.map((a) => ({ value: a, label: `${ABILITY_NAMES[a]} modifier` })),
@@ -522,6 +522,6 @@ const classFeature: KindDef = {
 };
 
 /** The custom entries of the 2014 rules, in the order they are added to the data (an entry's parent first). */
-/** The kinds of entries; the 2024 rules use the same forms. */
+/** The kinds of entries; the 2024 rules change some of them (src/rules/5e-2024/custom.ts). */
 export const KINDS_5E: KindDef[] = [race, subrace, raceFeature, klass, subclass, classFeature, background, feat, spell, item];
 export const RULESET_2014: Ruleset = { id: "5e-2014", label: "D&D 5e (2014)", kinds: KINDS_5E, profile: PROFILE_2014 };

@@ -1,5 +1,6 @@
 import { App, Modal, Setting } from "obsidian";
 import { ENTRY_KINDS } from "../data/build";
+import type { BrewEntry } from "../data/build";
 import type { Counts, FileReport, ImportReport } from "../data/report";
 import { KIND_LABELS as KIND } from "../data/entries";
 
@@ -11,19 +12,26 @@ const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
  * file's row opens to list its entries, with their kind and whether they were imported (or why not).
  */
 export class ImportReportModal extends Modal {
-  constructor(app: App, private report: ImportReport) { super(app); }
+  /** `reports`: one per edition imported; `otherRules`: homebrew for rules that weren't imported */
+  constructor(app: App, private reports: { label: string; report: ImportReport }[], private otherRules: BrewEntry[]) { super(app); }
 
   onOpen() {
-    const { contentEl, report: r } = this;
+    const { contentEl, otherRules } = this;
     this.modalEl.addClass("dnd-report-modal");
     contentEl.addClass("dnd-report");
     contentEl.createEl("h2", { text: "Import report" });
-    if (r.otherRules.length) {
-      const shown = r.otherRules.slice(0, 5).map((e) => e.name).join(", ");
-      contentEl.createDiv({ cls: "dnd-rules-warning", text: `${r.otherRules.length} homebrew entr${r.otherRules.length === 1 ? "y is" : "ies are"} for other rules, so left out: ${shown}${r.otherRules.length > 5 ? "…" : ""}. To use them, set the data source of those rules to imported data and import again.` });
+    if (otherRules.length) {
+      const shown = otherRules.slice(0, 5).map((e) => e.name).join(", ");
+      contentEl.createDiv({ cls: "dnd-rules-warning", text: `${otherRules.length} homebrew entr${otherRules.length === 1 ? "y is" : "ies are"} for other rules, so left out: ${shown}${otherRules.length > 5 ? "…" : ""}. To use them, set the data source of those rules to imported data and import again.` });
     }
-    contentEl.createEl("p", { cls: "dnd-hint", text: r.files.length ? "What came from each source. Open a homebrew file to see its entries." : "What came from the 5etools data." });
+    contentEl.createEl("p", { cls: "dnd-hint", text: "What each edition's data holds, by where it came from. Open a homebrew file to see its entries." });
+    for (const { label, report } of this.reports) this.edition(contentEl, label, report);
+    new Setting(contentEl).addButton((b) => b.setButtonText("Close").setCta().onClick(() => this.close()));
+  }
 
+  /** The report of the data of one edition. */
+  private edition(contentEl: HTMLElement, label: string, r: ImportReport) {
+    contentEl.createEl("h3", { cls: "dnd-report-edition", text: label });
     const table = contentEl.createDiv({ cls: "dnd-report-scroll" }).createEl("table", { cls: "dnd-report-table" });
     const head = table.createEl("thead").createEl("tr");
     head.createEl("th", { text: "Source" });
@@ -50,7 +58,6 @@ export class ImportReportModal extends Modal {
       const ul = d.createEl("ul");
       for (const m of r.messages) ul.createEl("li", { text: m });
     }
-    new Setting(contentEl).addButton((b) => b.setButtonText("Close").setCta().onClick(() => this.close()));
   }
 
   private counts(tr: HTMLElement, c: Counts, tag: "td" | "th" = "td") {

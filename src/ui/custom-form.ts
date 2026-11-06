@@ -6,6 +6,7 @@ import { newEntryId, type CustomEntry } from "../custom/format";
 import { choicesOf, emptyData, emptyValue, missingFields, type Choice, type CustomContext, type FieldDef, type KindDef } from "../custom/schema";
 import { NoteSuggestModal } from "./import-data";
 import { richSelect } from "./widgets";
+import { RULESETS } from "../rules/rulesets";
 import { lc } from "../text";
 
 export class EntryModal extends Modal {
@@ -19,8 +20,22 @@ export class EntryModal extends Modal {
     this.name = entry ? (copy ? `${entry.name} (copy)` : entry.name) : "";
     this.link = entry?.link ?? "";
     this.data = { ...emptyData(def.fields), ...structuredClone(entry?.data ?? {}) };
-    const c = plugin.contextById(rules);
-    this.ctx = { data: c.manual ? c.customOnly : c.rules.data };
+    this.ctx = this.contextOf(rules);
+  }
+  private contextOf(rules: string): CustomContext {
+    const c = this.plugin.contextById(rules);
+    return { data: c.manual ? c.customOnly : c.rules.data };
+  }
+  /** The entry is for other rules: their form, which keeps the values of the fields it shares. What it belonged to is of the old rules' data. */
+  private setRules(rules: string) {
+    const def = RULESETS.find((r) => r.id === rules)?.kinds.find((k) => k.kind === this.def.kind);
+    if (!def) return;
+    this.rules = rules;
+    this.def = def;
+    this.ctx = this.contextOf(rules);
+    this.data = { ...emptyData(def.fields), ...this.data };
+    if (def.parentKey) this.data[def.parentKey] = "";
+    this.draw();
   }
   private get editing() { return !!this.entry && !this.copy; }
 
@@ -39,6 +54,8 @@ export class EntryModal extends Modal {
     const top = this.modalEl.scrollTop;
     contentEl.empty();
     this.titleEl.setText(`${this.editing ? "Edit" : "New"} ${lc(def.label[0])}`);
+    new Setting(contentEl).setName("Rules").setDesc(this.editing ? "Only sheets with these rules see it: a sheet using it under other rules loses it." : "Only sheets with these rules see it. The fields below follow them.")
+      .addDropdown((d) => d.addOptions(Object.fromEntries(RULESETS.map((r) => [r.id, r.label]))).setValue(this.rules).onChange((v) => this.setRules(v)));
     new Setting(contentEl).setName("Name").addText((t) => {
       t.setPlaceholder(`${def.label[0]} name`).setValue(this.name).onChange((v) => (this.name = v));
     });
@@ -160,7 +177,7 @@ export class EntryModal extends Modal {
     const data = Object.fromEntries(this.def.fields.filter((f) => !f.visible || f.visible(this.data)).map((f) => [f.key, this.data[f.key]]));
     const e: CustomEntry = {
       id: this.editing ? this.entry!.id : newEntryId(name, new Set(this.plugin.customFile.entries.map((x) => x.id))),
-      ruleset: this.editing ? this.entry!.ruleset : this.rules, kind: this.def.kind, name,
+      ruleset: this.rules, kind: this.def.kind, name,
       ...(this.link ? { link: this.link } : {}), data, updated: new Date().toISOString(),
     };
     try {

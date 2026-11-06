@@ -1,8 +1,8 @@
-import { App, FuzzySuggestModal, Notice, Platform, Setting, TFile, TFolder, Vault, setIcon } from "obsidian";
+import { App, FuzzySuggestModal, Notice, Platform, TFile, TFolder, Vault, setIcon } from "obsidian";
 import type CharacterSheetPlugin from "../main";
 import { ENTRY_KINDS, type EntryKind } from "../data/build";
 import { KIND_LABELS as KIND, groupByFile, removedFrom, type DataEntry, type EntryGroup } from "../data/entries";
-import { compendiumFor, importedRulesets } from "../data/editions";
+import { compendiumFor, fivetoolsFor, importedRulesets } from "../data/editions";
 import { DEFAULT_RULESET } from "../custom/format";
 import { rulesetById } from "../rules/rulesets";
 import type { Counts } from "../data/report";
@@ -19,26 +19,43 @@ const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
  * The rows opened and the search stay while the page is open.
  */
 export class ImportDataView {
-  private opened = new Set<string | null>();
-  private query = "";
-  private kind: EntryKind | "" = "";
-  /** the rules whose imported data is shown */
-  private rules = DEFAULT_RULESET;
+  /** each edition's part of the page, kept so what is open and searched stays */
+  private parts = new Map<string, EditionData>();
   constructor(private plugin: CharacterSheetPlugin) {}
 
   draw(el: HTMLElement) {
     el.empty();
     el.addClass("dnd-report", "dnd-import-data");
+    el.createEl("p", { cls: "dnd-hint", text: "What the imported data of each edition holds, by where it came from. Open a row to see its entries: open or change the compendium note of each, or remove it from that edition's data. A removed entry stays out when you import again, until you restore it." });
+    for (const id of importedRulesets(this.plugin.settings)) {
+      el.createEl("h3", { cls: "dnd-report-edition", text: rulesetById(id).label });
+      const part = this.parts.get(id) ?? new EditionData(this.plugin, id);
+      this.parts.set(id, part);
+      part.redraw = () => this.redraw();
+      part.draw(el.createDiv());
+    }
+  }
+
+  /** set by the page that shows this view: draws it again after a change */
+  redraw: () => void = () => {};
+}
+
+/** The imported data of one edition. */
+class EditionData {
+  private opened = new Set<string | null>();
+  private query = "";
+  private kind: EntryKind | "" = "";
+  constructor(private plugin: CharacterSheetPlugin, private rules: string) {}
+
+  draw(el: HTMLElement) {
     // the data as imported, without the custom entries (see Custom data)
-    const { plugin } = this, st = plugin.settings, editions = importedRulesets(st);
-    if (!editions.includes(this.rules)) this.rules = editions[0] ?? DEFAULT_RULESET;
-    const data = plugin.contextById(this.rules).baseData;
-    if (editions.length > 1) new Setting(el).setName("Rules").addDropdown((d) => d.addOptions(Object.fromEntries(editions.map((id) => [id, rulesetById(id).label]))).setValue(this.rules).onChange((v) => { this.rules = v; this.redraw(); }));
+    const { plugin } = this, st = plugin.settings, data = plugin.contextById(this.rules).baseData;
     if (!data.races.length && !data.classes.length && !data.spells.length) {
-      el.createEl("p", { cls: "dnd-hint", text: "Nothing imported yet. Import your 5etools data or homebrew in the rules data settings first." });
+      el.createEl("p", { cls: "dnd-hint", text: "Nothing imported yet: import it first, in the settings of the rules." });
       return;
     }
-    el.createEl("p", { cls: "dnd-hint", text: "What the imported data holds, by where it came from. Open a row to see its entries: open or change the compendium note of each, or remove it from the data. A removed entry stays out when you import again, until you restore it." });
+    const last = this.rules === DEFAULT_RULESET ? st.lastImport : st.lastImport2024;
+    if (last) el.createEl("p", { cls: "dnd-hint", text: `Last import: ${last}` });
     if (!data.meta.origins && st.homebrewFiles.length) el.createEl("p", { cls: "dnd-hint is-left-out", text: "This data was imported before the plugin kept track of the homebrew files, so all of it is shown as 5etools data. Import again to see each file." });
 
     // search and kind filter: they narrow the entries listed under the open rows
@@ -85,7 +102,7 @@ export class ImportDataView {
     const toggle = cell.createEl("button", { cls: "dnd-report-toggle", attr: { title: g.file ?? "" } });
     const chevron = toggle.createSpan({ cls: "dnd-report-chevron" });
     toggle.createSpan({ text: g.file ? fileName(g.file) : "5etools data" });
-    cell.createDiv({ cls: "dnd-hint", text: g.file ?? (this.plugin.settings.fivetoolsPath.trim() || "No data folder") });
+    cell.createDiv({ cls: "dnd-hint", text: g.file ?? (fivetoolsFor(this.plugin.settings, this.rules) || "No data folder") });
     this.counts(row, g.counts);
 
     const detail = body.createEl("tr", { cls: "dnd-report-detail" });
